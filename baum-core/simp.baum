@@ -1,0 +1,72 @@
+id = |x| x
+
+const = |x y| x
+
+k = prim "mochi"
+p = |k| k 1 'a'
+
+z = {
+  x = |z| z
+  y = |u| x
+  w = {
+    u = |a| a
+  }
+  も = |み| み
+}
+
+mo1 = {
+  x = z.w.u
+  y = z.w
+}
+
+f = |x| let
+  y = 1
+  in u
+
+h = |x| let
+  y = 1
+  k = let
+    e = 1
+    in f
+  m = let
+    e = 1
+    in |a| a
+  w = y + z
+  in w
+
+proc1 = |k|
+  x |_|
+  y |_|
+  z k
+
+proc2 = |k| x |_| y |_| z k
+
+proc3 = |k|
+  x |_| let
+    p = 1 + 2
+  in y |_|
+  let
+    q = 2 + 3
+  in z |_|
+  let
+  r = 5 + 7
+  in v |_| let
+  s = 2 + 5
+  in w k
+
+x = {
+  z = y1 -- ok
+    y2
+    y3
+  
+  w = y1 -- parse error
+    y2
+      y3
+    y4
+}
+
+proc4 = x where
+  x = 5
+  z = 3.2u
+  g = d_d__d___d____d
+  y = abあ+いう**えcお5d
