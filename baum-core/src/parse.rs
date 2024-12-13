@@ -106,6 +106,14 @@ impl<'a> Tokenizer<'a> {
     self.next = self.char_indices.next();
   }
 
+  fn tokenize_error(&mut self, msg: &str) {
+    if let Some((i, _)) = self.peek() {
+      eprintln!("L{} C{}: {}", self.line, self.column, msg);
+    } else {
+      eprintln!("EOF: {}", msg);
+    }
+  }
+
   fn skip_line(&mut self) {
     while let Some((_, c)) = self.peek() {
       if c == '\r' {
@@ -127,7 +135,7 @@ impl<'a> Tokenizer<'a> {
     while let Some((_, c)) = self.peek() {
       if c.is_whitespace() {
         if c != ' ' && c != '\r' && c != '\n' {
-          eprintln!("invalid whitespace character: {:?}", c);
+          self.tokenize_error(&format!("invalid whitespace character: {:?}", c));
         }
         self.advance();
       } else if c == '-' && self.look_ahead('-') {
@@ -150,7 +158,7 @@ impl<'a> Tokenizer<'a> {
         self.advance();
       }
     } else {
-      eprintln!("unterminated escape character");
+      self.tokenize_error("unterminated escape character");
     }
   }
 
@@ -210,7 +218,7 @@ impl<'a> Tokenizer<'a> {
     self.advance();
     while let Some((_, c1)) = self.peek() {
       if c1 == '\r' || c1 == '\n' {
-        eprintln!("unterminated character or string literal");
+        self.tokenize_error("unterminated character or string literal");
         return Some(self.make_token_overlooked(ty, i));
       }
       if c1 == c0 {
@@ -224,7 +232,7 @@ impl<'a> Tokenizer<'a> {
         self.advance();
       }
     }
-    eprintln!("unterminated character or string literal");
+    self.tokenize_error("unterminated character or string literal");
     return Some(self.make_token_overlooked(ty, i));
   }
 
@@ -437,6 +445,14 @@ impl<'a> Parser<'a> {
       .map(|t| t.ty == ty && t.str == s)
       .unwrap_or(false)
   }
+  fn next_is_exact(&mut self, i: Indent, ty: TokenType, s: &str) -> bool {
+    println!("next_is_exact: {:?} {:?} {:?} {:?}", self.next, i, ty, s);
+    if let Some(t) = self.next.as_ref() {
+      return t.indent == i && t.ty == ty && t.str == s;
+    } else {
+      return false;
+    }
+  }
 
   fn next_is_id(&mut self, s: &str) -> bool {
     self.next_is(TokenType::Identifier, s)
@@ -484,6 +500,14 @@ impl<'a> Parser<'a> {
     self.look_ahead(TokenType::Symbol, s)
   }
 
+  fn parse_error(&mut self, msg: &str) {
+    if let Some(t) = self.next.as_ref() {
+      eprintln!("L{} C{}: {}", t.line, t.column, msg);
+    } else {
+      eprintln!("EOF: {}", msg);
+    }
+  }
+
   fn id_list(&mut self) -> Vec<Id> {
     let mut ids = Vec::new();
     loop {
@@ -502,6 +526,7 @@ impl<'a> Parser<'a> {
     }
     ids
   }
+
   fn prim(&mut self) -> Option<Expr> {
     let t = self.peek()?;
     if t.ty == TokenType::Number {
@@ -531,7 +556,7 @@ impl<'a> Parser<'a> {
       if self.next_is_symbol(")") {
         self.advance();
       } else {
-        eprintln!("missing ')'");
+        self.parse_error("missing ')'");
       }
       return Some(e);
     }
@@ -542,7 +567,7 @@ impl<'a> Parser<'a> {
         self.advance();
         return Some(Expr::Prim(t.str.to_string()));
       } else {
-        eprintln!("missing string literal");
+        self.parse_error("missing string literal");
         return Some(Expr::Prim("".to_string()));
       }
     }
@@ -552,7 +577,7 @@ impl<'a> Parser<'a> {
       if self.next_is_keyword("in") {
         self.advance();
       } else {
-        eprintln!("missing 'in'");
+        self.parse_error("missing 'in'");
       }
       let e = self.expr_or_hole();
       return Some(Expr::Let(decls, Box::new(e)));
@@ -572,7 +597,7 @@ impl<'a> Parser<'a> {
       if self.next_is_symbol("|") {
         self.advance();
       } else {
-        eprintln!("missing '|'");
+        self.parse_error("missing '|'");
       }
       let id = Id::Name(t.str.to_string());
       let e = self.expr_or_hole();
@@ -612,7 +637,7 @@ impl<'a> Parser<'a> {
     match self.expr() {
       Some(e) => e,
       None => {
-        eprintln!("missing expression");
+        self.parse_error("missing expression");
         Expr::Hole
       }
     }
@@ -620,7 +645,8 @@ impl<'a> Parser<'a> {
 
   fn decl(&mut self) -> Option<Decl> {
     let t = self.peek()?;
-    self.indent = self.last_indent;
+    let indent = self.last_indent;
+    self.indent = indent;
     if self.next_is_keyword("infix") {
       unimplemented!()
     }
@@ -637,10 +663,10 @@ impl<'a> Parser<'a> {
       // module
       self.advance();
       let decls = self.decls();
-      if self.next_is_symbol("}") {
+      if self.next_is_symbol("}") || self.next_is_exact(indent, TokenType::Symbol, "}") {
         self.advance();
       } else {
-        eprintln!("missing '}}'");
+        self.parse_error("missing '}'");
       }
       Some(Decl::Mod(id, decls))
     } else {
