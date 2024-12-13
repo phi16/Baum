@@ -5,19 +5,20 @@ pub enum Id {
 
 #[derive(Debug, Clone)]
 pub enum Literal {
-  Int(i64),
+  Num(String), // TODO
+  Chr(String), // TODO
   Str(String),
 }
 
 #[derive(Debug, Clone)]
 pub enum Expr {
   Lit(Literal),
-  Var(Id),
+  Var(Vec<Id>),
   Lam(Vec<Id>, Box<Expr>),
   App(Box<Expr>, Vec<Box<Expr>>),
   Hole,
   Prim(String),
-  Let(Decl, Box<Expr>),
+  Let(Vec<Box<Decl>>, Box<Expr>),
 }
 
 #[derive(Debug, Clone)]

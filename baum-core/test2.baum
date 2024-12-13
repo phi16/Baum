@@ -1,0 +1,14 @@
+a = |b|
+  c |d| let
+    e = f
+    g = h
+  in i |j|
+  let
+    k = l m where n = o
+  in p |q|
+  let
+  r = s
+  in t |u| let
+  v = w
+  in x y z
+  
