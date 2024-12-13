@@ -107,7 +107,7 @@ impl<'a> Tokenizer<'a> {
   }
 
   fn tokenize_error(&mut self, msg: &str) {
-    if let Some((i, _)) = self.peek() {
+    if let Some(_) = self.peek() {
       eprintln!("L{} C{}: {}", self.line, self.column, msg);
     } else {
       eprintln!("EOF: {}", msg);
@@ -456,9 +456,6 @@ impl<'a> Parser<'a> {
     }
   }
 
-  fn next_is_id(&mut self, s: &str) -> bool {
-    self.next_is(TokenType::Identifier, s)
-  }
   fn next_is_keyword(&mut self, s: &str) -> bool {
     self.next_is(TokenType::Keyword, s)
   }
@@ -492,12 +489,6 @@ impl<'a> Parser<'a> {
       .unwrap_or(false)
   }
 
-  fn look_ahead_id(&mut self, s: &str) -> bool {
-    self.look_ahead(TokenType::Identifier, s)
-  }
-  fn look_ahead_keyword(&mut self, s: &str) -> bool {
-    self.look_ahead(TokenType::Keyword, s)
-  }
   fn look_ahead_symbol(&mut self, s: &str) -> bool {
     self.look_ahead(TokenType::Symbol, s)
   }
@@ -601,7 +592,6 @@ impl<'a> Parser<'a> {
       } else {
         self.parse_error("missing '|'");
       }
-      let id = Id::Name(t.str.to_string());
       let e = self.expr_or_hole();
       return Some(Expr::Lam(ids, Box::new(e)));
     }
