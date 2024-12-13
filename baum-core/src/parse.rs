@@ -352,6 +352,7 @@ impl<'a> Iterator for Tokenizer<'a> {
         CharType::Number => s == State::AlphaNum,
         CharType::Symbol => s == State::Symbol || s == State::Underscore,
         CharType::Special if c1 == '_' => s == State::AlphaNum || s == State::Symbol,
+        CharType::Special if c1 == '\'' => s == State::AlphaNum || s == State::Symbol,
         _ => false,
       };
       if pass {
@@ -359,7 +360,9 @@ impl<'a> Iterator for Tokenizer<'a> {
         s = match ty1 {
           CharType::Alpha | CharType::Number => State::AlphaNum,
           CharType::Symbol => State::Symbol,
-          _ => State::Underscore,
+          CharType::Special if c1 == '_' => State::Underscore,
+          CharType::Special if c1 == '\'' => s,
+          _ => unreachable!(),
         };
       } else {
         break;
@@ -446,7 +449,6 @@ impl<'a> Parser<'a> {
       .unwrap_or(false)
   }
   fn next_is_exact(&mut self, i: Indent, ty: TokenType, s: &str) -> bool {
-    println!("next_is_exact: {:?} {:?} {:?} {:?}", self.next, i, ty, s);
     if let Some(t) = self.next.as_ref() {
       return t.indent == i && t.ty == ty && t.str == s;
     } else {
