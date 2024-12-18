@@ -1,0 +1,12 @@
+proc3 = |k|
+  x |_| let
+    p = 1 + 2
+  in y |_|
+  let
+    q = 2 + 3
+  in z |_|
+  let
+  r = 5 + 7
+  in v |_| let
+  s = 2 + 5
+  in w k

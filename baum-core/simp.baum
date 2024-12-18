@@ -2,7 +2,7 @@ id = |x| x
 
 const = |x y| x
 
-k = prim "mochi"
+k3 = prim "mochi"
 p = |k| k 1 'a'
 
 z = {

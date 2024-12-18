@@ -1,4 +1,4 @@
-use baum_core::parse::*;
+use baum_core::run::*;
 use std::env;
 use std::fs::File;
 use std::io::Read;
@@ -14,7 +14,7 @@ fn main() {
   if let Ok(mut file) = File::open(path) {
     let mut content = String::new();
     if file.read_to_string(&mut content).is_ok() {
-      parse(&content);
+      run(&content);
     } else {
       eprintln!("Could not read file content: {}", path);
     }
