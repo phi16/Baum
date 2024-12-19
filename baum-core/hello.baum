@@ -1,11 +1,16 @@
 add = prim "add"
 print = prim "print"
+concat = prim "concat"
+readline = prim "readline"
 void = prim "void"
 
-main = 
+fix = |f| (|x| f (|y| (x x) y)) (|x| f (|y| (x x) y))
+
+f = fix |self| |_|
+  print "input: " |_|
+  readline |input|
   print "hello, " |_|
-  print "world!\n" |_| let
-  x = 3
-  y = 5
-  in print (add x y) |_|
-  void
+  print (concat input "!\n") |_|
+  self 0
+
+main = f 0

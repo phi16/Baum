@@ -27,6 +27,9 @@ impl<'a> Eval<'a> {
     match fun {
       Value::Cl(loc, envs) => {
         let fun = self.runtime.funs.get(loc).unwrap();
+        if args.len() != fun.args.len() {
+          eprintln!("expected {} args", fun.args.len());
+        }
         self.run(&fun.body, &args, &envs)
       }
       Value::PrimFun(f) => f(args),
@@ -94,14 +97,14 @@ impl<'a> Eval<'a> {
 
   fn process_value(&self, v: Value) {
     match v {
-      Value::Unit() => println!("()"),
-      Value::Int(i) => println!("{}", i),
-      Value::Float(f) => println!("{}", f),
-      Value::Char(c) => println!("{}", c),
-      Value::String(s) => println!("{}", s),
-      Value::Cl(_, _) => println!("[cl]"),
+      Value::Unit() => println!("Result: ()"),
+      Value::Int(i) => println!("Result: {}", i),
+      Value::Float(f) => println!("Result: {}", f),
+      Value::Char(c) => println!("Result: {}", c),
+      Value::String(s) => println!("Result: {}", s),
+      Value::Cl(_, _) => println!("Result: [cl]"),
       Value::Action(a) => self.process_action(a),
-      Value::PrimFun(_) => println!("[prim]"),
+      Value::PrimFun(_) => println!("Result: [prim]"),
     }
   }
 
