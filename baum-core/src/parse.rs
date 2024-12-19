@@ -146,7 +146,8 @@ impl<'a> Parser<'a> {
     }
     if t.ty == TokenType::String {
       self.advance();
-      return Some(Expr::Lit(Literal::Str(t.str.to_string())));
+      let s = t.str.replace("\\n", "\n");
+      return Some(Expr::Lit(Literal::Str(s)));
     }
     if t.ty == TokenType::Identifier {
       return Some(if t.str == "_" {

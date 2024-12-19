@@ -1,0 +1,11 @@
+add = prim "add"
+print = prim "print"
+void = prim "void"
+
+main = 
+  print "hello, " |_|
+  print "world!\n" |_| let
+  x = 3
+  y = 5
+  in print (add x y) |_|
+  void

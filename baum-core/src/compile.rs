@@ -165,12 +165,7 @@ impl<'a> BodyEnv<'a> {
         return VarRef::Local(loc);
       }
       Expr::Lam(args, e) => {
-        let empty_global = Global {
-          defs: HashMap::new(),
-          next_def: 0,
-          lookup: HashMap::new(),
-        };
-        let mut lam_env = BodyEnv::new(&empty_global, &mut self.funmap);
+        let mut lam_env = BodyEnv::new(&self.global, &mut self.funmap);
         let args_name = args
           .into_iter()
           .enumerate()

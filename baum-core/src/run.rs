@@ -118,4 +118,7 @@ pub fn run(code: &str) {
     funs: &runtime.funs,
   };
   dumper.traverse_runtime(&runtime);
+  println!("");
+  println!("[Eval]");
+  eval_main(&runtime);
 }

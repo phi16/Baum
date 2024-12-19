@@ -58,3 +58,25 @@ pub struct Runtime {
   pub def_count: u32,
   pub lookup: HashMap<String, DefLoc>,
 }
+
+// eval
+
+#[derive(Debug, Clone)]
+pub enum Action {
+  Stop,
+  Fork(Vec<Action>),
+  Call(fn(&Vec<Value>) -> Action, Vec<Value>),
+  App(Box<Value>, Vec<Value>),
+}
+
+#[derive(Debug, Clone)]
+pub enum Value {
+  Unit(),
+  Int(i32),
+  Float(f32),
+  Char(char),
+  String(String),
+  Cl(FunLoc, Vec<Value>),
+  Action(Action),
+  PrimFun(fn(Vec<&Value>) -> Value),
+}

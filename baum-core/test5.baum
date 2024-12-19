@@ -10,3 +10,11 @@ a = |x| let
     in |a| add e (add x a) 
   w = add x (m b)
   in w
+
+b = {
+  c = 2
+  d = 3
+}
+
+c = b
+d = c.c -- hmm...
