@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct FunLoc(pub u32);
@@ -67,6 +67,7 @@ pub enum Action {
   Fork(Vec<Action>),
   Call(fn(&Vec<Value>) -> Action, Vec<Value>),
   App(Box<Value>, Vec<Value>),
+  Delay(u32, Box<Action>),
 }
 
 #[derive(Debug, Clone)]
@@ -79,4 +80,5 @@ pub enum Value {
   Cl(FunLoc, Vec<Value>),
   Action(Action),
   PrimFun(fn(Vec<&Value>) -> Value),
+  Store(Rc<RefCell<Value>>),
 }
