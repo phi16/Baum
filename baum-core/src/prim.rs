@@ -142,11 +142,13 @@ impl Prim {
     let some_rl = Arc::clone(&self.some_rl);
     let some_sw = Arc::clone(&self.some_sw);
     Action::Async(Async(Box::pin(async move {
-      if some_rl.lock().await.is_some() {
+      let mut srl = some_rl.lock().await;
+      if srl.is_some() {
         panic!("readline already in use");
       }
       let (mut rl, sw) = Readline::new(prompt).unwrap();
-      some_rl.lock().await.replace(rl);
+      srl.replace(rl);
+      drop(srl);
       some_sw.lock().await.replace(sw);
 
       let s = {

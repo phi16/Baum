@@ -126,4 +126,6 @@ main7 =
   putln (concat (concat "Hello, " i) "!") |_|
   void)
 
+main8 = fork (readline "A" |_| void) (readline "B" |_| void)
+
 main = main7
