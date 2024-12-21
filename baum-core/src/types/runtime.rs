@@ -1,74 +1,40 @@
-use std::{cell::RefCell, collections::HashMap, rc::Rc};
+use crate::types::code::*;
+use core::panic;
+use rustyline_async::{Readline, SharedWriter};
+use std::{
+  fmt,
+  future::Future,
+  pin::Pin,
+  sync::{Arc, Mutex},
+};
+use tokio::sync::Mutex as TokioMutex;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct FunLoc(pub u32);
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct DefLoc(pub u32);
-#[derive(Debug, Clone, Copy)]
-pub struct OpLoc(pub u32);
-
-#[derive(Debug, Clone, Copy)]
-pub struct ArgLoc(pub u16);
-#[derive(Debug, Clone, Copy)]
-pub struct EnvLoc(pub u16);
-
-#[derive(Debug, Clone)]
-pub enum L {
-  Num(String),
-  Chr(String),
-  Str(String),
+pub struct Prim {
+  pub some_rl: Arc<TokioMutex<Option<Readline>>>,
+  pub some_sw: Arc<TokioMutex<Option<SharedWriter>>>,
 }
 
-#[derive(Debug, Clone)]
-pub enum E {
-  DefRef(DefLoc),
-  ArgRef(ArgLoc),
-  EnvRef(EnvLoc),
-  Lit(L),
-  Cl(FunLoc, Vec<OpLoc>), // fun, env
-  App(OpLoc, Vec<OpLoc>), // cl, args
-  Hole,
-  Prim(String),
+pub struct Async(pub Pin<Box<dyn Future<Output = Action> + Send>>);
+
+impl Clone for Async {
+  fn clone(&self) -> Self {
+    panic!("[async] cannot be cloned")
+  }
 }
 
-#[derive(Debug, Clone)]
-pub struct Body {
-  pub ls: Vec<E>, // OpLoc -> E
-  pub result: OpLoc,
+impl fmt::Debug for Async {
+  fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+    write!(f, "[async]")
+  }
 }
-
-#[derive(Debug, Clone)]
-pub struct Fun {
-  pub args: Vec<String>,
-  pub env: Vec<String>, // may include "a.b.c"; just printing purpose
-  pub body: Body,
-}
-
-#[derive(Debug, Clone)]
-pub enum D {
-  Def(Body),
-  Mod(HashMap<String, DefLoc>),
-}
-
-#[derive(Debug, Clone)]
-pub struct Runtime {
-  pub funs: HashMap<FunLoc, Fun>,
-  pub fun_count: u32,
-  pub defs: HashMap<DefLoc, D>,
-  pub def_count: u32,
-  pub lookup: HashMap<String, DefLoc>,
-  pub errors: Vec<String>,
-}
-
-// eval
 
 #[derive(Debug, Clone)]
 pub enum Action {
   Stop,
   Fork(Vec<Action>),
-  Call(fn(&Vec<Value>) -> Action, Vec<Value>),
+  Call(fn(&mut Prim, &Vec<Value>) -> Action, Vec<Value>),
   App(Box<Value>, Vec<Value>),
-  Delay(u32, Box<Action>),
+  Async(Async),
 }
 
 #[derive(Debug, Clone)]
@@ -80,6 +46,6 @@ pub enum Value {
   String(String),
   Cl(FunLoc, Vec<Value>),
   Action(Action),
-  PrimFun(fn(Vec<&Value>) -> Value),
-  Store(Rc<RefCell<Value>>),
+  PrimFun(fn(&mut Prim, Vec<&Value>) -> Value),
+  Store(Arc<Mutex<Value>>),
 }

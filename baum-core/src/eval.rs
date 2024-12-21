@@ -1,74 +1,65 @@
-use std::collections::BinaryHeap;
-use std::os::windows::process;
+use std::collections::VecDeque;
+use std::io::Write;
+use std::sync::{mpsc, Arc, Mutex};
 
-use crate::eval_lib::*;
+use crate::types::code::*;
 use crate::types::runtime::*;
 
-#[derive(Debug, Clone)]
-struct DelayedActions((u64, u32), Action);
-
-impl Eq for DelayedActions {}
-
-impl PartialEq for DelayedActions {
-  fn eq(&self, other: &Self) -> bool {
-    self.0 == other.0
-  }
-}
-
-impl Ord for DelayedActions {
-  fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-    other.0.cmp(&self.0)
-  }
-}
-
-impl PartialOrd for DelayedActions {
-  fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-    Some(self.cmp(other))
-  }
-}
-
 struct Scheduler {
-  actions: BinaryHeap<DelayedActions>, // hmm... very inefficient...
-  next_id: u32,
-  current_time: u64,
+  actions: VecDeque<Action>,
+  waiting: u32,
+  awake: Option<mpsc::Sender<()>>,
 }
 
 impl Scheduler {
-  fn new(a: Action) -> Self {
-    let mut actions = BinaryHeap::new();
-    actions.push(DelayedActions((0, 0), a));
+  fn new() -> Self {
     Scheduler {
-      actions,
-      next_id: 1,
-      current_time: 0,
+      actions: VecDeque::new(),
+      waiting: 0,
+      awake: None,
     }
   }
 
-  fn push(&mut self, delay: u32, a: Action) {
-    self.actions.push(DelayedActions(
-      (self.current_time + delay as u64, self.next_id),
-      a,
-    ));
-    self.next_id += 1;
+  fn push(&mut self, a: Action) {
+    self.actions.push_back(a);
+  }
+
+  fn push_async(&mut self, a: Action) {
+    self.waiting -= 1;
+    self.actions.push_back(a);
+    if let Some(tx) = &self.awake {
+      tx.send(()).unwrap();
+    }
   }
 
   fn pop(&mut self) -> Option<Action> {
-    let DelayedActions((d, _), a) = self.actions.pop()?;
-    if d > self.current_time {
-      std::thread::sleep(std::time::Duration::from_millis(d - self.current_time));
-      self.current_time = d;
-    }
-    Some(a)
+    self.actions.pop_front()
+  }
+
+  fn add_task(&mut self) {
+    self.waiting += 1;
+  }
+
+  fn has_action(&self) -> bool {
+    !self.actions.is_empty()
+  }
+
+  fn has_waiting(&self) -> bool {
+    self.waiting > 0
   }
 }
 
 struct Eval<'a> {
-  runtime: &'a Runtime,
+  code: &'a Code,
+  prim: Prim,
 }
 
 impl<'a> Eval<'a> {
-  pub fn new(runtime: &'a Runtime) -> Self {
-    Eval { runtime }
+  pub fn new(code: &'a Code) -> Self {
+    Eval {
+      code,
+      prim: Prim::new(),
+    }
   }
 
   fn eval_lit(&self, lit: &L) -> Value {
@@ -82,16 +73,16 @@ impl<'a> Eval<'a> {
     }
   }
 
-  fn apply(&self, fun: &Value, args: Vec<&Value>) -> Value {
+  fn apply(&mut self, fun: &Value, args: Vec<&Value>) -> Value {
     match fun {
       Value::Cl(loc, envs) => {
-        let fun = self.runtime.funs.get(loc).unwrap();
+        let fun = self.code.funs.get(loc).unwrap();
         if args.len() != fun.args.len() {
           eprintln!("expected {} args ({:?})", fun.args.len(), fun.args);
         }
         self.run(&fun.body, &args, &envs)
       }
-      Value::PrimFun(f) => f(args),
+      Value::PrimFun(f) => f(&mut self.prim, args),
       _ => {
         eprintln!("not a function {:?}", fun);
         Value::Action(Action::Stop)
@@ -99,12 +90,12 @@ impl<'a> Eval<'a> {
     }
   }
 
-  fn run(&self, body: &Body, args: &Vec<&Value>, envs: &Vec<Value>) -> Value {
+  fn run(&mut self, body: &Body, args: &Vec<&Value>, envs: &Vec<Value>) -> Value {
     let mut locals: Vec<Value> = Vec::new();
     for (i, e) in body.ls.iter().enumerate() {
       let v = match e {
         E::DefRef(loc) => {
-          let def = self.runtime.defs.get(loc).unwrap();
+          let def = self.code.defs.get(loc).unwrap();
           match def {
             D::Def(body) => self.run(body, &Vec::new(), &Vec::new()),
             D::Mod(_) => unimplemented!(),
@@ -126,7 +117,7 @@ impl<'a> Eval<'a> {
           eprintln!("hole!");
           Value::Action(Action::Stop)
         }
-        E::Prim(name) => prim_value(name),
+        E::Prim(name) => self.prim.prim_value(name),
       };
       locals.push(v);
     }
@@ -134,42 +125,93 @@ impl<'a> Eval<'a> {
     // TODO: tail call optimization
   }
 
-  fn process_action(&self, a: Action) {
-    let mut q = Scheduler::new(a);
-    while let Some(a) = q.pop() {
-      match a {
-        Action::Stop => {}
-        Action::Fork(actions) => {
-          for a in actions {
-            q.push(0, a);
+  fn run_action(&mut self, qu: Arc<Mutex<Scheduler>>, a: Action) {
+    match a {
+      Action::Stop => {}
+      Action::Fork(actions) => {
+        let mut q = qu.lock().unwrap();
+        for a in actions {
+          q.push(a);
+        }
+      }
+      Action::Call(f, args) => {
+        let args = args.iter().map(|v| v.clone()).collect();
+        let a = f(&mut self.prim, &args);
+        let mut q = qu.lock().unwrap();
+        q.push(a);
+      }
+      Action::App(fun, args) => {
+        let args = args.iter().collect();
+        match self.apply(&*fun, args) {
+          Value::Action(a) => {
+            let mut q = qu.lock().unwrap();
+            q.push(a)
           }
+          _ => {}
         }
-        Action::Call(f, args) => {
-          let args = args.iter().map(|v| v.clone()).collect();
-          q.push(0, f(&args));
-        }
-        Action::App(fun, args) => {
-          let args = args.iter().collect();
-          match self.apply(&*fun, args) {
-            Value::Action(a) => q.push(0, a),
-            _ => {}
-          }
-        }
-        Action::Delay(delay, a) => q.push(delay, *a),
+      }
+      Action::Async(Async(f)) => {
+        let qu2 = Arc::clone(&qu);
+        let handle = tokio::task::spawn(async move {
+          let a = f.await;
+          let mut q = qu2.lock().unwrap();
+          q.push_async(a);
+        });
+        let mut q = qu.lock().unwrap();
+        q.add_task();
       }
     }
   }
 
-  fn eval(&self, name: &str) {
-    let main_loc = self.runtime.lookup.get("main").unwrap();
-    let v = match self.runtime.defs.get(main_loc).unwrap() {
+  fn process_action(&mut self, a: Action) {
+    let mut squ = Scheduler::new();
+    squ.push(a);
+    let qu = Arc::new(Mutex::new(squ));
+    tokio::runtime::Runtime::new().unwrap().block_on(async {
+      loop {
+        loop {
+          let aqu = Arc::clone(&qu);
+          let sa = {
+            let mut q = aqu.lock().unwrap();
+            q.pop()
+          };
+          match sa {
+            Some(a) => self.run_action(Arc::clone(&qu), a),
+            None => break,
+          }
+        }
+        let aqu = Arc::clone(&qu);
+        let (has_action, has_waiting) = {
+          let q = aqu.lock().unwrap();
+          (q.has_action(), q.has_waiting())
+        };
+        if has_action {
+          continue;
+        }
+        if !has_waiting {
+          break;
+        }
+        let (tx, rx) = mpsc::channel();
+        let mut q = aqu.lock().unwrap();
+        q.awake = Some(tx);
+        drop(q);
+        rx.recv().unwrap();
+        let mut q = aqu.lock().unwrap();
+        q.awake = None;
+      }
+    })
+  }
+
+  fn eval(&mut self, name: &str) {
+    let main_loc = self.code.lookup.get("main").unwrap();
+    let v = match self.code.defs.get(main_loc).unwrap() {
       D::Def(body) => self.run(body, &Vec::new(), &Vec::new()),
       D::Mod(_) => {
         eprintln!("{} is a module", name);
         return;
       }
     };
-    fn default_print(args: &Vec<Value>) -> Action {
+    fn default_print(prim: &mut Prim, args: &Vec<Value>) -> Action {
       let v = &args[0];
       match v {
         Value::Unit() => println!("Result: ()"),
@@ -188,7 +230,7 @@ impl<'a> Eval<'a> {
   }
 }
 
-pub fn eval_main(runtime: &Runtime) {
-  let eval = Eval::new(runtime);
+pub fn eval_main(code: &Code) {
+  let mut eval = Eval::new(code);
   eval.eval("main");
 }

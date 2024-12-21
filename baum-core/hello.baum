@@ -12,6 +12,7 @@ store = prim "store"
 read = prim "read"
 write = prim "write"
 
+putln = |s k| print (concat s "\n") k
 println = |s k| print s |_| print "\n" k
 
 fix = |f| (|x| f (|y| (x x) y)) (|x| f (|y| (x x) y))
@@ -40,20 +41,20 @@ main2 =
   void
 
 p0 =
-  println "0: A" |_|
+  putln "0: A" |_|
   sleep 1000 |_|
-  println "0: B" |_|
+  putln "0: B" |_|
   sleep 1000 |_|
-  println "0: C" |_|
+  putln "0: C" |_|
   void
 
 p1 =
   sleep 500 |_|
-  println "1: A" |_|
+  putln "1: A" |_|
   sleep 1000 |_|
-  println "1: B" |_|
+  putln "1: B" |_|
   sleep 1000 |_|
-  println "1: C" |_|
+  putln "1: C" |_|
   void
 
 main3 = fork p0 p1
@@ -94,18 +95,35 @@ receive = |c k|
   s (|_| write c (right (right k)) |_| void) (|se| se (|x| k x) todo)
 
 sender = |c|
-  sleep 200 |_|
-  print "Sender\n" |_|
+  sleep 100 |_|
+  putln "Sender" |_|
   send c 5 |_|
-  print "Sent!\n" |_|
+  putln "Sent!" |_|
   void
 
 receiver = |c|
-  sleep 100 |_|
-  print "Receiver\n" |_|
+  sleep 200 |_|
+  putln "Receiver" |_|
   receive c |x|
-  print "Received!\n" |_|
+  putln "Received!" |_|
   println x |_|
   void
 
-main = chan |c| fork (receiver c) (sender c)
+main6 = chan |c| fork (receiver c) (sender c)
+
+
+
+repeater = fix |self| |s|
+  putln s |_|
+  sleep 1000 |_|
+  self s
+
+main7 =
+  fork (repeater "test") (
+  sleep 1000 |_|
+  putln "wait for input..." |_|
+  readline "Input: " |i|
+  putln (concat (concat "Hello, " i) "!") |_|
+  void)
+
+main = main7

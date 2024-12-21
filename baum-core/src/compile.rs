@@ -1,5 +1,5 @@
 use crate::types::code::*;
-use crate::types::runtime::*;
+use crate::types::tree::*;
 use std::collections::HashMap;
 
 #[derive(Debug, Clone)]
@@ -330,14 +330,14 @@ impl Compiler {
   }
 }
 
-pub fn compile(program: Vec<Decl>) -> Runtime {
+pub fn compile(program: Vec<Decl>) -> Code {
   let mut compiler = Compiler::new();
   for decl in program {
     if let Some((name, dl)) = compiler.decl(decl) {
       compiler.global.lookup.insert(name, dl);
     }
   }
-  Runtime {
+  Code {
     funs: compiler.funmap.funs,
     fun_count: compiler.funmap.next_fun,
     defs: compiler.global.defs,

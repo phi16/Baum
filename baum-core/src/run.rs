@@ -2,7 +2,7 @@ use crate::compile::*;
 use crate::eval::*;
 use crate::parse::*;
 use crate::types::code::*;
-use crate::types::runtime::*;
+use crate::types::tree::*;
 use std::collections::HashMap;
 
 fn traverse_decls(decls: &[Decl], name: &str) {
@@ -69,7 +69,7 @@ impl<'a> Dump<'a> {
       .join(", ")
   }
 
-  fn traverse_runtime(&self, runtime: &Runtime) {
+  fn traverse_runtime(&self, runtime: &Code) {
     println!("[Fun]");
     for loc in 0..runtime.fun_count {
       if let Some(fun) = runtime.funs.get(&FunLoc(loc)) {
