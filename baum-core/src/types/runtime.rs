@@ -57,6 +57,7 @@ pub struct Runtime {
   pub defs: HashMap<DefLoc, D>,
   pub def_count: u32,
   pub lookup: HashMap<String, DefLoc>,
+  pub errors: Vec<String>,
 }
 
 // eval

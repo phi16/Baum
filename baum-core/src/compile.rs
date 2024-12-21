@@ -37,6 +37,7 @@ impl FunMap {
 pub struct Compiler {
   pub global: Global,
   pub funmap: FunMap,
+  pub errors: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -49,6 +50,7 @@ pub enum VarRef {
 pub struct BodyEnv<'a> {
   pub global: &'a Global,
   pub funmap: &'a mut FunMap,
+  pub errors: &'a mut Vec<String>,
   pub env: HashMap<String, VarRef>,
   pub locals: Vec<E>,
   pub fv: Vec<Vec<Id>>,
@@ -56,7 +58,7 @@ pub struct BodyEnv<'a> {
 }
 
 impl<'a> BodyEnv<'a> {
-  fn new(global: &'a Global, funmap: &'a mut FunMap) -> Self {
+  fn new(global: &'a Global, funmap: &'a mut FunMap, errors: &'a mut Vec<String>) -> Self {
     BodyEnv {
       global,
       funmap,
@@ -64,7 +66,12 @@ impl<'a> BodyEnv<'a> {
       locals: Vec::new(),
       fv: Vec::new(),
       fv_env: HashMap::new(),
+      errors,
     }
+  }
+
+  fn compile_error(&mut self, msg: &str) {
+    self.errors.push(msg.to_string());
   }
 
   fn define(&mut self, e: E) -> OpLoc {
@@ -117,7 +124,7 @@ impl<'a> BodyEnv<'a> {
     match self.expr(expr) {
       VarRef::Local(l) => l,
       _ => {
-        eprintln!("expected local variable");
+        self.compile_error("expected local variable");
         self.define(E::Hole)
       }
     }
@@ -132,7 +139,7 @@ impl<'a> BodyEnv<'a> {
       if let VarRef::Module(m) = entry {
         env = m;
       } else {
-        eprintln!("expected module");
+        self.compile_error("expected module");
         return;
       }
     }
@@ -165,7 +172,7 @@ impl<'a> BodyEnv<'a> {
         return VarRef::Local(loc);
       }
       Expr::Lam(args, e) => {
-        let mut lam_env = BodyEnv::new(&self.global, &mut self.funmap);
+        let mut lam_env = BodyEnv::new(&self.global, self.funmap, self.errors);
         let args_name = args
           .into_iter()
           .enumerate()
@@ -209,7 +216,7 @@ impl<'a> BodyEnv<'a> {
         E::App(f, args)
       }
       Expr::Hole => {
-        eprintln!("hole found in expression");
+        eprintln!("Note: hole found in expression");
         E::Hole
       }
       Expr::Prim(p) => E::Prim(p),
@@ -267,19 +274,34 @@ impl Compiler {
         funs: HashMap::new(),
         next_fun: 0,
       },
+      errors: Vec::new(),
     }
   }
 
+  fn compile_error(&mut self, msg: &str) {
+    self.errors.push(msg.to_string());
+  }
+
   fn body(&mut self, expr: Expr) -> Body {
-    let mut env = BodyEnv::new(&self.global, &mut self.funmap);
+    let mut env = BodyEnv::new(&self.global, &mut self.funmap, &mut self.errors);
     let result = env.expr_val(expr);
-    if !env.fv.is_empty() {
-      eprintln!("free variables in body");
+    let fv = env.fv;
+    let ls = env.locals;
+    if !fv.is_empty() {
+      let s = fv
+        .into_iter()
+        .map(|ids| {
+          ids
+            .into_iter()
+            .map(|id| id.as_str().to_string())
+            .collect::<Vec<_>>()
+            .join(".")
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
+      self.compile_error(&format!("free variables in body: {}", s));
     }
-    Body {
-      ls: env.locals,
-      result,
-    }
+    Body { ls, result }
   }
 
   fn decl(&mut self, decl: Decl) -> Option<(String, DefLoc)> {
@@ -293,7 +315,7 @@ impl Compiler {
         for decl in decls {
           if let Some((name, dl)) = self.decl(decl) {
             if m.contains_key(&name) {
-              eprintln!("duplicate declaration: {}", name);
+              self.compile_error(&format!("duplicate declaration: {}", name));
             } else {
               m.insert(name.to_string(), dl);
             }
@@ -321,5 +343,6 @@ pub fn compile(program: Vec<Decl>) -> Runtime {
     defs: compiler.global.defs,
     def_count: compiler.global.next_def,
     lookup: compiler.global.lookup,
+    errors: compiler.errors,
   }
 }

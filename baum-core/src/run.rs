@@ -111,13 +111,20 @@ impl<'a> Dump<'a> {
 
 pub fn run(code: &str) {
   let program = parse(code);
-  traverse_decls(&program, "");
+  // traverse_decls(&program, "");
   println!("");
   let runtime = compile(program);
+  if runtime.errors.len() > 0 {
+    println!("[Compile Error]");
+    for e in &runtime.errors {
+      println!("- {}", e);
+    }
+    return;
+  }
   let dumper = Dump {
     funs: &runtime.funs,
   };
-  dumper.traverse_runtime(&runtime);
+  // dumper.traverse_runtime(&runtime);
   println!("");
   println!("[Eval]");
   eval_main(&runtime);
