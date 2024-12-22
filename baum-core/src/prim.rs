@@ -31,14 +31,14 @@ impl Prim {
 
   fn fn_add(&mut self, args: Vec<&Value>) -> Value {
     if args.len() != 2 {
-      eprintln!("expected 2 args");
+      eprintln!("add: expected 2 args");
       return Value::Unit();
     }
     match (&args[0], &args[1]) {
       (&Value::Int(i1), &Value::Int(i2)) => Value::Int(i1 + i2),
       (&Value::Float(f1), &Value::Float(f2)) => Value::Float(f1 + f2),
       _ => {
-        eprintln!("expected int or float");
+        eprintln!("add: expected int or float");
         Value::Unit()
       }
     }
@@ -46,33 +46,47 @@ impl Prim {
 
   fn fn_concat(&mut self, args: Vec<&Value>) -> Value {
     if args.len() != 2 {
-      eprintln!("expected 2 args");
+      eprintln!("concat: expected 2 args");
       return Value::Unit();
     }
     match (&args[0], &args[1]) {
       (&Value::String(ref s1), &Value::String(ref s2)) => Value::String(s1.clone() + s2),
       _ => {
-        eprintln!("expected string");
+        eprintln!("concat: expected string");
         Value::Unit()
       }
     }
   }
 
-  fn fn_is0(&mut self, args: Vec<&Value>) -> Value {
-    if args.len() != 3 {
-      eprintln!("expected 3 args");
+  fn fn_eq(&mut self, args: Vec<&Value>) -> Value {
+    if args.len() != 4 {
+      eprintln!("eq: expected 4 args");
       return Value::Unit();
     }
-    match args[0] {
-      Value::Int(i) => {
-        if *i == 0 {
-          args[1].clone()
-        } else {
+    match (args[0], args[1]) {
+      (Value::Int(i0), Value::Int(i1)) => {
+        if *i0 == *i1 {
           args[2].clone()
+        } else {
+          args[3].clone()
+        }
+      }
+      (Value::Float(f0), Value::Float(f1)) => {
+        if *f0 == *f1 {
+          args[2].clone()
+        } else {
+          args[3].clone()
+        }
+      }
+      (Value::String(s0), Value::String(s1)) => {
+        if *s0 == *s1 {
+          args[2].clone()
+        } else {
+          args[3].clone()
         }
       }
       _ => {
-        eprintln!("expected int");
+        eprintln!("eq: expected int");
         Value::Unit()
       }
     }
@@ -80,13 +94,13 @@ impl Prim {
 
   fn fn_decr(&mut self, args: Vec<&Value>) -> Value {
     if args.len() != 1 {
-      eprintln!("expected 1 arg");
+      eprintln!("decr: expected 1 arg");
       return Value::Unit();
     }
     match args[0] {
       Value::Int(i) => Value::Int(i - 1),
       _ => {
-        eprintln!("expected int");
+        eprintln!("decr: expected int");
         Value::Unit()
       }
     }
@@ -94,7 +108,7 @@ impl Prim {
 
   fn action_print(&mut self, args: &Vec<Value>) -> Action {
     if args.len() != 2 {
-      eprintln!("expected 2 args");
+      eprintln!("print: expected 2 args");
       return Action::Stop;
     }
     let s = match args[0] {
@@ -128,13 +142,13 @@ impl Prim {
 
   fn action_readline(&mut self, args: &Vec<Value>) -> Action {
     if args.len() != 2 {
-      eprintln!("expected 2 arg");
+      eprintln!("readline: expected 2 arg");
       return Action::Stop;
     }
     let prompt = match args[0] {
       Value::String(ref s) => s.clone(),
       _ => {
-        eprintln!("expected string");
+        eprintln!("readline: expected string");
         return Action::Stop;
       }
     };
@@ -144,7 +158,7 @@ impl Prim {
     Action::Async(Async(Box::pin(async move {
       let mut srl = some_rl.lock().await;
       if srl.is_some() {
-        panic!("readline already in use");
+        panic!("readline: readline already in use");
       }
       let (mut rl, sw) = Readline::new(prompt).unwrap();
       srl.replace(rl);
@@ -171,13 +185,13 @@ impl Prim {
 
   fn action_fork(&mut self, args: &Vec<Value>) -> Action {
     if args.len() != 2 {
-      eprintln!("expected 2 args");
+      eprintln!("fork: expected 2 args");
       return Action::Stop;
     }
     match (&args[0], &args[1]) {
       (Value::Action(a0), Value::Action(a1)) => Action::Fork(vec![a0.clone(), a1.clone()]),
       _ => {
-        eprintln!("expected action");
+        eprintln!("fork: expected action");
         Action::Stop
       }
     }
@@ -185,7 +199,7 @@ impl Prim {
 
   fn action_sleep(&mut self, args: &Vec<Value>) -> Action {
     if args.len() != 2 {
-      eprintln!("expected 2 args");
+      eprintln!("sleep: expected 2 args");
       return Action::Stop;
     }
     match (&args[0], &args[1]) {
@@ -197,7 +211,7 @@ impl Prim {
         })))
       }
       _ => {
-        eprintln!("expected int and action");
+        eprintln!("sleep: expected int and action");
         Action::Stop
       }
     }
@@ -205,7 +219,7 @@ impl Prim {
 
   fn action_store(&mut self, args: &Vec<Value>) -> Action {
     if args.len() != 2 {
-      eprintln!("expected 2 args");
+      eprintln!("store: expected 2 args");
       return Action::Stop;
     }
     let store = Arc::new(Mutex::new(args[0].clone()));
@@ -215,7 +229,7 @@ impl Prim {
 
   fn action_read(&mut self, args: &Vec<Value>) -> Action {
     if args.len() != 2 {
-      eprintln!("expected 2 args");
+      eprintln!("read: expected 2 args");
       return Action::Stop;
     }
     match args[0] {
@@ -225,7 +239,7 @@ impl Prim {
         Action::App(Box::new(args[1].clone()), vec![v])
       }
       _ => {
-        eprintln!("expected store");
+        eprintln!("read: expected store");
         Action::Stop
       }
     }
@@ -233,7 +247,7 @@ impl Prim {
 
   fn action_write(&mut self, args: &Vec<Value>) -> Action {
     if args.len() != 3 {
-      eprintln!("expected 3 args");
+      eprintln!("write: expected 3 args");
       return Action::Stop;
     }
     match args[0] {
@@ -243,7 +257,7 @@ impl Prim {
         Action::App(Box::new(args[2].clone()), vec![Value::Unit()])
       }
       _ => {
-        eprintln!("expected store");
+        eprintln!("write: expected store");
         Action::Stop
       }
     }
@@ -263,7 +277,7 @@ impl Prim {
       _ => Value::PrimFun(match name {
         "add" => Prim::fn_add,
         "concat" => Prim::fn_concat,
-        "is0" => Prim::fn_is0,
+        "eq" => Prim::fn_eq,
         "decr" => Prim::fn_decr,
         "print" => Prim::fn_print,
         "readline" => Prim::fn_readline,
