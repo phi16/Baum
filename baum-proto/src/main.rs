@@ -1,4 +1,4 @@
-use baum_core::run::*;
+use baum_proto::run::*;
 use std::env;
 use std::fs::File;
 use std::io::Read;
