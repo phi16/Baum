@@ -1,0 +1,16 @@
+U = prim "U"
+Int = prim "Int"
+Int2 = prim "Int"
+f = [x: Int] x
+k = ([z] z): Int -> Int2
+v = 3
+Str = prim "String"
+va = "a" : Str
+
+Bool = _ : U
+false = _ : Bool
+true = _ : Bool
+
+bool = _ : (a: Bool -> U) -> a false -> a true -> (x: Bool) -> a x
+h = [x: Bool] bool ([u: Bool] U) Int Str x
+k = [u: Bool] bool h 3 "a" u
