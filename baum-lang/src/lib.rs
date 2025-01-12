@@ -14,5 +14,6 @@ mod tests {
     "#;
     let res = parse::parse(str);
     eprintln!("Final Result: {:?}", res);
+    assert!(false);
   }
 }

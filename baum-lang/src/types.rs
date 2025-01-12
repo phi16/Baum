@@ -39,7 +39,7 @@ pub enum Context<I, E> {
 type Syntax = ();
 
 #[derive(Debug, Clone)]
-pub enum ExprF<S, I, D, E> {
+pub enum ExprF<S, I, Ds, E> {
   Prim(S),
   Lit(Literal<S>),
   Var(I),
@@ -65,14 +65,14 @@ pub enum ExprF<S, I, D, E> {
   Mu(I, E, Vec<(I, E)>),
   Nu(I, E, Vec<(I, E)>),
 
-  Let(Vec<D>, E),
-  Where(E, Vec<D>),
+  Let(Ds, E),
+  Where(E, Ds),
 }
 
 #[derive(Debug, Clone)]
-pub enum DeclF<I, D, E> {
+pub enum DeclF<I, D, Ds, E> {
   Context(Context<I, E>, D),
-  Module(I, Vec<D>),
+  Module(Option<I>, Ds),
   Def(Def<I, E>),
   Syntax(Syntax),
   Open(Mod<I>),
@@ -90,8 +90,33 @@ impl<'a> Id<'a> {
   }
 }
 
-#[derive(Debug, Clone)]
-pub struct Expr<'a>(pub ExprF<&'a str, Id<'a>, Box<Decl<'a>>, Box<Expr<'a>>>);
+#[derive(Debug, Clone, Copy)]
+pub enum TokenPos {
+  Pos(u32, u16),
+  EoL(u32),
+  EoF,
+}
+
+impl TokenPos {
+  pub fn to_string(&self) -> String {
+    match self {
+      TokenPos::Pos(ln, col) => format!("L{} C{}", ln, col),
+      TokenPos::EoL(ln) => format!("End of L{}", ln),
+      TokenPos::EoF => "EoF".to_string(),
+    }
+  }
+}
 
 #[derive(Debug, Clone)]
-pub struct Decl<'a>(pub DeclF<&'a str, Box<Decl<'a>>, Box<Expr<'a>>>);
+pub struct Expr<'a>(
+  pub ExprF<&'a str, Id<'a>, Box<Vec<Decl<'a>>>, Box<Expr<'a>>>,
+  pub TokenPos,
+);
+
+#[derive(Debug, Clone)]
+pub struct Decl<'a>(
+  pub DeclF<Id<'a>, Box<Decl<'a>>, Box<Vec<Decl<'a>>>, Box<Expr<'a>>>,
+  pub TokenPos,
+);
+
+pub type Ctx<'a> = Context<Id<'a>, Box<Expr<'a>>>;

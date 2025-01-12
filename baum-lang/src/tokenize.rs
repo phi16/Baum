@@ -1,3 +1,4 @@
+use crate::types::TokenPos;
 use core::iter::Peekable;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -9,8 +10,6 @@ pub enum TokenType {
   String,  // "Hello, World!", "a\nb"
   Symbol,  // ., =, [, }
 }
-
-type TokenPos = (u32, u16);
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Copy)]
 pub enum Indent {
@@ -65,7 +64,7 @@ impl<'a, I: Iterator<Item = CharLoc<'a>>> Tokenizer<'a, I> {
     Token {
       str,
       ty,
-      pos: (loc.ln, loc.col + loc.indent),
+      pos: TokenPos::Pos(loc.ln, loc.col + loc.indent),
       indent: if loc.col == 0 {
         Indent::Head(loc.indent)
       } else {
@@ -91,19 +90,14 @@ impl<'a, I: Iterator<Item = CharLoc<'a>>> Tokenizer<'a, I> {
     self.make_token_internal(l0, str, ty)
   }
 
-  fn add_error(&mut self, l: &Loc<'a>, msg: &str) {
-    eprintln!("L{} C{}: {}", l.ln + 1, l.col + 1, msg);
-    self.errors.push(msg.to_string());
+  fn add_error(&mut self, pos: TokenPos, msg: &str) {
+    let s = format!("{}: {}", pos.to_string(), msg);
+    eprintln!("{}", s);
+    self.errors.push(s);
   }
 
-  fn add_error_eol(&mut self, ln: u32, msg: &str) {
-    eprintln!("End of L{}: {}", ln + 1, msg);
-    self.errors.push(msg.to_string());
-  }
-
-  fn add_error_eof(&mut self, msg: &str) {
-    eprintln!("End of file: {}", msg);
-    self.errors.push(msg.to_string());
+  fn add_error_loc(&mut self, l: &Loc<'a>, msg: &str) {
+    self.add_error(TokenPos::Pos(l.ln, l.col), msg);
   }
 
   fn skip_space(&mut self) {
@@ -112,7 +106,7 @@ impl<'a, I: Iterator<Item = CharLoc<'a>>> Tokenizer<'a, I> {
         let c = *c;
         if c != ' ' {
           let l = l.clone();
-          self.add_error(&l, &format!("invalid whitespace character: {:?}", c));
+          self.add_error_loc(&l, &format!("invalid whitespace character: {:?}", c));
         }
         self.iter.next();
       } else {
@@ -131,7 +125,7 @@ impl<'a, I: Iterator<Item = CharLoc<'a>>> Tokenizer<'a, I> {
         self.iter.next();
       }
     } else {
-      self.add_error(&l, "unterminated escape character");
+      self.add_error_loc(&l, "unterminated escape character");
     }
   }
 
@@ -145,11 +139,14 @@ impl<'a, I: Iterator<Item = CharLoc<'a>>> Tokenizer<'a, I> {
     let l = l0.col as usize + c0.len_utf8();
     while let Some((l1, c1)) = self.iter.peek() {
       if l0.ln != l1.ln {
-        if c0 == '\'' {
-          self.add_error_eol(l0.ln, "unterminated character literal");
-        } else {
-          self.add_error_eol(l0.ln, "unterminated string literal");
-        }
+        self.add_error(
+          TokenPos::EoL(l0.ln),
+          if c0 == '\'' {
+            "unterminated character literal"
+          } else {
+            "unterminated string literal"
+          },
+        );
         return self.make_token_addr(l, &l0, ty);
       }
       if c0 == *c1 {
@@ -163,7 +160,7 @@ impl<'a, I: Iterator<Item = CharLoc<'a>>> Tokenizer<'a, I> {
         self.iter.next();
       }
     }
-    self.add_error_eof("unterminated character or string literal");
+    self.add_error(TokenPos::EoF, "unterminated character or string literal");
     return self.make_token_addr(l, &l0, ty);
   }
 
@@ -250,7 +247,7 @@ impl<'a, I: Iterator<Item = CharLoc<'a>>> Tokenizer<'a, I> {
     }
     match s {
       State::Exp | State::ExpSign => {
-        self.add_error(&l0, "incomplete number literal");
+        self.add_error_loc(&l0, "incomplete number literal");
       }
       _ => {}
     }
@@ -288,7 +285,7 @@ impl<'a, I: Iterator<Item = (Loc<'a>, char)>> Iterator for Tokenizer<'a, I> {
       return Some(self.make_token(&l0, TokenType::Symbol));
     }
     if ty == CharType::Special {
-      if (c0 == '\'' || c0 == '"') {
+      if c0 == '\'' || c0 == '"' {
         return Some(self.string_literal());
       }
     }
@@ -304,7 +301,7 @@ impl<'a, I: Iterator<Item = (Loc<'a>, char)>> Iterator for Tokenizer<'a, I> {
       if c1.is_whitespace() {
         let c1 = *c1;
         if c1 != ' ' {
-          self.add_error(&l0, &format!("invalid whitespace character: {:?}", c1));
+          self.add_error_loc(&l0, &format!("invalid whitespace character: {:?}", c1));
         }
         break;
       }
