@@ -102,7 +102,7 @@ impl<'a> CheckEnv<'a> {
   }
 
   fn equiv(&mut self, a: &Val, b: &Val) -> bool {
-    println!("{} - equiv: {:?} == {:?}", self.indent, a, b);
+    // println!("{} - equiv: {:?} == {:?}", self.indent, a, b);
     let indent = self.indent.clone();
     self.indent += "  ";
     let r = self.equiv_impl(a, b);
@@ -169,15 +169,15 @@ impl<'a> CheckEnv<'a> {
   }
 
   fn check(&mut self, expr: &Expr, ty: &Val) -> (Val, Val) {
-    println!("{} - check: {:?}: {:?}", self.indent, expr, ty);
+    // println!("{} - check: {:?}: {:?}", self.indent, expr, ty);
     let indent = self.indent.clone();
     self.indent += "  ";
     let (v, t) = self.check_impl(expr, ty);
     self.indent = indent;
-    println!(
+    /* println!(
       "{} - CHECKED: {:?} = {:?}: {:?} = {:?}",
       self.indent, expr, v, t, ty
-    );
+    ); */
     (v, t)
   }
 
@@ -237,12 +237,12 @@ impl<'a> CheckEnv<'a> {
   }
 
   fn synth(&mut self, expr: &Expr) -> (Val, Val) {
-    println!("{} - synth: {:?}", self.indent, expr);
+    // println!("{} - synth: {:?}", self.indent, expr);
     let indent = self.indent.clone();
     self.indent += "  ";
     let (v, t) = self.synth_impl(expr);
     self.indent = indent;
-    println!("{} - SYNTHED: {:?} = {:?}: {:?}", self.indent, expr, v, t);
+    // println!("{} - SYNTHED: {:?} = {:?}: {:?}", self.indent, expr, v, t);
     (v, t)
   }
 
