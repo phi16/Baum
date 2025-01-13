@@ -269,7 +269,7 @@ fn get_char_type(c: char) -> CharType {
     'a'..='z' | 'A'..='Z' => CharType::Alpha,
     '0'..='9' => CharType::Number,
     '\'' | '"' => CharType::Special,
-    '.' | ',' | ':' | '(' | ')' | '{' | '}' | '[' | ']' => CharType::Reserved,
+    '.' | ',' | ':' | ';' | '(' | ')' | '{' | '}' | '[' | ']' => CharType::Reserved,
     _ => CharType::Symbol,
   }
 }
@@ -323,6 +323,16 @@ pub fn tokenize<'a>(code: &'a str) -> Result<Vec<Token<'a>>, Vec<String>> {
     .map(|(ln, line)| {
       let ln = ln as u32;
       let (spaces, rest) = line.split_at(line.chars().take_while(|c| *c == ' ').count());
+      let rest = match rest.find(" --") {
+        Some(i) => &rest[..i],
+        None => {
+          if rest.len() >= 2 && &rest[0..2] == "--" {
+            ""
+          } else {
+            rest
+          }
+        }
+      };
       let indent = spaces.len() as u16;
       rest.char_indices().map(move |(col, c)| {
         let col = col as u16;
@@ -356,7 +366,9 @@ fn test() {
   let str0 = r#"
     x
     d "a\nb"
-    da p + λ(x: X) → x = x
+    da p + λ(x: X) → x = x -- mochi
+    -- comment
+-- head comment
     141
       312 0x56c 0b1010 0o7
       1e+6 1e-6 1.12e+6 1.g
