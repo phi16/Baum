@@ -2,13 +2,93 @@ use crate::tokenize::*;
 use crate::types::*;
 
 use core::iter::Peekable;
+use std::collections::BTreeMap;
 use std::vec::IntoIter;
+
+struct SyntaxDatabase {
+  precMap: BTreeMap<Precedence, Vec<Box<Syntax>>>,
+}
+
+macro_rules! syntax_elem {
+  ($s:literal) => {
+    SyntaxElement::Str($s.to_string())
+  };
+  (_) => {
+    SyntaxElement::Special
+  };
+  ($i:tt) => {
+    SyntaxElement::Expr(stringify!($i).to_string())
+  };
+}
+
+macro_rules! syntax_elems {
+  ($($e:tt),+) => {
+    vec![$(syntax_elem!($e)),+]
+  };
+}
+
+#[cfg(test)]
+#[test]
+fn syntax_macro_test() {
+  let elems = syntax_elems!["λ", x, ".", e, _];
+  assert_eq!(
+    elems,
+    vec![
+      SyntaxElement::Str("λ".to_string()),
+      SyntaxElement::Expr("x".to_string()),
+      SyntaxElement::Str(".".to_string()),
+      SyntaxElement::Expr("e".to_string()),
+      SyntaxElement::Special
+    ]
+  );
+}
+
+impl SyntaxDatabase {
+  fn default() -> Self {
+    let mut db = SyntaxDatabase {
+      precMap: BTreeMap::new(),
+    };
+    let root = vec![1, 0];
+    db.def(&root, Fixity::Prefix, syntax_elems!["λ", "(", _, ")", e]);
+    db.def(&root, Fixity::Prefix, syntax_elems!["λ", "{", _, "}", e]);
+    db.def(&root, Fixity::Prefix, syntax_elems!["Π", "(", _, ")", e]);
+    db.def(&root, Fixity::Prefix, syntax_elems!["Π", "{", _, "}", e]);
+    db.def(&root, Fixity::Closed, syntax_elems!["(", _, ")"]);
+    db.def(&root, Fixity::Closed, syntax_elems!["{", _, "}"]);
+    db.def(&root, Fixity::Closed, syntax_elems!["Σ", "(", _, ")"]);
+    db.def(&root, Fixity::Closed, syntax_elems!["Σ", "{", _, "}"]);
+    db.def(&root, Fixity::Prefix, syntax_elems!["σ", "{", _, "}", e]);
+    db.def(&root, Fixity::Closed, syntax_elems!["μ", "(", _, ")", _]);
+    db.def(&root, Fixity::Closed, syntax_elems!["ν", "(", _, ")", _]);
+    db.def(&root, Fixity::Prefix, syntax_elems!["let", _, "in", e]);
+    db.def(&vec![1, 1], Fixity::Postfix, syntax_elems![e, "where", _]);
+    db.def(&vec![4, 0], Fixity::InfixL, syntax_elems![e, e]);
+    db.def(&vec![4, 1], Fixity::Postfix, syntax_elems![e, ".", _]);
+
+    db.def(&vec![2, 1], Fixity::InfixL, syntax_elems![e, "+", e]);
+    db.def(&vec![2, 2], Fixity::InfixL, syntax_elems![e, "*", e]);
+    db.def(&vec![2, 3], Fixity::Prefix, syntax_elems!["-", e]);
+    db.def(&vec![2, 4], Fixity::Postfix, syntax_elems![e, "!"]);
+    db
+  }
+
+  fn def(&mut self, prec: &Precedence, fixity: Fixity, elems: Vec<SyntaxElement>) {
+    self.add(Syntax::new(prec.clone(), fixity, elems));
+  }
+
+  fn add(&mut self, s: Syntax) {
+    let prec = s.prec.clone();
+    let vec = self.precMap.entry(prec).or_insert(Vec::new());
+    vec.push(Box::new(s));
+  }
+}
 
 struct Parser<'a> {
   iter: Peekable<IntoIter<Token<'a>>>,
   indent: Indent,
   last_eol: TokenPos,
   errors: Vec<String>,
+  syntax: SyntaxDatabase,
 }
 
 impl<'a> Parser<'a> {
@@ -18,6 +98,7 @@ impl<'a> Parser<'a> {
       indent: Indent::Base,
       last_eol: TokenPos::EoL(0),
       errors: Vec::new(),
+      syntax: SyntaxDatabase::default(),
     }
   }
 
@@ -98,36 +179,34 @@ impl<'a> Parser<'a> {
     }
   }
 
-  fn context(&mut self) -> Option<Context<'a>> {
-    let id = self.expect_id()?;
-    self.expect_symbol(":")?;
-    let e = self.expr_or_hole();
-    Some(Context::Ref(id, Box::new(e)))
-  }
-
   fn prim(&mut self) -> Option<Expr<'a>> {
     let t = self.peek()?;
+    let pos = t.pos;
     let lit = match t.ty {
       TokenType::Number => Literal::Num(t.str),
       TokenType::Char => Literal::Chr(t.str),
       TokenType::String => Literal::Str(t.str),
+      TokenType::Keyword => {
+        if t.str == "prim" {
+          self.next();
+          match self.peek() {
+            Some(t) if t.ty == TokenType::String => Literal::Prim(t.str),
+            _ => {
+              let pos = self.pos();
+              self.add_error(pos, "prim: expected primitive name");
+              Literal::Prim("")
+            }
+          }
+        } else if t.str == "_" {
+          Literal::Hole
+        } else {
+          return None;
+        }
+      }
       _ => return None,
     };
-    let pos = t.pos;
     self.next();
     return Some(Expr(ExprF::Lit(lit), pos));
-  }
-
-  fn expr(&mut self) -> Option<Expr<'a>> {
-    self.prim()
-  }
-
-  fn expr_or_hole(&mut self) -> Expr<'a> {
-    let pos = self.pos();
-    match self.expr() {
-      Some(e) => e,
-      None => Expr(ExprF::Lit(Literal::Hole), pos),
-    }
   }
 
   fn ids(&mut self) -> Vec<Id<'a>> {
@@ -148,14 +227,21 @@ impl<'a> Parser<'a> {
     ids
   }
 
+  fn context(&mut self) -> Option<Context<'a>> {
+    let id = self.expect_id()?;
+    self.expect_symbol(":")?;
+    let e = self.expr_or_hole();
+    Some(Context::Ref(id, Box::new(e)))
+  }
+
   fn def(&mut self) -> Option<Def<'a>> {
     let outer_indent = self.indent;
     let indent = match self.peek() {
       Some(t) => t.indent,
       None => return None,
     };
-    self.set_indent(indent);
     let id = self.expect_id()?;
+    self.set_indent(indent);
     let def = self.def_rest(id);
     self.indent = outer_indent;
     def
@@ -252,12 +338,46 @@ impl<'a> Parser<'a> {
     })
   }
 
+  fn expr(&mut self) -> Option<Expr<'a>> {
+    // P' = Closed
+    //    | P Non P
+    //    | (Prefix | P Right)+ P
+    //    | P (Postfix | Left P)+
+
+    // P' = Closed
+    //    | Prefix (Prefix* P) (Right Prefix* P)*
+    //    | P Non P
+    //    | P Right (Prefix* P) (Right Prefix* P)*
+    //    | P Left P (Postfix | Left P)*
+    //    | P Postfix (Postfix | Left P)*
+    //    | Db
+
+    for syn in &self.syntax.precMap {
+      println!("{:?}", syn);
+    }
+    unimplemented!()
+
+    // self.prim()
+  }
+
+  fn expr_or_hole(&mut self) -> Expr<'a> {
+    let pos = self.pos();
+    match self.expr() {
+      Some(e) => e,
+      None => Expr(ExprF::Lit(Literal::Hole), pos),
+    }
+  }
+
   fn decl(&mut self) -> Option<Decl<'a>> {
     let t = self.peek()?.clone();
     match t.ty {
       TokenType::Keyword => {
         if t.str == "syntax" {
+          let outer_indent = self.indent;
+          self.set_indent(t.indent);
           // syntax
+          unimplemented!();
+          self.indent = outer_indent;
           unimplemented!()
         }
         if t.str == "open" {

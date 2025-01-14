@@ -2,6 +2,7 @@ type Mod<I> = Vec<I>;
 
 #[derive(Debug, Clone)]
 pub enum Literal<S> {
+  Prim(S),
   Num(S),
   Chr(S),
   Str(S),
@@ -36,11 +37,45 @@ pub enum ContextF<I, E> {
   Ref(I, E),
 }
 
-type Syntax = ();
+pub type Precedence = Vec<u16>;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Fixity {
+  InfixN,
+  InfixL,
+  InfixR,
+  Prefix,
+  Postfix,
+  Closed,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SyntaxElement {
+  Str(String),
+  Id(String),
+  Expr(String),
+  Special,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Syntax {
+  pub prec: Precedence,
+  pub fixity: Fixity,
+  pub elems: Vec<SyntaxElement>,
+}
+
+impl Syntax {
+  pub fn new(prec: Precedence, fixity: Fixity, elems: Vec<SyntaxElement>) -> Self {
+    Syntax {
+      prec,
+      fixity,
+      elems,
+    }
+  }
+}
 
 #[derive(Debug, Clone)]
 pub enum ExprF<S, I, Ds, E> {
-  Prim(S),
   Lit(Literal<S>),
   Var(I),
 
@@ -222,8 +257,8 @@ impl Pretty {
 
   pub fn e(&mut self, e: &Expr) -> &mut Self {
     match &e.0 {
-      ExprF::Prim(n) => self.s("prim ").s(n),
       ExprF::Lit(l) => match l {
+        Literal::Prim(n) => self.s("prim ").s(n),
         Literal::Num(n) => self.s(n),
         Literal::Chr(c) => self.s("'").s(c).s("'"),
         Literal::Str(s) => self.s("\"").s(s).s("\""),

@@ -52,7 +52,7 @@ impl<'a, I: Iterator<Item = CharLoc<'a>>> Tokenizer<'a, I> {
   fn make_token_internal(&self, loc: &Loc<'a>, str: &'a str, ty_base: TokenType) -> Token<'a> {
     let ty = if ty_base == TokenType::Ident {
       match str {
-        "prim" | "let" | "in" | "where" | "syntax" | "Σ" | "Π" | "λ" | "σ" | "_" => {
+        "prim" | "let" | "in" | "where" | "syntax" | "λ" | "Π" | "Σ" | "σ" | "μ" | "ν" | "_" => {
           TokenType::Keyword
         }
         "=" => TokenType::Symbol,
@@ -305,9 +305,12 @@ impl<'a, I: Iterator<Item = (Loc<'a>, char)>> Iterator for Tokenizer<'a, I> {
         }
         break;
       }
-      let ty1 = get_char_type(*c1);
-      if ty1 == CharType::Reserved || ty1 == CharType::Special {
-        break;
+      // underscore and prime is allowed to use in identifier
+      if *c1 != '_' && *c1 != '\'' {
+        let ty1 = get_char_type(*c1);
+        if ty1 == CharType::Reserved || ty1 == CharType::Special {
+          break;
+        }
       }
       self.iter.next();
     }
