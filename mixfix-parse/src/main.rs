@@ -187,7 +187,7 @@ impl Parser {
     let mut parsed_pos = 0;
     for s in pres {
       self.pos = pos;
-      match self.decl_try(&s) {
+      match self.decl_try(&s, Vec::new()) {
         Some(tree) => trees.push(tree),
         None => continue,
       }
@@ -224,7 +224,7 @@ impl Parser {
       let mut parsed_pos = 0;
       for s in ops {
         self.pos = pos;
-        match self.decl2_try(&tree, &s) {
+        match self.decl_try(&s, vec![tree.clone()]) {
           Some(t) => trees.push(t),
           None => continue,
         }
@@ -243,40 +243,17 @@ impl Parser {
     }
   }
 
-  fn decl_try(&mut self, s: &SyntaxDecl) -> Option<Tree> {
+  fn decl_try(&mut self, s: &SyntaxDecl, read_elems: Vec<Tree>) -> Option<Tree> {
+    self.log(&format!("decl_try: {}", decl_simp(s)));
     self.push();
+    let skip_count = read_elems.len();
     let mut tree = Tree {
       syntax: s.clone(),
-      elems: Vec::new(),
+      elems: read_elems,
     };
     let right = s.right.clone();
     let last_index = s.syntax.len() - 1;
-    for (i, s) in s.syntax.iter().enumerate() {
-      let last = i == last_index;
-      let elem_base_p = if last {
-        right.clone()
-      } else {
-        Precedence::Initial
-      };
-      match self.syntax_try(s, &elem_base_p)? {
-        Some(t) => tree.elems.push(t),
-        None => {}
-      }
-    }
-    self.pop();
-    Some(tree)
-  }
-
-  fn decl2_try(&mut self, t: &Tree, s: &SyntaxDecl) -> Option<Tree> {
-    self.log(&format!("decl2_try: {}, {}", tree_simp(t), decl_simp(s)));
-    self.push();
-    let mut tree = Tree {
-      syntax: s.clone(),
-      elems: vec![t.clone()],
-    };
-    let right = s.right.clone();
-    let last_index = s.syntax.len() - 1;
-    for (i, s) in s.syntax.iter().enumerate().skip(1) {
+    for (i, s) in s.syntax.iter().enumerate().skip(skip_count) {
       let last = i == last_index;
       let elem_base_p = if last {
         right.clone()
@@ -290,7 +267,7 @@ impl Parser {
     }
     self.pop();
     self.log(&format!(
-      "decl2_try result: {:?} {:?}",
+      "decl_try result: {:?} {:?}",
       decl_simp(s),
       tree_simp(&tree)
     ));
@@ -387,7 +364,7 @@ fn main() {
   parse("1 + 2 * 3");
   parse("1 * 2 + 3");
   parse("- 1 + 2 + 3 * 4 ! -> 5 ^ 6 ^ 7");
-  parse("1 + 2 [ 3 * 4 ] - 5 - 6");
-  // parse("1.x.x");
+  parse("1 + 2 [ 3 * 4 ] - 5 - 6 ^ 7 ^ 8");
+  parse("1.x.x");
   // parse("1.x 2.x 3");
 }
