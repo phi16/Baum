@@ -1,90 +1,11 @@
+use crate::mixfix::*;
+use crate::pretty::*;
 use crate::tokenize::*;
 use crate::types::*;
 
-use core::iter::Peekable;
-use std::collections::BTreeMap;
-use std::vec::IntoIter;
-
-struct SyntaxDatabase {
-  precMap: BTreeMap<Precedence, Vec<Box<Syntax>>>,
-}
-
-macro_rules! syntax_elem {
-  ($s:literal) => {
-    SyntaxElement::Str($s.to_string())
-  };
-  (_) => {
-    SyntaxElement::Special
-  };
-  ($i:tt) => {
-    SyntaxElement::Expr(stringify!($i).to_string())
-  };
-}
-
-macro_rules! syntax_elems {
-  ($($e:tt),+) => {
-    vec![$(syntax_elem!($e)),+]
-  };
-}
-
-#[cfg(test)]
-#[test]
-fn syntax_macro_test() {
-  let elems = syntax_elems!["λ", x, ".", e, _];
-  assert_eq!(
-    elems,
-    vec![
-      SyntaxElement::Str("λ".to_string()),
-      SyntaxElement::Expr("x".to_string()),
-      SyntaxElement::Str(".".to_string()),
-      SyntaxElement::Expr("e".to_string()),
-      SyntaxElement::Special
-    ]
-  );
-}
-
-impl SyntaxDatabase {
-  fn default() -> Self {
-    let mut db = SyntaxDatabase {
-      precMap: BTreeMap::new(),
-    };
-    let root = vec![1, 0];
-    db.def(&root, Fixity::Prefix, syntax_elems!["λ", "(", _, ")", e]);
-    db.def(&root, Fixity::Prefix, syntax_elems!["λ", "{", _, "}", e]);
-    db.def(&root, Fixity::Prefix, syntax_elems!["Π", "(", _, ")", e]);
-    db.def(&root, Fixity::Prefix, syntax_elems!["Π", "{", _, "}", e]);
-    db.def(&root, Fixity::Closed, syntax_elems!["(", _, ")"]);
-    db.def(&root, Fixity::Closed, syntax_elems!["{", _, "}"]);
-    db.def(&root, Fixity::Closed, syntax_elems!["Σ", "(", _, ")"]);
-    db.def(&root, Fixity::Closed, syntax_elems!["Σ", "{", _, "}"]);
-    db.def(&root, Fixity::Prefix, syntax_elems!["σ", "{", _, "}", e]);
-    db.def(&root, Fixity::Closed, syntax_elems!["μ", "(", _, ")", _]);
-    db.def(&root, Fixity::Closed, syntax_elems!["ν", "(", _, ")", _]);
-    db.def(&root, Fixity::Prefix, syntax_elems!["let", _, "in", e]);
-    db.def(&vec![1, 1], Fixity::Postfix, syntax_elems![e, "where", _]);
-    db.def(&vec![4, 0], Fixity::InfixL, syntax_elems![e, e]);
-    db.def(&vec![4, 1], Fixity::Postfix, syntax_elems![e, ".", _]);
-
-    db.def(&vec![2, 1], Fixity::InfixL, syntax_elems![e, "+", e]);
-    db.def(&vec![2, 2], Fixity::InfixL, syntax_elems![e, "*", e]);
-    db.def(&vec![2, 3], Fixity::Prefix, syntax_elems!["-", e]);
-    db.def(&vec![2, 4], Fixity::Postfix, syntax_elems![e, "!"]);
-    db
-  }
-
-  fn def(&mut self, prec: &Precedence, fixity: Fixity, elems: Vec<SyntaxElement>) {
-    self.add(Syntax::new(prec.clone(), fixity, elems));
-  }
-
-  fn add(&mut self, s: Syntax) {
-    let prec = s.prec.clone();
-    let vec = self.precMap.entry(prec).or_insert(Vec::new());
-    vec.push(Box::new(s));
-  }
-}
-
 struct Parser<'a> {
-  iter: Peekable<IntoIter<Token<'a>>>,
+  token_list: Vec<Token<'a>>,
+  current_pos: usize,
   indent: Indent,
   last_eol: TokenPos,
   errors: Vec<String>,
@@ -92,9 +13,10 @@ struct Parser<'a> {
 }
 
 impl<'a> Parser<'a> {
-  fn new(tokens: IntoIter<Token<'a>>) -> Self {
+  fn new(tokens: Vec<Token<'a>>) -> Self {
     Parser {
-      iter: tokens.peekable(),
+      token_list: tokens,
+      current_pos: 0,
       indent: Indent::Base,
       last_eol: TokenPos::EoL(0),
       errors: Vec::new(),
@@ -115,19 +37,25 @@ impl<'a> Parser<'a> {
     };
   }
 
-  fn peek(&mut self) -> Option<&Token<'a>> {
-    self.iter.peek().filter(|t| self.indent < t.indent)
+  fn peek_raw(&self) -> Option<&Token<'a>> {
+    self.token_list.get(self.current_pos)
   }
 
-  fn next(&mut self) -> Option<Token<'a>> {
-    self.last_eol = match self.iter.peek() {
+  fn peek(&self) -> Option<&Token<'a>> {
+    let i = self.indent;
+    self.peek_raw().filter(|t| i < t.indent)
+  }
+
+  fn next(&mut self) -> Option<&Token<'a>> {
+    self.last_eol = match self.peek_raw() {
       Some(t) => match t.pos {
         TokenPos::Pos(l, _) => TokenPos::EoL(l),
         _ => unreachable!(),
       },
       _ => TokenPos::EoF,
     };
-    self.iter.next()
+    self.current_pos += 1;
+    self.peek_raw()
   }
 
   fn skip_to_next_head(&mut self) {
@@ -139,18 +67,18 @@ impl<'a> Parser<'a> {
     }
   }
 
-  fn end_of_line(&mut self) -> TokenPos {
+  fn end_of_line(&self) -> TokenPos {
     self.last_eol
   }
 
-  fn pos(&mut self) -> TokenPos {
+  fn pos(&self) -> TokenPos {
     let last_pos = self.end_of_line();
     self.peek().map_or(last_pos, |t| t.pos)
   }
 
-  fn expect_symbol(&mut self, str: &str) -> Option<()> {
+  fn expect_reserved(&mut self, str: &str) -> Option<()> {
     match self.peek() {
-      Some(t) if t.ty == TokenType::Symbol && t.str == str => {
+      Some(t) if t.ty == TokenType::Reserved && t.str == str => {
         self.next();
         return Some(());
       }
@@ -179,36 +107,6 @@ impl<'a> Parser<'a> {
     }
   }
 
-  fn prim(&mut self) -> Option<Expr<'a>> {
-    let t = self.peek()?;
-    let pos = t.pos;
-    let lit = match t.ty {
-      TokenType::Number => Literal::Num(t.str),
-      TokenType::Char => Literal::Chr(t.str),
-      TokenType::String => Literal::Str(t.str),
-      TokenType::Keyword => {
-        if t.str == "prim" {
-          self.next();
-          match self.peek() {
-            Some(t) if t.ty == TokenType::String => Literal::Prim(t.str),
-            _ => {
-              let pos = self.pos();
-              self.add_error(pos, "prim: expected primitive name");
-              Literal::Prim("")
-            }
-          }
-        } else if t.str == "_" {
-          Literal::Hole
-        } else {
-          return None;
-        }
-      }
-      _ => return None,
-    };
-    self.next();
-    return Some(Expr(ExprF::Lit(lit), pos));
-  }
-
   fn ids(&mut self) -> Vec<Id<'a>> {
     let mut ids = Vec::new();
     loop {
@@ -229,7 +127,7 @@ impl<'a> Parser<'a> {
 
   fn context(&mut self) -> Option<Context<'a>> {
     let id = self.expect_id()?;
-    self.expect_symbol(":")?;
+    self.expect_reserved(":")?;
     let e = self.expr_or_hole();
     Some(Context::Ref(id, Box::new(e)))
   }
@@ -259,7 +157,7 @@ impl<'a> Parser<'a> {
           return None;
         }
       };
-      if t.ty == TokenType::Symbol {
+      if t.ty == TokenType::Reserved {
         if t.str == ":" || t.str == "=" {
           break;
         }
@@ -273,7 +171,7 @@ impl<'a> Parser<'a> {
           self.next();
           let ids = self.ids();
           let arg = match self.peek() {
-            Some(t) if t.ty == TokenType::Symbol && t.str == ":" => {
+            Some(t) if t.ty == TokenType::Reserved && t.str == ":" => {
               hasType = true;
               self.next();
               let e = self.expr_or_hole();
@@ -282,7 +180,7 @@ impl<'a> Parser<'a> {
             _ => (vis, Arg::Id(ids)),
           };
           let (pos, cl) = match self.peek() {
-            Some(t) if t.ty == TokenType::Symbol && (t.str == ")" || t.str == "}") => {
+            Some(t) if t.ty == TokenType::Reserved && (t.str == ")" || t.str == "}") => {
               let pos = t.pos;
               let str = t.str;
               self.next();
@@ -315,17 +213,17 @@ impl<'a> Parser<'a> {
       }
     }
     let ty = match self.peek() {
-      Some(t) if t.ty == TokenType::Symbol && t.str == ":" => {
+      Some(t) if t.ty == TokenType::Reserved && t.str == ":" => {
         self.next();
         let e = self.expr_or_hole();
         Some(Box::new(e))
       }
       _ => None,
     };
-    self.expect_symbol("=")?;
+    self.expect_reserved("=")?;
     let body = self.expr_or_hole();
     match self.peek() {
-      Some(t) if t.ty == TokenType::Symbol && t.str == ";" => {
+      Some(t) if t.ty == TokenType::Reserved && t.str == ";" => {
         self.next();
       }
       _ => {}
@@ -339,32 +237,18 @@ impl<'a> Parser<'a> {
   }
 
   fn expr(&mut self) -> Option<Expr<'a>> {
-    // P' = Closed
-    //    | P Non P
-    //    | (Prefix | P Right)+ P
-    //    | P (Postfix | Left P)+
-
-    // P' = Closed
-    //    | Prefix (Prefix* P) (Right Prefix* P)*
-    //    | P Non P
-    //    | P Right (Prefix* P) (Right Prefix* P)*
-    //    | P Left P (Postfix | Left P)*
-    //    | P Postfix (Postfix | Left P)*
-    //    | Db
-
-    for syn in &self.syntax.precMap {
-      println!("{:?}", syn);
-    }
+    let t = self.peek()?;
+    println!("expr from: {:?}", &self.peek());
+    self.syntax.dump();
+    self.syntax.get_candidates(t);
     unimplemented!()
-
-    // self.prim()
   }
 
   fn expr_or_hole(&mut self) -> Expr<'a> {
     let pos = self.pos();
     match self.expr() {
       Some(e) => e,
-      None => Expr(ExprF::Lit(Literal::Hole), pos),
+      None => Expr(ExprF::Base(Base::Lit(Literal::Hole)), pos),
     }
   }
 
@@ -385,12 +269,12 @@ impl<'a> Parser<'a> {
           unimplemented!()
         }
       }
-      TokenType::Symbol => {
+      TokenType::Reserved => {
         if t.str == "[" {
           // context
           self.next();
           let ctx = self.context()?;
-          self.expect_symbol("]")?;
+          self.expect_reserved("]")?;
           let d = self.decl()?;
           return Some(Decl(DeclF::Context(ctx, Box::new(d)), t.pos));
         }
@@ -398,7 +282,7 @@ impl<'a> Parser<'a> {
           // anonymous module
           self.next();
           let ds = self.decls();
-          self.expect_symbol("}")?;
+          self.expect_reserved("}")?;
           return Some(Decl(DeclF::Module(None, Box::new(ds)), t.pos));
         }
       }
@@ -412,11 +296,11 @@ impl<'a> Parser<'a> {
             return None;
           }
         };
-        if t2.ty == TokenType::Symbol && t2.str == "{" {
+        if t2.ty == TokenType::Reserved && t2.str == "{" {
           // named module
           self.next();
           let ds = self.decls();
-          self.expect_symbol("}")?;
+          self.expect_reserved("}")?;
           return Some(Decl(
             DeclF::Module(Some(Id::new(t.str)), Box::new(ds)),
             t.pos,
@@ -473,12 +357,9 @@ pub fn parse<'a>(code: &'a str) -> Result<Vec<Decl<'a>>, Vec<String>> {
     Ok(tokens) => tokens,
     Err(e) => return Err(e),
   };
-  for t in &tokens {
-    eprintln!("{:?}", t);
-  }
-  let mut parser = Parser::new(tokens.into_iter());
+  let mut parser = Parser::new(tokens);
   let ds = parser.program();
-  if let Some(t) = parser.iter.peek() {
+  if let Some(t) = parser.peek_raw() {
     let t = t.clone();
     parser.add_error(t.pos, "not all tokens consumed");
   }

@@ -2,13 +2,34 @@ use crate::types::TokenPos;
 use core::iter::Peekable;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+enum CharType {
+  Alpha,
+  Number,
+  Quote,
+  Reserved,
+  Symbol,
+}
+
+fn get_char_type(c: char) -> CharType {
+  assert!(!c.is_whitespace());
+  match c {
+    'a'..='z' | 'A'..='Z' => CharType::Alpha,
+    '0'..='9' => CharType::Number,
+    '\'' | '"' => CharType::Quote,
+    '.' | ',' | ':' | ';' | '(' | ')' | '{' | '}' | '[' | ']' => CharType::Reserved,
+    _ => CharType::Symbol,
+  }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TokenType {
-  Ident,   // a, xs, +, p0', if_then_else_
-  Keyword, // prim, let, in, where, syntax
-  Number,  // 0, 3.14, 1e-2, 0x1F, 0xcc
-  Char,    // 'a', '\n', '\x1F', '\u3082'
-  String,  // "Hello, World!", "a\nb"
-  Symbol,  // ., =, [, }
+  Ident,      // a, xs, +, p0', if_then_else_
+  Keyword,    // syntax
+  Number,     // 0, 3.14, 1e-2, 0x1F, 0xcc
+  Char,       // 'a', '\n', '\x1F', '\u3082'
+  String,     // "Hello, World!", "a\nb"
+  Precedence, // 1.-2.3<
+  Reserved,   // :, =, [, }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Copy)]
@@ -50,17 +71,14 @@ impl<'a, I: Iterator<Item = CharLoc<'a>>> Tokenizer<'a, I> {
   }
 
   fn make_token_internal(&self, loc: &Loc<'a>, str: &'a str, ty_base: TokenType) -> Token<'a> {
-    let ty = if ty_base == TokenType::Ident {
-      match str {
-        "prim" | "let" | "in" | "where" | "syntax" | "λ" | "Π" | "Σ" | "σ" | "μ" | "ν" | "_" => {
-          TokenType::Keyword
-        }
-        "=" => TokenType::Symbol,
-        _ => TokenType::Ident,
-      }
-    } else {
-      ty_base
+    let ty = match str {
+      "syntax" => TokenType::Keyword,
+      "=" | "_" => TokenType::Reserved,
+      _ => ty_base,
     };
+    if str == "syntax" {
+      todo!();
+    }
     Token {
       str,
       ty,
@@ -255,25 +273,6 @@ impl<'a, I: Iterator<Item = CharLoc<'a>>> Tokenizer<'a, I> {
   }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-enum CharType {
-  Alpha,
-  Symbol,
-  Number,
-  Special,
-  Reserved,
-}
-
-fn get_char_type(c: char) -> CharType {
-  match c {
-    'a'..='z' | 'A'..='Z' => CharType::Alpha,
-    '0'..='9' => CharType::Number,
-    '\'' | '"' => CharType::Special,
-    '.' | ',' | ':' | ';' | '(' | ')' | '{' | '}' | '[' | ']' => CharType::Reserved,
-    _ => CharType::Symbol,
-  }
-}
-
 impl<'a, I: Iterator<Item = (Loc<'a>, char)>> Iterator for Tokenizer<'a, I> {
   type Item = Token<'a>;
 
@@ -282,12 +281,10 @@ impl<'a, I: Iterator<Item = (Loc<'a>, char)>> Iterator for Tokenizer<'a, I> {
     let (l0, c0) = self.iter.peek()?.clone();
     let ty = get_char_type(c0);
     if ty == CharType::Reserved {
-      return Some(self.make_token(&l0, TokenType::Symbol));
+      return Some(self.make_token(&l0, TokenType::Reserved));
     }
-    if ty == CharType::Special {
-      if c0 == '\'' || c0 == '"' {
-        return Some(self.string_literal());
-      }
+    if ty == CharType::Quote {
+      return Some(self.string_literal());
     }
     if ty == CharType::Number {
       return Some(self.number_literal());
@@ -305,10 +302,10 @@ impl<'a, I: Iterator<Item = (Loc<'a>, char)>> Iterator for Tokenizer<'a, I> {
         }
         break;
       }
-      // underscore and prime is allowed to use in identifier
-      if *c1 != '_' && *c1 != '\'' {
+      // prime is allowed to use in identifier
+      if *c1 != '\'' {
         let ty1 = get_char_type(*c1);
-        if ty1 == CharType::Reserved || ty1 == CharType::Special {
+        if ty1 == CharType::Reserved || ty1 == CharType::Quote {
           break;
         }
       }
@@ -326,6 +323,9 @@ pub fn tokenize<'a>(code: &'a str) -> Result<Vec<Token<'a>>, Vec<String>> {
     .map(|(ln, line)| {
       let ln = ln as u32;
       let (spaces, rest) = line.split_at(line.chars().take_while(|c| *c == ' ').count());
+      let indent = spaces.len() as u16;
+
+      // remove comments
       let rest = match rest.find(" --") {
         Some(i) => &rest[..i],
         None => {
@@ -336,7 +336,7 @@ pub fn tokenize<'a>(code: &'a str) -> Result<Vec<Token<'a>>, Vec<String>> {
           }
         }
       };
-      let indent = spaces.len() as u16;
+
       rest.char_indices().map(move |(col, c)| {
         let col = col as u16;
         (
@@ -372,7 +372,8 @@ fn test() {
     da p + λ(x: X) → x = x -- mochi
     -- comment
 -- head comment
-    141
+----long
+    141 -------long2
       312 0x56c 0b1010 0o7
       1e+6 1e-6 1.12e+6 1.g
     32. 0.32 0.32e4 0.32e+6 0.32e-6
@@ -381,4 +382,58 @@ fn test() {
   assert!(tokenize(str0).is_ok());
   assert!(tokenize(r#"1 2 3"#).is_ok());
   assert!(tokenize(r#"1 2e+ 3"#).is_err());
+
+  fn splitter(s: &str) -> Vec<(&str, TokenType)> {
+    tokenize(s)
+      .unwrap_or(vec![])
+      .into_iter()
+      .map(|t| (t.str, t.ty))
+      .collect()
+  }
+  assert_eq!(
+    splitter("1.2 a.3"),
+    vec![
+      ("1.2", TokenType::Number),
+      ("a", TokenType::Ident),
+      (".", TokenType::Reserved),
+      ("3", TokenType::Number),
+    ]
+  );
+  assert_eq!(
+    splitter("x += y .= z αβ"),
+    vec![
+      ("x", TokenType::Ident),
+      ("+=", TokenType::Ident),
+      ("y", TokenType::Ident),
+      (".", TokenType::Reserved),
+      ("=", TokenType::Reserved),
+      ("z", TokenType::Ident),
+      ("αβ", TokenType::Ident),
+    ]
+  );
+  assert_eq!(
+    splitter("1.2.3.4.5"),
+    vec![
+      ("1.2", TokenType::Number),
+      (".", TokenType::Reserved),
+      ("3.4", TokenType::Number),
+      (".", TokenType::Reserved),
+      ("5", TokenType::Number),
+    ]
+  );
+  /* assert_eq!(
+    splitter("syntax 1.-2.3.4.5"),
+    vec![
+      ("syntax", TokenType::Keyword),
+      ("1", TokenType::Number),
+      (".", TokenType::Symbol),
+      ("-2", TokenType::Number),
+      (".", TokenType::Symbol),
+      ("3", TokenType::Number),
+      (".", TokenType::Symbol),
+      ("4", TokenType::Number),
+      (".", TokenType::Symbol),
+      ("5", TokenType::Number),
+    ]
+  ); */
 }
