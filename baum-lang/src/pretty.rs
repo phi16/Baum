@@ -58,15 +58,15 @@ impl Pretty {
 
   pub fn def(&mut self, def: &Def) -> &mut Self {
     self.i(&def.name);
-    for (vis, arg) in &def.args {
+    for (arg, vis) in &def.args {
       self.s(" ");
       match arg {
-        ArgF::Id(ids) => match vis {
+        ArgF::Ids(ids) => match vis {
           Vis::Explicit => self.is(&ids, " "),
           Vis::Implicit => self.s("{").is(&ids, " ").s("}"),
         },
         ArgF::Ty(e) => unreachable!(),
-        ArgF::IdTy(ids, e) => match vis {
+        ArgF::IdsTy(ids, e) => match vis {
           Vis::Explicit => self.s("(").is(ids, " ").s(": ").e(&*e).s(")"),
           Vis::Implicit => self.s("{").is(ids, " ").s(": ").e(&*e).s("}"),
         },
@@ -78,12 +78,20 @@ impl Pretty {
     self.s(" = ").e(&*def.body)
   }
 
+  pub fn m(&mut self, m: &Module) -> &mut Self {
+    match &m.0 {
+      ModuleF::Decls(Some(i), ds) => self.i(i).s(" {").open().ds(ds).close().s("}"),
+      ModuleF::Decls(None, ds) => self.s("{").open().ds(ds).close().s("}"),
+      ModuleF::Import(s) => self.s("import ").s(s),
+      ModuleF::Ref(is) => self.is(is, "."),
+    }
+  }
+
   pub fn d(&mut self, d: &Decl) -> &mut Self {
     match &d.0 {
       DeclF::Context(c, d) => self.s("[").c(c).s("] ").d(d),
-      DeclF::Module(Some(i), ds) => self.i(i).s(" {").open().ds(ds).close().s("}"),
-      DeclF::Module(None, ds) => self.s("{").open().ds(ds).close().s("}"),
-      DeclF::Open(is) => self.s("open ").is(is, "."),
+      DeclF::Module(Access::Keep, m) => self.m(m),
+      DeclF::Module(Access::Open, m) => self.s("open ").m(m),
       DeclF::Def(def) => self.def(def).ln(),
       DeclF::Syntax(_) => self.s("syntax ").ln(),
     }

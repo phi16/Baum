@@ -56,53 +56,94 @@ pub enum Precedence {
   Terminal,
 }
 
+impl Precedence {
+  pub fn parse(s: &str) -> Option<(Self, Self)> {
+    // 1.-2.3<
+    unimplemented!()
+  }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Syntax {
+pub enum NonTerm {
+  Expr,
+  Def,
+  Decls,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Regex {
   Token(String),
   Nat,
   Str,
   Id,
-  Expr,
-  Defs,
-  Decls,
-  May(Rc<Syntax>),
-  Rep1(Rc<Syntax>),
-  Sep0(Rc<Syntax>, String),
-  Sep1(Rc<Syntax>, String),
-  Sep2(Rc<Syntax>, String),
-  Seq(Rc<Syntax>, Rc<Syntax>),
-  Seqs(Vec<Syntax>),
+  Empty,
+  Seq(Rc<Regex>, Rc<Regex>),
+  Seqs(Vec<Rc<Regex>>),
+  OrElse(Rc<Regex>, Rc<Regex>),
+  Rep(Rc<Regex>),
+  NonTerm(NonTerm),
 }
 
-impl Syntax {
-  pub fn get_first_token(&self) -> Option<String> {
-    match self {
-      Syntax::Token(s) => Some(s.clone()),
-      Syntax::May(s) => None,
-      Syntax::Rep1(s) => s.get_first_token(),
-      Syntax::Sep0(s, _) => None,
-      Syntax::Sep1(s, _) => s.get_first_token(),
-      Syntax::Sep2(s, _) => s.get_first_token(),
-      Syntax::Seq(s1, _) => s1.get_first_token(),
-      Syntax::Seqs(ss) => ss[0].get_first_token(),
-      _ => None,
-    }
+impl Regex {
+  pub fn id() -> Rc<Self> {
+    Rc::new(Regex::Id)
+  }
+  pub fn e() -> Rc<Self> {
+    Rc::new(Regex::NonTerm(NonTerm::Expr))
+  }
+  pub fn def() -> Rc<Self> {
+    Rc::new(Regex::NonTerm(NonTerm::Def))
+  }
+  pub fn decls() -> Rc<Self> {
+    Rc::new(Regex::NonTerm(NonTerm::Decls))
+  }
+  pub fn ids() -> Rc<Self> {
+    Self::rep1(&Self::id())
+  }
+  pub fn token(s: &str) -> Rc<Self> {
+    Rc::new(Regex::Token(s.to_string()))
+  }
+
+  pub fn seq(r1: &Rc<Regex>, r2: &Rc<Regex>) -> Rc<Self> {
+    Rc::new(Regex::Seq(r1.clone(), r2.clone()))
+  }
+  pub fn seqs(rs: Vec<&Rc<Regex>>) -> Rc<Self> {
+    let rs = rs.into_iter().map(|r| r.clone()).collect();
+    Rc::new(Regex::Seqs(rs))
+  }
+  pub fn rep1(r: &Rc<Regex>) -> Rc<Self> {
+    Rc::new(Regex::Seq(r.clone(), Rc::new(Regex::Rep(r.clone()))))
+  }
+  pub fn sep1(r: &Rc<Regex>, s: &str) -> Rc<Self> {
+    Rc::new(Regex::Seq(
+      r.clone(),
+      Rc::new(Regex::Rep(Rc::new(Regex::Seq(
+        Rc::new(Regex::Token(s.to_string())),
+        r.clone(),
+      )))),
+    ))
+  }
+  pub fn sep2(r: &Rc<Regex>, s: &str) -> Rc<Self> {
+    Rc::new(Regex::Seqs(vec![
+      r.clone(),
+      Rc::new(Regex::Token(s.to_string())),
+      Self::sep1(r, s),
+    ]))
+  }
+  pub fn may(r: &Rc<Regex>) -> Rc<Self> {
+    Rc::new(Regex::OrElse(r.clone(), Rc::new(Regex::Empty)))
   }
 }
 
 #[derive(Debug, Clone)]
-pub struct SyntaxDecl {
+pub struct Syntax {
   pub left: Precedence,
   pub right: Precedence,
-  pub syntax: Syntax,
+  pub regex: Regex,
 }
 
-impl SyntaxDecl {
-  pub fn new(left: Precedence, right: Precedence, syntax: Syntax) -> Self {
-    SyntaxDecl {
-      left,
-      right,
-      syntax,
-    }
+impl Syntax {
+  pub fn new(left: Precedence, right: Precedence, regex: Regex) -> Self {
+    Syntax { left, right, regex }
   }
 }

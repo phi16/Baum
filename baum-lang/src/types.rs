@@ -1,6 +1,6 @@
 use crate::mixfix_types::*;
 
-type ModRef<I> = Vec<I>;
+type ModuleName<I> = Vec<I>;
 
 #[derive(Debug, Clone)]
 pub enum Literal<S> {
@@ -12,9 +12,9 @@ pub enum Literal<S> {
 
 #[derive(Debug, Clone)]
 pub enum ArgF<I, E> {
-  Id(Vec<I>),
+  Ids(Vec<I>),
   Ty(E),
-  IdTy(Vec<I>, E),
+  IdsTy(Vec<I>, E),
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -23,7 +23,7 @@ pub enum Vis {
   Implicit,
 }
 
-type ArgVis<I, E> = (Vis, ArgF<I, E>);
+type ArgVis<I, E> = (ArgF<I, E>, Vis);
 
 #[derive(Debug, Clone)]
 pub struct DefF<I, E> {
@@ -39,12 +39,24 @@ pub enum ContextF<I, E> {
 }
 
 #[derive(Debug, Clone)]
-pub enum DeclF<I, D, Ds, E> {
+pub enum ModuleF<S, I, Ds> {
+  Decls(Option<I>, Ds),
+  Import(S),
+  Ref(Vec<I>),
+}
+
+#[derive(Debug, Clone)]
+pub enum Access {
+  Open,
+  Keep,
+}
+
+#[derive(Debug, Clone)]
+pub enum DeclF<I, D, E, M> {
   Context(ContextF<I, E>, D),
-  Module(Option<I>, Ds),
-  Open(ModRef<I>),
+  Module(Access, M),
   Def(DefF<I, E>),
-  Syntax(SyntaxDecl),
+  Syntax(Syntax),
 }
 
 #[derive(Debug, Clone)]
@@ -81,7 +93,7 @@ pub enum Base<S, I, Ds, E> {
   Lit(Literal<S>),
   Var(I),
   Prim(S),
-  Extern(ModRef<I>, I),
+  Extern(Vec<I>, I),
   Let(Ds, E),
   Syntax(Syntax, E),
 }
@@ -141,8 +153,14 @@ pub struct Expr<'a>(
 );
 
 #[derive(Debug, Clone)]
+pub struct Module<'a>(
+  pub ModuleF<&'a str, Id<'a>, Box<Vec<Decl<'a>>>>,
+  pub TokenPos,
+);
+
+#[derive(Debug, Clone)]
 pub struct Decl<'a>(
-  pub DeclF<Id<'a>, Box<Decl<'a>>, Box<Vec<Decl<'a>>>, Box<Expr<'a>>>,
+  pub DeclF<Id<'a>, Box<Decl<'a>>, Box<Expr<'a>>, Box<Module<'a>>>,
   pub TokenPos,
 );
 

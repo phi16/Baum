@@ -1,4 +1,5 @@
 use crate::mixfix::*;
+use crate::mixfix_types::*;
 use crate::pretty::*;
 use crate::tokenize::*;
 use crate::types::*;
@@ -91,20 +92,32 @@ impl<'a> Parser<'a> {
     }
   }
 
-  fn expect_id(&mut self) -> Option<Id<'a>> {
+  fn peek_is(&mut self, tt: TokenType) -> Option<()> {
     match self.peek() {
-      Some(t) if t.ty == TokenType::Ident => {
-        let s = t.str;
-        self.next();
-        return Some(Id::new(s));
+      Some(t) if t.ty == tt => {
+        return Some(());
       }
       _ => {
         let pos = self.pos();
-        self.add_error(pos, "decl: expected identifier");
+        self.add_error(
+          pos,
+          match tt {
+            TokenType::Ident => "decl: expected identifier",
+            TokenType::String => "decl: expected string",
+            _ => unimplemented!(),
+          },
+        );
         self.skip_to_next_head();
         return None;
       }
     }
+  }
+
+  fn expect_id(&mut self) -> Option<Id<'a>> {
+    self.peek_is(TokenType::Ident)?;
+    let s = self.peek().unwrap().str;
+    self.next();
+    Some(Id::new(s))
   }
 
   fn ids(&mut self) -> Vec<Id<'a>> {
@@ -175,9 +188,9 @@ impl<'a> Parser<'a> {
               hasType = true;
               self.next();
               let e = self.expr_or_hole();
-              (vis, Arg::IdTy(ids, Box::new(e)))
+              (Arg::IdsTy(ids, Box::new(e)), vis)
             }
-            _ => (vis, Arg::Id(ids)),
+            _ => (Arg::Ids(ids), vis),
           };
           let (pos, cl) = match self.peek() {
             Some(t) if t.ty == TokenType::Reserved && (t.str == ")" || t.str == "}") => {
@@ -209,7 +222,7 @@ impl<'a> Parser<'a> {
         }
       } else {
         let ids = self.ids();
-        args.push((Vis::Explicit, Arg::Id(ids)));
+        args.push((Arg::Ids(ids), Vis::Explicit));
       }
     }
     let ty = match self.peek() {
@@ -240,7 +253,7 @@ impl<'a> Parser<'a> {
     let t = self.peek()?;
     println!("expr from: {:?}", &self.peek());
     self.syntax.dump();
-    self.syntax.get_candidates(t);
+    // self.syntax.get_candidates(t);
     unimplemented!()
   }
 
@@ -252,41 +265,27 @@ impl<'a> Parser<'a> {
     }
   }
 
-  fn decl(&mut self) -> Option<Decl<'a>> {
+  fn module(&mut self) -> Option<Module<'a>> {
     let t = self.peek()?.clone();
     match t.ty {
-      TokenType::Keyword => {
-        if t.str == "syntax" {
-          let outer_indent = self.indent;
-          self.set_indent(t.indent);
-          // syntax
-          unimplemented!();
-          self.indent = outer_indent;
-          unimplemented!()
-        }
-        if t.str == "open" {
-          // open
-          unimplemented!()
-        }
-      }
       TokenType::Reserved => {
-        if t.str == "[" {
-          // context
-          self.next();
-          let ctx = self.context()?;
-          self.expect_reserved("]")?;
-          let d = self.decl()?;
-          return Some(Decl(DeclF::Context(ctx, Box::new(d)), t.pos));
-        }
         if t.str == "{" {
           // anonymous module
           self.next();
           let ds = self.decls();
           self.expect_reserved("}")?;
-          return Some(Decl(DeclF::Module(None, Box::new(ds)), t.pos));
+          return Some(Module(ModuleF::Decls(None, Box::new(ds)), t.pos));
         }
       }
       TokenType::Ident => {
+        if t.str == "import" {
+          // import
+          self.next();
+          self.peek_is(TokenType::String)?;
+          let s = self.peek().unwrap();
+          return Some(Module(ModuleF::Import(s.str), t.pos));
+        }
+        // TODO: t is a known module name
         self.next();
         let t2 = match self.peek() {
           Some(t) => t.clone(),
@@ -301,10 +300,90 @@ impl<'a> Parser<'a> {
           self.next();
           let ds = self.decls();
           self.expect_reserved("}")?;
-          return Some(Decl(
-            DeclF::Module(Some(Id::new(t.str)), Box::new(ds)),
+          return Some(Module(
+            ModuleF::Decls(Some(Id::new(t.str)), Box::new(ds)),
             t.pos,
           ));
+        }
+      }
+      _ => {}
+    }
+    None
+  }
+
+  fn decl(&mut self) -> Option<Decl<'a>> {
+    let t = self.peek()?.clone();
+    match t.ty {
+      TokenType::Reserved => {
+        if t.str == "[" {
+          // context
+          self.next();
+          let ctx = self.context()?;
+          self.expect_reserved("]")?;
+          let d = self.decl()?;
+          return Some(Decl(DeclF::Context(ctx, Box::new(d)), t.pos));
+        }
+        if t.str == "{" {
+          // anonymous module
+          let m = self.module()?;
+          return Some(Decl(DeclF::Module(Access::Keep, Box::new(m)), t.pos));
+        }
+      }
+      TokenType::Ident => {
+        if t.str == "syntax" {
+          let outer_indent = self.indent;
+          self.set_indent(t.indent);
+          // syntax
+          self.next();
+          let precs = match self.peek() {
+            Some(t) if t.ty == TokenType::Precedence => match Precedence::parse(t.str) {
+              Some(precs) => {
+                self.next();
+                precs
+              }
+              None => {
+                let pos = t.pos;
+                self.add_error(pos, "decl: failed to parse precedence");
+                self.skip_to_next_head();
+                return None;
+              }
+            },
+            _ => (Precedence::Terminal, Precedence::Terminal),
+          };
+          let regex = unimplemented!();
+          let syntax = DeclF::Syntax(Syntax::new(precs.0, precs.1, regex));
+          self.indent = outer_indent;
+          return Some(Decl(syntax, t.pos));
+        }
+        if t.str == "open" {
+          // open
+          self.next();
+          let m = self.module()?;
+          return Some(Decl(DeclF::Module(Access::Open, Box::new(m)), t.pos));
+        }
+        if t.str == "import" {
+          // import
+          let m = self.module()?;
+          return Some(Decl(DeclF::Module(Access::Keep, Box::new(m)), t.pos));
+        }
+        // TODO: t is a known module name
+        self.next();
+        let t2 = match self.peek() {
+          Some(t) => t.clone(),
+          None => {
+            self.add_error(t.pos, "decl: expected module or definition");
+            self.skip_to_next_head();
+            return None;
+          }
+        };
+        if t2.ty == TokenType::Reserved && t2.str == "{" {
+          // named module
+          let mut m = self.module()?; // parse as an anonymous module
+          m.0 = match m.0 {
+            ModuleF::Decls(None, ds) => ModuleF::Decls(Some(Id::new(t.str)), ds),
+            _ => unreachable!(),
+          };
+          return Some(Decl(DeclF::Module(Access::Keep, Box::new(m)), t.pos));
         }
         // definition
         let outer_indent = self.indent;

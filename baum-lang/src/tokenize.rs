@@ -24,7 +24,6 @@ fn get_char_type(c: char) -> CharType {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TokenType {
   Ident,      // a, xs, +, p0', if_then_else_
-  Keyword,    // syntax
   Number,     // 0, 3.14, 1e-2, 0x1F, 0xcc
   Char,       // 'a', '\n', '\x1F', '\u3082'
   String,     // "Hello, World!", "a\nb"
@@ -72,12 +71,11 @@ impl<'a, I: Iterator<Item = CharLoc<'a>>> Tokenizer<'a, I> {
 
   fn make_token_internal(&self, loc: &Loc<'a>, str: &'a str, ty_base: TokenType) -> Token<'a> {
     let ty = match str {
-      "syntax" => TokenType::Keyword,
       "=" | "_" => TokenType::Reserved,
       _ => ty_base,
     };
     if str == "syntax" {
-      todo!();
+      todo!("precedence");
     }
     Token {
       str,
@@ -421,19 +419,20 @@ fn test() {
       ("5", TokenType::Number),
     ]
   );
-  /* assert_eq!(
-    splitter("syntax 1.-2.3.4.5"),
+  assert_eq!(
+    splitter("syntax 1.-2.3.4< x"),
     vec![
-      ("syntax", TokenType::Keyword),
-      ("1", TokenType::Number),
-      (".", TokenType::Symbol),
-      ("-2", TokenType::Number),
-      (".", TokenType::Symbol),
-      ("3", TokenType::Number),
-      (".", TokenType::Symbol),
-      ("4", TokenType::Number),
-      (".", TokenType::Symbol),
-      ("5", TokenType::Number),
+      ("syntax", TokenType::Ident),
+      ("1.-2.3.4<", TokenType::Precedence),
+      ("x", TokenType::Ident),
     ]
-  ); */
+  );
+  assert_eq!(
+    splitter("syntax -x"),
+    vec![
+      ("syntax", TokenType::Ident),
+      ("-", TokenType::Ident),
+      ("x", TokenType::Ident),
+    ]
+  );
 }

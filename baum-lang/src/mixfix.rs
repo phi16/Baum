@@ -1,36 +1,36 @@
 use crate::mixfix_types::*;
 use crate::tokenize::*;
 use crate::types::*;
-use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::rc::Rc;
 
 pub struct SyntaxDatabase {
-  pub prec_map: BTreeMap<Precedence, Vec<Box<SyntaxDecl>>>,
-  pub terminals: HashMap<String, Vec<Box<SyntaxDecl>>>,
+  pub pres: HashMap<String, Vec<Syntax>>, // starts from token
+  pub opes: HashMap<String, Vec<Syntax>>, // starts from expr and token
+  pub apps: Vec<Syntax>,                  // expr expr
 }
 
 macro_rules! syntax_elem {
   ($s:literal) => {
-    Syntax::Token($s.to_string())
+    (Regex::token($s))
   };
   (n) => {
-    Syntax::Nat
+    Rc::new(Regex::Nat)
   };
   (s) => {
-    Syntax::Str
+    Rc::new(Regex::Str)
   };
   (i) => {
-    Syntax::Id
+    Regex::id()
   };
   (e) => {
-    Syntax::Expr
+    Regex::e()
   };
-  (defs) => {
-    Syntax::Defs
+  (def) => {
+    Regex::def()
   };
   (decls) => {
-    Syntax::Decls
+    Regex::decls()
   };
   ($i:tt) => {
     $i.clone()
@@ -39,7 +39,7 @@ macro_rules! syntax_elem {
 
 macro_rules! syntax_elems {
   ($($e:tt),+) => {
-    Syntax::Seqs(vec![$(syntax_elem!($e)),+])
+    Regex::Seqs(vec![$(syntax_elem!($e)),+])
   };
 }
 
@@ -49,11 +49,11 @@ fn syntax_macro_test() {
   let elems = syntax_elems!["λ", i, ".", e];
   assert_eq!(
     elems,
-    Syntax::Seqs(vec![
-      Syntax::Token("λ".to_string()),
-      Syntax::Id,
-      Syntax::Token(".".to_string()),
-      Syntax::Expr,
+    Regex::Seqs(vec![
+      Regex::token("λ"),
+      Regex::id(),
+      Regex::token("."),
+      Regex::e(),
     ])
   );
 }
@@ -61,118 +61,93 @@ fn syntax_macro_test() {
 impl SyntaxDatabase {
   pub fn default() -> Self {
     let mut db = SyntaxDatabase {
-      prec_map: BTreeMap::new(),
-      terminals: HashMap::new(),
+      pres: HashMap::new(),
+      opes: HashMap::new(),
+      apps: Vec::new(),
     };
-    use PrecEps::*;
-    use Precedence::*;
-    use Syntax::*;
-    let root = &Level(PrecLevel(vec![0]), Zero);
-    let appl = &Level(PrecLevel(vec![5]), NegEps);
-    let appr = &Level(PrecLevel(vec![5]), PosEps);
-    let term = &Terminal;
 
-    let i = Rc::new(Id);
-    let e = Rc::new(Expr);
-    let ids = Rc::new(Rep1(i.clone()));
-    let colon = Rc::new(Token(":".to_string()));
+    let id = Regex::id();
+    let e = Regex::e();
+    let ids = Regex::rep1(&id);
+    let colon = Regex::token(":");
 
-    let lam_args = Sep1(
-      Rc::new(Seq(
-        ids.clone(),
-        Rc::new(May(Rc::new(Seq(colon.clone(), e.clone())))),
-      )),
-      ",".to_string(),
-    );
-    let types = Sep1(
-      Rc::new(Seq(
-        Rc::new(May(Rc::new(Seq(ids.clone(), colon.clone())))),
-        e.clone(),
-      )),
-      ",".to_string(),
-    );
-    let types0 = Sep0(
-      Rc::new(Seq(
-        Rc::new(May(Rc::new(Seq(ids.clone(), colon.clone())))),
-        e.clone(),
-      )),
-      ",".to_string(),
-    );
-    let tuple_vals = Sep2(e.clone(), ",".to_string());
-    let sigma_types = Sep0(
-      Rc::new(Seq(Rc::new(Seq(ids.clone(), colon.clone())), e.clone())),
-      ",".to_string(),
-    );
-    let id_ty = Seq(i.clone(), colon.clone());
-    let id_ty_list = Sep0(Rc::new(id_ty.clone()), ";".to_string()); // TODO: allow ln
+    // (id+ | id+: e)%,
+    let fun_args = Regex::sep1(&Regex::seq(&ids, &Regex::may(&Regex::seq(&colon, &e))), ",");
+    // (e | id+: e)%,
+    let types = Regex::sep1(&Regex::seq(&Regex::may(&Regex::seq(&ids, &colon)), &e), ",");
+    // e%,
+    let tuple_vals = Regex::sep2(&e, ",");
+    // (id+: e)%,
+    let props = Regex::sep1(&Regex::seqs(vec![&ids, &colon, &e]), ",");
+    // def%,
+    let defs = Regex::sep1(&Regex::def(), ",");
 
-    db.def(term, term, syntax_elems!["(", e, ")"]);
-    db.def(term, term, syntax_elems!["prim", s]);
-    db.def(term, root, syntax_elems!["let", decls, "in", e]);
-    db.def(term, root, syntax_elems!["λ", "(", lam_args, ")", e]);
-    db.def(term, root, syntax_elems!["λ", "{", lam_args, "}", e]);
-    db.def(term, root, syntax_elems!["Π", "(", types, ")", e]);
-    db.def(term, root, syntax_elems!["Π", "{", types, "}", e]);
-    db.def(appl, appr, syntax_elems![e, e]);
-    db.def(appl, term, syntax_elems![e, "{", e, "}"]);
-    db.def(term, term, syntax_elems!["(", ")"]);
-    db.def(term, term, syntax_elems!["(", tuple_vals, ")"]);
-    db.def(term, term, syntax_elems!["{", defs, "}"]);
-    db.def(term, term, syntax_elems!["Σ", "(", types0, ")"]);
-    db.def(term, term, syntax_elems!["Σ", "{", sigma_types, "}"]);
-    db.def(term, root, syntax_elems!["π", "(", n, ")", e]);
-    db.def(term, root, syntax_elems!["π", "{", i, "}", e]);
-    db.def(term, root, syntax_elems!["σ", "{", defs, "}", e]);
-    db.def(
-      term,
-      term,
-      syntax_elems!["μ", "(", id_ty, ")", "{", id_ty_list, "}"],
-    );
-    db.def(
-      term,
-      term,
-      syntax_elems!["ν", "(", id_ty, ")", "{", id_ty_list, "}"],
-    );
+    db.def("!", syntax_elems!["(", e, ")"]);
+    db.def("!", syntax_elems!["prim", s]);
+    db.def("0", syntax_elems!["let", decls, "in", e]);
+    db.def("0", syntax_elems!["λ", "(", fun_args, ")", e]);
+    db.def("0", syntax_elems!["λ", "{", fun_args, "}", e]);
+    db.def("0", syntax_elems!["Π", "(", types, ")", e]);
+    db.def("0", syntax_elems!["Π", "{", types, "}", e]);
+    db.def("4<", syntax_elems![e, e]);
+    db.def("4<", syntax_elems![e, "{", e, "}"]);
+    db.def("!", syntax_elems!["(", ")"]);
+    db.def("!", syntax_elems!["(", tuple_vals, ")"]);
+    db.def("!", syntax_elems!["{", "}"]);
+    db.def("!", syntax_elems!["{", defs, "}"]);
+    db.def("!", syntax_elems!["Σ", "(", ")"]);
+    db.def("!", syntax_elems!["Σ", "(", types, ")"]);
+    db.def("!", syntax_elems!["Σ", "{", "}"]);
+    db.def("!", syntax_elems!["Σ", "{", props, "}"]);
+    db.def("0", syntax_elems!["π", "(", n, ")", e]);
+    db.def("0", syntax_elems!["π", "{", id, "}", e]);
+    db.def("0", syntax_elems!["σ", "{", defs, "}", e]);
 
-    let p21l = &Level(PrecLevel(vec![2, 1]), NegEps);
-    let p21r = &Level(PrecLevel(vec![2, 1]), PosEps);
-    let p22l = &Level(PrecLevel(vec![2, 2]), NegEps);
-    let p22r = &Level(PrecLevel(vec![2, 2]), PosEps);
-    let p23 = &Level(PrecLevel(vec![2, 3]), Zero);
-    let p24 = &Level(PrecLevel(vec![2, 4]), Zero);
-    db.def(p21l, p21r, syntax_elems![e, "+", e]);
-    db.def(p22l, p22r, syntax_elems![e, "*", e]);
-    db.def(term, p23, syntax_elems!["-", e]);
-    db.def(p24, term, syntax_elems![e, "!"]);
+    let id_ty = Regex::seqs(vec![&id, &colon, &e]);
+    db.def("!", syntax_elems!["μ", "(", id_ty, ")", "{", "}"]);
+    db.def("!", syntax_elems!["μ", "(", id_ty, ")", "{", defs, "}"]);
+    db.def("!", syntax_elems!["ν", "(", id_ty, ")", "{", "}"]);
+    db.def("!", syntax_elems!["ν", "(", id_ty, ")", "{", defs, "}"]);
+
+    db.def("2.1<", syntax_elems![e, "+", e]);
+    db.def("2.2<", syntax_elems![e, "*", e]);
+    db.def("2.3>", syntax_elems!["-", e]);
+    db.def("2.4<", syntax_elems![e, "!"]);
     db
   }
 
-  fn def(&mut self, left: &Precedence, right: &Precedence, syntax: Syntax) {
-    self.add(SyntaxDecl::new(left.clone(), right.clone(), syntax));
-  }
-
-  fn add(&mut self, s: SyntaxDecl) {
-    if s.left == Precedence::Terminal {
-      let first_token = s.syntax.get_first_token().unwrap();
-      let vec = self.terminals.entry(first_token).or_insert(Vec::new());
-      vec.push(Box::new(s));
-      return;
-    }
-    let prec = s.left.clone();
-    let vec = self.prec_map.entry(prec).or_insert(Vec::new());
-    vec.push(Box::new(s));
+  fn def(&mut self, prec: &str, seqs: Regex) {
+    let (left, right) = Precedence::parse(prec).unwrap();
+    let v = match &seqs {
+      Regex::Seqs(seqs) => {
+        let first = seqs.get(0).unwrap();
+        match **first {
+          Regex::Token(ref s) => self.pres.entry(s.to_string()).or_insert(Vec::new()),
+          Regex::NonTerm(NonTerm::Expr) => {
+            let second = seqs.get(1).unwrap();
+            match **second {
+              Regex::Token(ref s) => self.opes.entry(s.to_string()).or_insert(Vec::new()),
+              Regex::NonTerm(NonTerm::Expr) => &mut self.apps,
+              _ => panic!(),
+            }
+          }
+          _ => panic!(),
+        }
+      }
+      _ => panic!(),
+    };
+    v.push(Syntax::new(left, right, seqs));
   }
 
   pub fn dump(&self) {
-    for syn in &self.prec_map {
+    for syn in &self.pres {
       println!("{:?}", syn);
     }
-    for syn in &self.terminals {
+    for syn in &self.opes {
       println!("{:?}", syn);
     }
-  }
-
-  pub fn get_candidates(&self, t: &Token) {
-    unimplemented!()
+    for syn in &self.apps {
+      println!("{:?}", syn);
+    }
   }
 }
