@@ -12,7 +12,7 @@ enum Precedence {
   Terminal,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 enum Syntax {
   Token(char),
   Expr,
@@ -45,8 +45,9 @@ struct SyntaxDecl {
 
 #[derive(Debug, Clone)]
 struct SyntaxTable {
-  pres: Vec<SyntaxDecl>,
-  ops: Vec<SyntaxDecl>,
+  pres: Vec<SyntaxDecl>, // Starts with terminal
+  ops: Vec<SyntaxDecl>,  // Starts with e
+  apps: Vec<SyntaxDecl>, // e e
 }
 
 impl SyntaxTable {
@@ -54,8 +55,10 @@ impl SyntaxTable {
     let mut table = Self {
       pres: Vec::new(),
       ops: Vec::new(),
+      apps: Vec::new(),
     };
     let term = Precedence::Terminal;
+    let root = Precedence::Level(0, Epsilon::Zero);
     let p1l = Precedence::Level(1, Epsilon::PosEps);
     let p1r = Precedence::Level(1, Epsilon::NegEps);
     let p2l = Precedence::Level(2, Epsilon::NegEps);
@@ -64,11 +67,14 @@ impl SyntaxTable {
     let p3r = Precedence::Level(3, Epsilon::PosEps);
     let p4l = Precedence::Level(4, Epsilon::PosEps);
     let p4r = Precedence::Level(4, Epsilon::NegEps);
-    let p5 = Precedence::Level(5, Epsilon::Zero);
-    let p6 = Precedence::Level(6, Epsilon::Zero);
+    let p5l = Precedence::Level(5, Epsilon::PosEps);
+    let p5r = Precedence::Level(5, Epsilon::NegEps);
+    let p6l = Precedence::Level(6, Epsilon::NegEps);
+    let p6r = Precedence::Level(6, Epsilon::PosEps);
     let p7l = Precedence::Level(7, Epsilon::NegEps);
     let p7r = Precedence::Level(7, Epsilon::PosEps);
-    let p8 = Precedence::Level(8, Epsilon::Zero);
+    let p8l = Precedence::Level(8, Epsilon::NegEps);
+    let p8r = Precedence::Level(8, Epsilon::PosEps);
     table.add(&term, &term, syntax_elems!['0']);
     table.add(&term, &term, syntax_elems!['1']);
     table.add(&term, &term, syntax_elems!['2']);
@@ -80,34 +86,34 @@ impl SyntaxTable {
     table.add(&term, &term, syntax_elems!['8']);
     table.add(&term, &term, syntax_elems!['9']);
     table.add(&term, &term, syntax_elems!['(', e, ')']);
+    table.add(&term, &root, syntax_elems!['λ', e]);
     table.add(&p1l, &p1r, syntax_elems![e, '-', '>', e]);
     table.add(&p2l, &p2r, syntax_elems![e, '+', e]);
     table.add(&p2l, &p2r, syntax_elems![e, '-', e]);
     table.add(&p3l, &p3r, syntax_elems![e, '*', e]);
     table.add(&p3l, &p3r, syntax_elems![e, '/', e]);
     table.add(&p4l, &p4r, syntax_elems![e, '^', e]);
-    table.add(&term, &p5, syntax_elems!['+', e]);
-    table.add(&term, &p5, syntax_elems!['-', e]);
-    table.add(&p6, &term, syntax_elems![e, '!']);
-    table.add(&p6, &term, syntax_elems![e, '[', e, ']']);
+    table.add(&p5l, &p5r, syntax_elems!['+', e]);
+    table.add(&p5l, &p5r, syntax_elems!['-', e]);
+    table.add(&p6l, &p6r, syntax_elems![e, '!']);
+    table.add(&p6l, &p6r, syntax_elems![e, '[', e, ']']);
     table.add(&p7l, &p7r, syntax_elems![e, e]);
-    table.add(&p8, &term, syntax_elems![e, '.', 'x']);
+    table.add(&p8l, &p8r, syntax_elems![e, '.', 'x']);
     table
   }
 
   fn add(&mut self, left: &Precedence, right: &Precedence, syntax: Vec<Syntax>) {
-    if *left == Precedence::Terminal {
-      self.pres.push(SyntaxDecl {
-        left: left.clone(),
-        right: right.clone(),
-        syntax,
-      });
+    let s = SyntaxDecl {
+      left: left.clone(),
+      right: right.clone(),
+      syntax: syntax.clone(),
+    };
+    if syntax.get(0) != Some(&Syntax::Expr) {
+      self.pres.push(s);
+    } else if syntax.get(1) != Some(&Syntax::Expr) {
+      self.ops.push(s);
     } else {
-      self.ops.push(SyntaxDecl {
-        left: left.clone(),
-        right: right.clone(),
-        syntax,
-      });
+      self.apps.push(s);
     }
   }
 
@@ -130,9 +136,16 @@ impl SyntaxTable {
       .filter(|decl| *base_p <= decl.left)
       .filter(|decl| match decl.syntax.iter().nth(1) {
         Some(Syntax::Token(s)) if *s == c => true,
-        Some(Syntax::Expr) => false, // TODO!
         _ => false,
       })
+      .cloned()
+      .collect()
+  }
+  fn choose_app(&self, base_p: &Precedence) -> Vec<SyntaxDecl> {
+    self
+      .apps
+      .iter()
+      .filter(|decl| *base_p <= decl.left)
       .cloned()
       .collect()
   }
@@ -158,7 +171,7 @@ impl Parser {
   }
 
   fn log(&self, s: &str) {
-    println!("{}- {}", self.header, s);
+    // println!("{}- {}", self.header, s);
   }
 
   fn push(&mut self) {
@@ -176,6 +189,7 @@ impl Parser {
     let c = self.peek()?;
     self.log(&format!("choose_pre: {}, {:?}", c, base_p));
     let pres = self.table.choose_pre(c, base_p);
+    self.log(&format!("{:?}", pres));
     if pres.is_empty() {
       return None;
     }
@@ -201,7 +215,7 @@ impl Parser {
     if trees.len() != 1 {
       self.log("Ambiguous parse");
     }
-    let mut tree = trees[0].clone();
+    let mut tree = trees.last().unwrap().clone();
     self.log(&format!("e1 result: {}", tree_simp(&tree)));
 
     loop {
@@ -212,7 +226,10 @@ impl Parser {
         None => return Some(tree),
       };
       self.log(&format!("choose_op: {}, {:?}", c, base_p));
-      let ops = self.table.choose_op(c, &base_p);
+      let mut ops = self.table.choose_op(c, &base_p);
+      if ops.is_empty() {
+        ops = self.table.choose_app(&base_p);
+      }
       if ops.is_empty() {
         return Some(tree);
       }
@@ -238,7 +255,7 @@ impl Parser {
       if trees.len() != 1 {
         self.log("Ambiguous parse");
       }
-      tree = trees[0].clone();
+      tree = trees.last().unwrap().clone();
       self.log(&format!("e2 result: {}", tree_simp(&tree)));
     }
   }
@@ -246,6 +263,17 @@ impl Parser {
   fn decl_try(&mut self, s: &SyntaxDecl, read_elems: Vec<Tree>) -> Option<Tree> {
     self.log(&format!("decl_try: {}", decl_simp(s)));
     self.push();
+    let res = self.decl_try_internal(s, read_elems);
+    self.pop();
+    let s = match &res {
+      Some(tree) => format!("decl_try result: {:?} {:?}", decl_simp(s), tree_simp(&tree)),
+      None => "decl_try result: None".to_string(),
+    };
+    self.log(&s);
+    res
+  }
+
+  fn decl_try_internal(&mut self, s: &SyntaxDecl, read_elems: Vec<Tree>) -> Option<Tree> {
     let skip_count = read_elems.len();
     let mut tree = Tree {
       syntax: s.clone(),
@@ -265,12 +293,6 @@ impl Parser {
         None => {}
       }
     }
-    self.pop();
-    self.log(&format!(
-      "decl_try result: {:?} {:?}",
-      decl_simp(s),
-      tree_simp(&tree)
-    ));
     Some(tree)
   }
 
@@ -346,6 +368,7 @@ fn parse(e: &str) {
     table,
     header: String::new(),
   };
+  println!("{:?}", e);
   println!("{:?}", parser.input);
   let tree = parser.e(&Precedence::Initial);
   println!("");
@@ -366,5 +389,7 @@ fn main() {
   parse("- 1 + 2 + 3 * 4 ! -> 5 ^ 6 ^ 7");
   parse("1 + 2 [ 3 * 4 ] - 5 - 6 ^ 7 ^ 8");
   parse("1.x.x");
-  // parse("1.x 2.x 3");
+  parse("1.x 2.x 3");
+  parse("1 + (2 + 3) + λ1 + 2");
+  parse("+-1.x 2![3!]!");
 }
