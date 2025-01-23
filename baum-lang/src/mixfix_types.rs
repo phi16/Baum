@@ -58,9 +58,81 @@ pub enum Precedence {
 
 impl Precedence {
   pub fn parse(s: &str) -> Option<(Self, Self)> {
-    // 1.-2.3<
-    unimplemented!()
+    // example: "1.-2.3<"
+    // contains only: -.<>[0-9]
+    if s == "" {
+      return Some((Precedence::Terminal, Precedence::Terminal));
+    }
+    let mut ss = s.chars().peekable();
+    let mut nums = Vec::new();
+    let mut left_eps = PrecEps::Zero;
+    loop {
+      let negated = if ss.peek() == Some(&'-') {
+        ss.next();
+        true
+      } else {
+        false
+      };
+      let mut nat = 0;
+      let c = *ss.peek()?;
+      if !c.is_ascii_digit() {
+        return None;
+      }
+      loop {
+        let c = match ss.peek() {
+          Some(c) if c.is_ascii_digit() => *c,
+          _ => break,
+        };
+        ss.next();
+        nat = nat * 10 + c.to_digit(10).unwrap() as i16;
+      }
+      if negated {
+        nat = -nat;
+      }
+      nums.push(nat);
+      match ss.next() {
+        Some('.') => {}
+        Some('<') => {
+          left_eps = PrecEps::NegEps;
+          break;
+        }
+        Some('>') => {
+          left_eps = PrecEps::PosEps;
+          break;
+        }
+        Some(_) => return None,
+        None => break,
+      }
+    }
+    if ss.next().is_some() {
+      return None;
+    }
+    if nums.len() == 0 {
+      return None;
+    }
+    let right_eps = match left_eps {
+      PrecEps::NegEps => PrecEps::PosEps,
+      PrecEps::PosEps => PrecEps::NegEps,
+      PrecEps::Zero => PrecEps::Zero,
+    };
+    let left = Precedence::Level(PrecLevel(nums.clone()), left_eps);
+    let right = Precedence::Level(PrecLevel(nums), right_eps);
+    Some((left, right))
   }
+}
+
+#[cfg(test)]
+#[test]
+fn prec_parse_test() {
+  assert!(Precedence::parse("").is_some());
+  assert!(Precedence::parse("0").is_some());
+  assert!(Precedence::parse("1.2").is_some());
+  assert!(Precedence::parse("1.2.3").is_some());
+  assert!(Precedence::parse("1.-2.3<").is_some());
+  assert!(Precedence::parse("-10.42.2048>").is_some());
+  assert!(Precedence::parse("-10.42..2048>").is_none());
+  assert!(Precedence::parse("--10.42.2048>").is_none());
+  assert!(Precedence::parse("-10.42.2048>>").is_none());
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -76,7 +148,8 @@ pub enum Regex {
   Nat,
   Str,
   Id,
-  Empty,
+  Fail,
+  Eps,
   Seq(Rc<Regex>, Rc<Regex>),
   Seqs(Vec<Rc<Regex>>),
   OrElse(Rc<Regex>, Rc<Regex>),
@@ -114,6 +187,9 @@ impl Regex {
   pub fn rep1(r: &Rc<Regex>) -> Rc<Self> {
     Rc::new(Regex::Seq(r.clone(), Rc::new(Regex::Rep(r.clone()))))
   }
+  pub fn sep0(r: &Rc<Regex>, s: &str) -> Rc<Self> {
+    Rc::new(Regex::OrElse(Rc::new(Regex::Eps), Regex::sep1(r, s)))
+  }
   pub fn sep1(r: &Rc<Regex>, s: &str) -> Rc<Self> {
     Rc::new(Regex::Seq(
       r.clone(),
@@ -131,7 +207,7 @@ impl Regex {
     ]))
   }
   pub fn may(r: &Rc<Regex>) -> Rc<Self> {
-    Rc::new(Regex::OrElse(r.clone(), Rc::new(Regex::Empty)))
+    Rc::new(Regex::OrElse(r.clone(), Rc::new(Regex::Eps)))
   }
 }
 

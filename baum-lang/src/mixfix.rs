@@ -20,7 +20,7 @@ macro_rules! syntax_elem {
   (s) => {
     Rc::new(Regex::Str)
   };
-  (i) => {
+  (id) => {
     Regex::id()
   };
   (e) => {
@@ -46,7 +46,7 @@ macro_rules! syntax_elems {
 #[cfg(test)]
 #[test]
 fn syntax_macro_test() {
-  let elems = syntax_elems!["λ", i, ".", e];
+  let elems = syntax_elems!["λ", id, ".", e];
   assert_eq!(
     elems,
     Regex::Seqs(vec![
@@ -71,45 +71,46 @@ impl SyntaxDatabase {
     let ids = Regex::rep1(&id);
     let colon = Regex::token(":");
 
-    // (id+ | id+: e)%,
+    // (id+ | id+: e)%1,
     let fun_args = Regex::sep1(&Regex::seq(&ids, &Regex::may(&Regex::seq(&colon, &e))), ",");
-    // (e | id+: e)%,
-    let types = Regex::sep1(&Regex::seq(&Regex::may(&Regex::seq(&ids, &colon)), &e), ",");
-    // e%,
+    // (e | id+: e)%0,
+    let types = Regex::sep0(&Regex::seq(&Regex::may(&Regex::seq(&ids, &colon)), &e), ",");
+    // e%2,
     let tuple_vals = Regex::sep2(&e, ",");
-    // (id+: e)%,
-    let props = Regex::sep1(&Regex::seqs(vec![&ids, &colon, &e]), ",");
-    // def%,
-    let defs = Regex::sep1(&Regex::def(), ",");
+    // (id+: e)%0,
+    let props = Regex::sep0(&Regex::seqs(vec![&ids, &colon, &e]), ",");
+    // def%0,
+    let defs = Regex::sep0(&Regex::def(), ",");
 
-    db.def("!", syntax_elems!["(", e, ")"]);
-    db.def("!", syntax_elems!["prim", s]);
+    // Base
+    db.def("", syntax_elems!["(", e, ")"]);
+    db.def("", syntax_elems!["prim", s]);
     db.def("0", syntax_elems!["let", decls, "in", e]);
+    // Function
     db.def("0", syntax_elems!["λ", "(", fun_args, ")", e]);
     db.def("0", syntax_elems!["λ", "{", fun_args, "}", e]);
     db.def("0", syntax_elems!["Π", "(", types, ")", e]);
     db.def("0", syntax_elems!["Π", "{", types, "}", e]);
     db.def("4<", syntax_elems![e, e]);
     db.def("4<", syntax_elems![e, "{", e, "}"]);
-    db.def("!", syntax_elems!["(", ")"]);
-    db.def("!", syntax_elems!["(", tuple_vals, ")"]);
-    db.def("!", syntax_elems!["{", "}"]);
-    db.def("!", syntax_elems!["{", defs, "}"]);
-    db.def("!", syntax_elems!["Σ", "(", ")"]);
-    db.def("!", syntax_elems!["Σ", "(", types, ")"]);
-    db.def("!", syntax_elems!["Σ", "{", "}"]);
-    db.def("!", syntax_elems!["Σ", "{", props, "}"]);
+    // Tuple/Object
+    db.def("", syntax_elems!["(", ")"]);
+    db.def("", syntax_elems!["(", tuple_vals, ")"]);
+    db.def("", syntax_elems!["{", defs, "}"]);
+    db.def("", syntax_elems!["Σ", "(", types, ")"]);
+    db.def("", syntax_elems!["Σ", "{", props, "}"]);
     db.def("0", syntax_elems!["π", "(", n, ")", e]);
     db.def("0", syntax_elems!["π", "{", id, "}", e]);
+    // Context
     db.def("0", syntax_elems!["σ", "{", defs, "}", e]);
-
+    // Inductive/Coinductive
     let id_ty = Regex::seqs(vec![&id, &colon, &e]);
-    db.def("!", syntax_elems!["μ", "(", id_ty, ")", "{", "}"]);
-    db.def("!", syntax_elems!["μ", "(", id_ty, ")", "{", defs, "}"]);
-    db.def("!", syntax_elems!["ν", "(", id_ty, ")", "{", "}"]);
-    db.def("!", syntax_elems!["ν", "(", id_ty, ")", "{", defs, "}"]);
+    db.def("", syntax_elems!["μ", "(", id_ty, ")", "{", defs, "}"]);
+    db.def("", syntax_elems!["ν", "(", id_ty, ")", "{", defs, "}"]);
 
+    // Demo
     db.def("2.1<", syntax_elems![e, "+", e]);
+    db.def("2.1<", syntax_elems![e, "-", e]);
     db.def("2.2<", syntax_elems![e, "*", e]);
     db.def("2.3>", syntax_elems!["-", e]);
     db.def("2.4<", syntax_elems![e, "!"]);
