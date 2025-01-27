@@ -1,5 +1,5 @@
-use crate::mixfix_types::*;
-use crate::tokenize::*;
+use crate::types::mixfix::*;
+use crate::types::token::*;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::rc::Rc;
@@ -208,15 +208,15 @@ pub mod deriv {
         };
         if has_eps(&left) {
           let dr = d(right, t);
-          return or_else(sl, dr);
+          return or(sl, dr);
         } else {
           return sl;
         }
       }
-      Regex::OrElse(ref left, ref right) => {
+      Regex::Or(ref left, ref right) => {
         let dl = d(left, t);
         let dr = d(right, t);
-        return or_else(dl, dr);
+        return or(dl, dr);
       }
       Regex::Rep(ref r) => {
         let dr = d(r, t);
@@ -245,15 +245,15 @@ pub mod deriv {
         };
         if has_eps(&left) {
           let dr = d_nonterm(right, nt);
-          return or_else(sl, dr);
+          return or(sl, dr);
         } else {
           return sl;
         }
       }
-      Regex::OrElse(ref left, ref right) => {
+      Regex::Or(ref left, ref right) => {
         let dl = d_nonterm(left, nt);
         let dr = d_nonterm(right, nt);
-        return or_else(dl, dr);
+        return or(dl, dr);
       }
       Regex::Rep(ref r) => {
         let dr = d_nonterm(r, nt);
@@ -264,21 +264,21 @@ pub mod deriv {
     Rc::new(Regex::Fail)
   }
 
-  fn or_else(left: Rc<Regex>, right: Rc<Regex>) -> Rc<Regex> {
+  fn or(left: Rc<Regex>, right: Rc<Regex>) -> Rc<Regex> {
     if is_fail(&left) {
       return right;
     }
     if is_fail(&right) {
       return left;
     }
-    Rc::new(Regex::OrElse(left, right))
+    Rc::new(Regex::Or(left, right))
   }
 
   pub fn has_eps(regex: &Regex) -> bool {
     match regex {
       Regex::Eps => true,
       Regex::Seq(left, right) => has_eps(left) && has_eps(right),
-      Regex::OrElse(left, right) => has_eps(left) || has_eps(right),
+      Regex::Or(left, right) => has_eps(left) || has_eps(right),
       Regex::Rep(_) => true,
       _ => false, // Note: NonTerm::Decls may produce empty, but it doesn't matter here
     }
@@ -296,7 +296,7 @@ pub mod deriv {
             collect(right, set);
           }
         }
-        Regex::OrElse(left, right) => {
+        Regex::Or(left, right) => {
           collect(left, set);
           collect(right, set);
         }
@@ -324,7 +324,7 @@ pub mod deriv {
           let rn = if has_eps(left) { rec(right) } else { 0 };
           ln | rn
         }
-        Regex::OrElse(left, right) => {
+        Regex::Or(left, right) => {
           let ln = rec(left);
           let rn = rec(right);
           ln | rn

@@ -1,4 +1,7 @@
-use crate::{mixfix_types::Syntax, types::*};
+use crate::types::decl::*;
+use crate::types::expr::*;
+use crate::types::parse::*;
+use crate::types::*;
 
 struct Pretty {
   indent: u32,
@@ -117,7 +120,7 @@ impl Pretty {
       ExprF::Base(Base::Prim(n)) => self.s("prim ").s(n),
       ExprF::Base(Base::Syntax(s, se)) => {
         self.s("Syntax");
-        for (i, e) in se.iter().enumerate() {
+        for (i, e) in se.into_iter().enumerate() {
           self.s(" ");
           match e {
             SyntaxElems::Token(s) => self.s(s),

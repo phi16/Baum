@@ -14,7 +14,7 @@ fn main() {
   if let Ok(mut file) = File::open(path) {
     let mut content = String::new();
     if file.read_to_string(&mut content).is_ok() {
-      let res = baum_lang::parse::parse(&content);
+      let res = baum_lang::parse_decl::parse(&content);
       println!("{:?}", res);
       run(&content);
     } else {

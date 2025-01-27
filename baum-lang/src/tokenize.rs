@@ -1,4 +1,4 @@
-use crate::types::TokenPos;
+use crate::types::token::*;
 use core::iter::Peekable;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -19,32 +19,6 @@ fn get_char_type(c: char) -> CharType {
     '.' | ',' | ':' | ';' | '(' | ')' | '{' | '}' | '[' | ']' => CharType::Reserved,
     _ => CharType::Symbol,
   }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum TokenType {
-  Ident,      // a, xs, +, p0', if_then_else_
-  Natural,    // 0, 0x1F, 0xcc
-  Rational,   // 3.14, 1e-2, 0x1.23ap32
-  Char,       // 'a', '\n', '\x1F', '\u3082'
-  String,     // "Hello, World!", "a\nb"
-  Precedence, // 1.-2.3<
-  Reserved,   // :, =, [, }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Copy)]
-pub enum Indent {
-  Base,
-  Head(u16),
-  Cont(u16),
-}
-
-#[derive(Debug, Clone)]
-pub struct Token<'a> {
-  pub str: &'a str,
-  pub ty: TokenType,
-  pub pos: TokenPos,
-  pub indent: Indent,
 }
 
 #[derive(Debug, Clone)]

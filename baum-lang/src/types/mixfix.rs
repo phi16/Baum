@@ -186,7 +186,7 @@ pub enum Regex {
   Fail,
   Eps,
   Seq(Rc<Regex>, Rc<Regex>),
-  OrElse(Rc<Regex>, Rc<Regex>),
+  Or(Rc<Regex>, Rc<Regex>),
   Rep(Rc<Regex>),
   NonTerm(NonTerm),
 }
@@ -229,7 +229,7 @@ impl Regex {
     Rc::new(Regex::Seq(r.clone(), Rc::new(Regex::Rep(r.clone()))))
   }
   pub fn sep0(r: &Rc<Regex>, s: &str) -> Rc<Self> {
-    Rc::new(Regex::OrElse(Rc::new(Regex::Eps), Regex::sep1(r, s)))
+    Rc::new(Regex::Or(Rc::new(Regex::Eps), Regex::sep1(r, s)))
   }
   pub fn sep1(r: &Rc<Regex>, s: &str) -> Rc<Self> {
     Rc::new(Regex::Seq(
@@ -244,7 +244,7 @@ impl Regex {
     Regex::seqs(vec![&r, &Regex::token(s), &Self::sep1(r, s)])
   }
   pub fn may(r: &Rc<Regex>) -> Rc<Self> {
-    Rc::new(Regex::OrElse(r.clone(), Rc::new(Regex::Eps)))
+    Rc::new(Regex::Or(r.clone(), Rc::new(Regex::Eps)))
   }
 }
 
@@ -260,7 +260,7 @@ impl std::fmt::Debug for Regex {
         | Regex::Eps
         | Regex::Rep(_)
         | Regex::NonTerm(_) => true,
-        Regex::OrElse(r1, _) => **r1 == Regex::Eps,
+        Regex::Or(r1, _) => **r1 == Regex::Eps,
         _ => false,
       }
     }
@@ -292,7 +292,7 @@ impl std::fmt::Debug for Regex {
             _ => fmt_sub(&r2, f),
           }
         }
-        Regex::OrElse(r1, r2) => {
+        Regex::Or(r1, r2) => {
           if **r1 == Regex::Eps {
             fmt_sub(&r2, f)?;
             write!(f, "?")
