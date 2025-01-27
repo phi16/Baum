@@ -1,4 +1,4 @@
-use crate::types::*;
+use crate::{mixfix_types::Syntax, types::*};
 
 struct Pretty {
   indent: u32,
@@ -107,12 +107,28 @@ impl Pretty {
   pub fn e(&mut self, e: &Expr) -> &mut Self {
     match &e.0 {
       ExprF::Base(Base::Lit(l)) => match l {
-        Literal::Num(n) => self.s(n),
+        Literal::Nat(n) => self.s(n),
+        Literal::Rat(n) => self.s(n),
         Literal::Chr(c) => self.s("'").s(c).s("'"),
         Literal::Str(s) => self.s("\"").s(s).s("\""),
         Literal::Hole => self.s("_"),
       },
+      ExprF::Base(Base::Var(i)) => self.i(i),
       ExprF::Base(Base::Prim(n)) => self.s("prim ").s(n),
+      ExprF::Base(Base::Syntax(s, se)) => {
+        self.s("Syntax");
+        for (i, e) in se.iter().enumerate() {
+          self.s(" ");
+          match e {
+            SyntaxElems::Token(s) => self.s(s),
+            SyntaxElems::Ident(i) => self.i(i),
+            SyntaxElems::Def(def) => self.def(def),
+            SyntaxElems::Expr(e) => self.e(e),
+            SyntaxElems::Decls(ds) => self.ds(ds),
+          };
+        }
+        self
+      }
       _ => unimplemented!(),
     }
   }

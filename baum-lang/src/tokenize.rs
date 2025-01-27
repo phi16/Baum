@@ -24,7 +24,8 @@ fn get_char_type(c: char) -> CharType {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TokenType {
   Ident,      // a, xs, +, p0', if_then_else_
-  Number,     // 0, 3.14, 1e-2, 0x1F, 0xcc
+  Natural,    // 0, 0x1F, 0xcc
+  Rational,   // 3.14, 1e-2, 0x1.23ap32
   Char,       // 'a', '\n', '\x1F', '\u3082'
   String,     // "Hello, World!", "a\nb"
   Precedence, // 1.-2.3<
@@ -59,6 +60,7 @@ type CharLoc<'a> = (Loc<'a>, char);
 struct Tokenizer<'a, I: Iterator<Item = CharLoc<'a>>> {
   iter: Peekable<I>,
   errors: Vec<String>,
+  in_syntax: bool,
 }
 
 impl<'a, I: Iterator<Item = CharLoc<'a>>> Tokenizer<'a, I> {
@@ -66,16 +68,17 @@ impl<'a, I: Iterator<Item = CharLoc<'a>>> Tokenizer<'a, I> {
     Tokenizer {
       iter: input.peekable(),
       errors: Vec::new(),
+      in_syntax: false,
     }
   }
 
-  fn make_token_internal(&self, loc: &Loc<'a>, str: &'a str, ty_base: TokenType) -> Token<'a> {
+  fn make_token_internal(&mut self, loc: &Loc<'a>, str: &'a str, ty_base: TokenType) -> Token<'a> {
     let ty = match str {
       "=" | "_" => TokenType::Reserved,
       _ => ty_base,
     };
     if str == "syntax" {
-      todo!("precedence");
+      self.in_syntax = true;
     }
     Token {
       str,
@@ -181,18 +184,24 @@ impl<'a, I: Iterator<Item = CharLoc<'a>>> Tokenizer<'a, I> {
   }
 
   fn number_literal(&mut self) -> Token<'a> {
+    // dec: [0-9]+(.[0-9]*)?([eE](+-)?[0-9]+)?
+    // bin: 0b[01]*(.[01]*)? but not 0b
+    // oct: 0o[0-7]*(.[0-7]*)? but not 0o
+    // hex: 0x[0-9a-fA-F]*(.[0-9a-fA-F]*)?(p(+-)?[0-9]+)? but not 0x(.p(+-)?[0-9]+)?
+
     let (l0, c0) = self.iter.peek().unwrap().clone();
     self.iter.next();
     enum State {
       Zero,    // 0
-      Int,     // 123, 0x5c
-      Frac,    // 1.23
-      Exp,     // 1e
-      ExpSign, // 1e+
-      Last,    // 1e+4
+      Radix,   // 0b, 0o, 0x (non-accepting state)
+      Nat,     // 123, 0x5c
+      Frac,    // 123., 0x1.23
+      Exp,     // 1e, 1p, 0x1.23p (non-accepting state)
+      ExpSign, // 1e+ (non-accepting state)
+      ExpNat,  // 1e+4
     }
     let mut hex = false;
-    let mut s = if c0 == '0' { State::Zero } else { State::Int };
+    let mut s = if c0 == '0' { State::Zero } else { State::Nat };
     while let Some((l1, c1)) = self.iter.peek() {
       if l0.ln != l1.ln {
         break;
@@ -202,37 +211,33 @@ impl<'a, I: Iterator<Item = CharLoc<'a>>> Tokenizer<'a, I> {
         State::Zero => {
           if c1 == 'b' || c1 == 'o' || c1 == 'x' {
             hex = c1 == 'x';
-            s = State::Int;
-          } else if c1 == 'e' || c1 == 'E' {
+            s = State::Radix;
+          } else if c1 == 'e' || c1 == 'E' || c1 == 'p' {
             s = State::Exp;
           } else if c1 == '.' {
             s = State::Frac;
           } else if c1.is_ascii_digit() {
-            s = State::Int;
+            s = State::Nat;
           } else {
             break;
           }
         }
-        State::Int => {
-          if c1 == '.' {
+        State::Radix | State::Nat => {
+          if !hex && (c1 == 'e' || c1 == 'E') || c1 == 'p' {
+            s = State::Exp;
+          } else if c1 == '.' {
             s = State::Frac;
-          } else if c1 == 'e' || c1 == 'E' {
-            s = State::Exp;
-          } else if hex && c1 == 'p' {
-            s = State::Exp;
           } else if c1.is_ascii_digit() || hex && c1.is_ascii_hexdigit() {
-            // do nothing
+            s = State::Nat;
           } else {
             break;
           }
         }
         State::Frac => {
-          if c1 == 'e' || c1 == 'E' {
-            s = State::Exp;
-          } else if hex && c1 == 'p' {
+          if !hex && (c1 == 'e' || c1 == 'E') || c1 == 'p' {
             s = State::Exp;
           } else if c1.is_ascii_digit() || hex && c1.is_ascii_hexdigit() {
-            // do nothing
+            s = State::Frac;
           } else {
             break;
           }
@@ -241,20 +246,15 @@ impl<'a, I: Iterator<Item = CharLoc<'a>>> Tokenizer<'a, I> {
           if c1 == '+' || c1 == '-' {
             s = State::ExpSign;
           } else if c1.is_ascii_digit() {
-            s = State::Last;
+            s = State::ExpNat;
           } else {
             break;
           }
         }
-        State::ExpSign => {
+        State::ExpSign | State::ExpNat => {
           if c1.is_ascii_digit() {
-            s = State::Last;
+            s = State::ExpNat;
           } else {
-            break;
-          }
-        }
-        State::Last => {
-          if !c1.is_ascii_digit() {
             break;
           }
         }
@@ -262,12 +262,16 @@ impl<'a, I: Iterator<Item = CharLoc<'a>>> Tokenizer<'a, I> {
       self.iter.next();
     }
     match s {
-      State::Exp | State::ExpSign => {
+      State::Radix | State::Exp | State::ExpSign => {
         self.add_error_loc(&l0, "incomplete number literal");
       }
       _ => {}
     }
-    return self.make_token_addr(l0.col as usize, &l0, TokenType::Number);
+    let ty = match s {
+      State::Zero | State::Nat => TokenType::Natural,
+      _ => TokenType::Rational,
+    };
+    return self.make_token_addr(l0.col as usize, &l0, ty);
   }
 }
 
@@ -277,6 +281,35 @@ impl<'a, I: Iterator<Item = (Loc<'a>, char)>> Iterator for Tokenizer<'a, I> {
   fn next(&mut self) -> Option<Self::Item> {
     self.skip_space();
     let (l0, c0) = self.iter.peek()?.clone();
+    if self.in_syntax {
+      let precedence = if c0 == '-' {
+        self.iter.next();
+        match self.iter.peek() {
+          Some((_, c1)) if c1.is_ascii_digit() => true,
+          _ => {
+            return Some(self.make_token_addr(l0.col as usize, &l0, TokenType::Reserved));
+          }
+        }
+      } else {
+        c0.is_ascii_digit()
+      };
+      if precedence {
+        while let Some((l1, c1)) = self.iter.peek() {
+          if l0.ln != l1.ln {
+            break;
+          }
+          if c1.is_whitespace() {
+            let c1 = *c1;
+            if c1 != ' ' {
+              self.add_error_loc(&l0, &format!("invalid whitespace character: {:?}", c1));
+            }
+            break;
+          }
+          self.iter.next();
+        }
+        return Some(self.make_token_addr(l0.col as usize, &l0, TokenType::Precedence));
+      }
+    }
     let ty = get_char_type(c0);
     if ty == CharType::Reserved {
       return Some(self.make_token(&l0, TokenType::Reserved));
@@ -378,8 +411,13 @@ fn test() {
     0x1.23ap32 0x1.23ap32 0x1.23ap+32 0x1.23p-32
     12"#;
   assert!(tokenize(str0).is_ok());
-  assert!(tokenize(r#"1 2 3"#).is_ok());
-  assert!(tokenize(r#"1 2e+ 3"#).is_err());
+  assert!(tokenize("1 2 3").is_ok());
+  assert!(tokenize("1 2e+ 3").is_err());
+  assert!(tokenize("0x").is_err());
+  assert!(tokenize("0x.12p").is_err());
+  assert!(tokenize("0x.12p+").is_err());
+  assert!(tokenize("0x.12p+4").is_ok());
+  assert!(tokenize("0x.p+4").is_ok());
 
   fn splitter(s: &str) -> Vec<(&str, TokenType)> {
     tokenize(s)
@@ -391,10 +429,10 @@ fn test() {
   assert_eq!(
     splitter("1.2 a.3"),
     vec![
-      ("1.2", TokenType::Number),
+      ("1.2", TokenType::Rational),
       ("a", TokenType::Ident),
       (".", TokenType::Reserved),
-      ("3", TokenType::Number),
+      ("3", TokenType::Natural),
     ]
   );
   assert_eq!(
@@ -412,11 +450,11 @@ fn test() {
   assert_eq!(
     splitter("1.2.3.4.5"),
     vec![
-      ("1.2", TokenType::Number),
+      ("1.2", TokenType::Rational),
       (".", TokenType::Reserved),
-      ("3.4", TokenType::Number),
+      ("3.4", TokenType::Rational),
       (".", TokenType::Reserved),
-      ("5", TokenType::Number),
+      ("5", TokenType::Natural),
     ]
   );
   assert_eq!(
@@ -431,7 +469,7 @@ fn test() {
     splitter("syntax -x"),
     vec![
       ("syntax", TokenType::Ident),
-      ("-", TokenType::Ident),
+      ("-", TokenType::Reserved),
       ("x", TokenType::Ident),
     ]
   );

@@ -12,7 +12,12 @@ mod tests {
   #[test]
   fn it_works() {
     let str = r#"
+      f = - 2
+      u = Σ(x y: Nat, Nat, z: Q x y, P x y z)
       x = 1 + 2 * 3
+      y = 1 * 2 + 3
+      z = 1 + [ 1 + 2 | 3 + 4 ] * 5
+      w = 1 + [ 1 + 2 ? 3 + 4 ] * 5
     "#;
     let res = parse::parse(str);
     eprintln!("");
@@ -26,6 +31,7 @@ mod tests {
         for err in errs {
           eprintln!("{}", err);
         }
+        assert!(false);
       }
     }
     eprintln!("");

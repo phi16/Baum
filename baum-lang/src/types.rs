@@ -4,7 +4,8 @@ type ModuleName<I> = Vec<I>;
 
 #[derive(Debug, Clone)]
 pub enum Literal<S> {
-  Num(S),
+  Nat(S),
+  Rat(S),
   Chr(S),
   Str(S),
   Hole,
@@ -42,7 +43,7 @@ pub enum ContextF<I, E> {
 pub enum ModuleF<S, I, Ds> {
   Decls(Option<I>, Ds),
   Import(S),
-  Ref(Vec<I>),
+  Ref(ModuleName<I>),
 }
 
 #[derive(Debug, Clone)]
@@ -89,13 +90,13 @@ impl TokenPos {
 }
 
 #[derive(Debug, Clone)]
-pub enum Base<S, I, Ds, E> {
+pub enum Base<S, I, Ds, E, Se> {
   Lit(Literal<S>),
   Var(I),
   Prim(S),
-  Extern(Vec<I>, I),
+  Extern(ModuleName<I>, I),
   Let(Ds, E),
-  Syntax(Syntax, E),
+  Syntax(Syntax, Se),
 }
 #[derive(Debug, Clone)]
 pub enum FunctionE<I, E> {
@@ -135,8 +136,8 @@ pub enum Coinductive<I, E> {
 }
 
 #[derive(Debug, Clone)]
-pub enum ExprF<S, I, Ds, E> {
-  Base(Base<S, I, Ds, E>),
+pub enum ExprF<S, I, Ds, E, Se> {
+  Base(Base<S, I, Ds, E, Se>),
   FunctionE(FunctionE<I, E>),
   FunctionI(FunctionI<I, E>),
   Tuples(Tuples<E>),
@@ -147,8 +148,17 @@ pub enum ExprF<S, I, Ds, E> {
 }
 
 #[derive(Debug, Clone)]
+pub enum SyntaxElems<'a> {
+  Token(&'a str),
+  Ident(Id<'a>),
+  Def(Def<'a>),
+  Expr(Expr<'a>),
+  Decls(Vec<Decl<'a>>),
+}
+
+#[derive(Debug, Clone)]
 pub struct Expr<'a>(
-  pub ExprF<&'a str, Id<'a>, Box<Vec<Decl<'a>>>, Box<Expr<'a>>>,
+  pub ExprF<&'a str, Id<'a>, Box<Vec<Decl<'a>>>, Box<Expr<'a>>, Vec<SyntaxElems<'a>>>,
   pub TokenPos,
 );
 
