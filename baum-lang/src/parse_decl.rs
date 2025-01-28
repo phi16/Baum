@@ -17,7 +17,7 @@ pub struct DeclParser<'a> {
 }
 
 impl<'a> DeclParser<'a> {
-  fn new(tokens: Vec<Token<'a>>) -> Self {
+  pub fn new(tokens: Vec<Token<'a>>) -> Self {
     DeclParser {
       tracker: Tracker::new(tokens),
       syntax: SyntaxTable::default(),
@@ -25,7 +25,7 @@ impl<'a> DeclParser<'a> {
     }
   }
 
-  fn add_error(&mut self, pos: TokenPos, msg: &str) {
+  pub fn add_error(&mut self, pos: TokenPos, msg: &str) {
     let s = format!("{}, decl: {}", pos.to_string(), msg);
     self.errors.push(s);
   }
@@ -368,7 +368,7 @@ impl<'a> DeclParser<'a> {
     return ds;
   }
 
-  fn program(&mut self) -> Vec<Decl<'a>> {
+  pub fn program(&mut self) -> Vec<Decl<'a>> {
     let mut ds = Vec::new();
     loop {
       let orig_pos = self.tracker.pos();
@@ -385,30 +385,4 @@ impl<'a> DeclParser<'a> {
     }
     ds
   }
-}
-
-pub fn parse<'a>(code: &'a str) -> Result<Vec<Decl<'a>>, Vec<String>> {
-  let tokens = match tokenize(code) {
-    Ok(tokens) => tokens,
-    Err(e) => return Err(e),
-  };
-  let mut parser = DeclParser::new(tokens);
-  let ds = parser.program();
-  if let Some(t) = parser.tracker.peek_raw() {
-    let t = t.clone();
-    parser.add_error(t.pos, "not all tokens consumed");
-  }
-
-  if parser.errors.is_empty() {
-    Ok(ds)
-  } else {
-    eprintln!("{}", pretty(&ds));
-    Err(parser.errors)
-  }
-}
-
-#[cfg(test)]
-#[test]
-fn test() {
-  assert!(parse("x = 1 + 2 + 3").is_ok());
 }

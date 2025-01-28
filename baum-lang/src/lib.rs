@@ -1,6 +1,7 @@
 mod mixfix;
-pub mod parse_decl;
-pub mod parse_expr;
+pub mod parse;
+mod parse_decl;
+mod parse_expr;
 pub mod pretty;
 mod tokenize;
 mod types;
@@ -19,7 +20,7 @@ mod tests {
       z = 1 + [ 1 + 2 | 3 + 4 ] * 5
       w = 1 + [ 1 + 2 ? 3 + 4 ] * 5
     "#;
-    let res = parse_decl::parse(str);
+    let res = parse::parse(str);
     eprintln!("");
     match res {
       Ok(ds) => {
