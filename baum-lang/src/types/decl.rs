@@ -1,7 +1,5 @@
 use crate::types::mixfix::*;
-use crate::types::parse::*;
-
-type ModuleName<I> = Vec<I>;
+use crate::types::parse_base::*;
 
 #[derive(Debug, Clone)]
 pub enum ContextF<I, E> {

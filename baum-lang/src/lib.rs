@@ -1,4 +1,3 @@
-mod mixfix;
 pub mod parse;
 mod parse_decl;
 mod parse_expr;

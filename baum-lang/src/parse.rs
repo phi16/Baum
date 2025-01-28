@@ -1,7 +1,7 @@
-use crate::parse_decl::*;
+use crate::parse_decl::DeclParser;
 use crate::pretty::pretty;
-use crate::tokenize::*;
-use crate::types::*;
+use crate::tokenize::tokenize;
+use crate::types::parse::Decl;
 
 pub fn parse<'a>(code: &'a str) -> Result<Vec<Decl<'a>>, Vec<String>> {
   let tokens = match tokenize(code) {

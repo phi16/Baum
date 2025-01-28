@@ -1,7 +1,4 @@
-use crate::types::decl::*;
-use crate::types::expr::*;
 use crate::types::parse::*;
-use crate::types::*;
 
 struct Pretty {
   indent: u32,
@@ -10,7 +7,7 @@ struct Pretty {
 }
 
 impl Pretty {
-  pub fn new() -> Self {
+  fn new() -> Self {
     Pretty {
       indent: 0,
       str: Vec::new(),
@@ -18,23 +15,23 @@ impl Pretty {
     }
   }
 
-  pub fn i(&mut self, i: &Id) -> &mut Self {
+  fn i(&mut self, i: &Id) -> &mut Self {
     self.line.push(i.as_str().to_string());
     self
   }
 
-  pub fn is(&mut self, i: &Vec<Id>, sep: &str) -> &mut Self {
+  fn is(&mut self, i: &Vec<Id>, sep: &str) -> &mut Self {
     let mid: Vec<&str> = i.iter().map(|i| i.as_str()).collect();
     self.line.push(mid.join(sep));
     self
   }
 
-  pub fn s(&mut self, s: &str) -> &mut Self {
+  fn s(&mut self, s: &str) -> &mut Self {
     self.line.push(s.to_string());
     self
   }
 
-  pub fn ln(&mut self) -> &mut Self {
+  fn ln(&mut self) -> &mut Self {
     let pad = " ".repeat(self.indent as usize);
     let str = self.line.join("");
     self.str.push(pad + &str);
@@ -42,24 +39,24 @@ impl Pretty {
     self
   }
 
-  pub fn open(&mut self) -> &mut Self {
+  fn open(&mut self) -> &mut Self {
     self.ln();
     self.indent += 2;
     self
   }
 
-  pub fn close(&mut self) -> &mut Self {
+  fn close(&mut self) -> &mut Self {
     self.indent -= 2;
     self
   }
 
-  pub fn c(&mut self, c: &Context) -> &mut Self {
+  fn c(&mut self, c: &Context) -> &mut Self {
     match c {
       ContextF::Ref(i, e) => self.i(i).s(": ").e(e),
     }
   }
 
-  pub fn def(&mut self, def: &Def) -> &mut Self {
+  fn def(&mut self, def: &Def) -> &mut Self {
     self.i(&def.name);
     for (arg, vis) in &def.args {
       self.s(" ");
@@ -81,7 +78,7 @@ impl Pretty {
     self.s(" = ").e(&*def.body)
   }
 
-  pub fn m(&mut self, m: &Module) -> &mut Self {
+  fn m(&mut self, m: &Module) -> &mut Self {
     match &m.0 {
       ModuleF::Decls(Some(i), ds) => self.i(i).s(" {").open().ds(ds).close().s("}"),
       ModuleF::Decls(None, ds) => self.s("{").open().ds(ds).close().s("}"),
@@ -90,7 +87,7 @@ impl Pretty {
     }
   }
 
-  pub fn d(&mut self, d: &Decl) -> &mut Self {
+  fn d(&mut self, d: &Decl) -> &mut Self {
     match &d.0 {
       DeclF::Context(c, d) => self.s("[").c(c).s("] ").d(d),
       DeclF::Module(Access::Keep, m) => self.m(m),
@@ -100,14 +97,14 @@ impl Pretty {
     }
   }
 
-  pub fn ds(&mut self, ds: &Vec<Decl>) -> &mut Self {
+  fn ds(&mut self, ds: &Vec<Decl>) -> &mut Self {
     for d in ds {
       self.d(d);
     }
     self
   }
 
-  pub fn e(&mut self, e: &Expr) -> &mut Self {
+  fn e(&mut self, e: &Expr) -> &mut Self {
     match &e.0 {
       ExprF::Base(Base::Lit(l)) => match l {
         Literal::Nat(n) => self.s(n),

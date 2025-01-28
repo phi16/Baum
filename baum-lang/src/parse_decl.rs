@@ -1,14 +1,5 @@
-use crate::mixfix::*;
 use crate::parse_expr::ExprParser;
-use crate::pretty::*;
-use crate::tokenize::*;
-use crate::types::decl::*;
-use crate::types::expr::*;
-use crate::types::mixfix::*;
 use crate::types::parse::*;
-use crate::types::token::*;
-use crate::types::tracker::*;
-use crate::types::*;
 
 pub struct DeclParser<'a> {
   pub tracker: Tracker<'a>,

@@ -1,11 +1,5 @@
-use crate::mixfix::*;
 use crate::parse_decl::DeclParser;
-use crate::types::expr::*;
-use crate::types::mixfix::*;
 use crate::types::parse::*;
-use crate::types::token::*;
-use crate::types::tracker::*;
-use crate::types::*;
 use std::collections::HashSet;
 use std::rc::Rc;
 

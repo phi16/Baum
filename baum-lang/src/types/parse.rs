@@ -1,34 +1,37 @@
-#[derive(Debug, Clone)]
-pub enum ArgF<I, E> {
-  Ids(Vec<I>),
-  Ty(E),
-  IdsTy(Vec<I>, E),
-}
-
-#[derive(Debug, Clone, Copy)]
-pub enum Vis {
-  Explicit,
-  Implicit,
-}
-
-type ArgVis<I, E> = (ArgF<I, E>, Vis);
+pub use crate::types::decl::*;
+pub use crate::types::expr::*;
+pub use crate::types::mixfix::*;
+pub use crate::types::parse_base::*;
+pub use crate::types::token::*;
+pub use crate::types::tracker::*;
 
 #[derive(Debug, Clone)]
-pub struct DefF<I, E> {
-  pub name: I,
-  pub args: Vec<ArgVis<I, E>>,
-  pub ty: Option<E>,
-  pub body: E,
+pub enum SyntaxElems<'a> {
+  Token(&'a str),
+  Ident(Id<'a>),
+  Def(Def<'a>),
+  Expr(Expr<'a>),
+  Decls(Vec<Decl<'a>>),
 }
 
 #[derive(Debug, Clone)]
-pub struct Id<'a>(&'a str);
+pub struct Expr<'a>(
+  pub ExprF<&'a str, Id<'a>, Box<Vec<Decl<'a>>>, Box<Expr<'a>>, Vec<SyntaxElems<'a>>>,
+  pub TokenPos,
+);
 
-impl<'a> Id<'a> {
-  pub fn new(s: &'a str) -> Self {
-    Id(s)
-  }
-  pub fn as_str(&self) -> &'a str {
-    self.0
-  }
-}
+#[derive(Debug, Clone)]
+pub struct Module<'a>(
+  pub ModuleF<&'a str, Id<'a>, Box<Vec<Decl<'a>>>>,
+  pub TokenPos,
+);
+
+#[derive(Debug, Clone)]
+pub struct Decl<'a>(
+  pub DeclF<Id<'a>, Box<Decl<'a>>, Box<Expr<'a>>, Box<Module<'a>>>,
+  pub TokenPos,
+);
+
+pub type Context<'a> = ContextF<Id<'a>, Box<Expr<'a>>>;
+pub type Def<'a> = DefF<Id<'a>, Box<Expr<'a>>>;
+pub type Arg<'a> = ArgF<Id<'a>, Box<Expr<'a>>>;
