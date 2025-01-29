@@ -3,5 +3,12 @@
 version = 3
 
 [[package]]
+name = "baum-core"
+version = "0.1.0"
+
+[[package]]
 name = "baum-lang"
 version = "0.1.0"
+dependencies = [
+ "baum-core",
+]

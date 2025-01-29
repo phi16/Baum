@@ -106,16 +106,16 @@ impl Pretty {
 
   fn e(&mut self, e: &Expr) -> &mut Self {
     match &e.0 {
-      ExprF::Base(Base::Lit(l)) => match l {
+      ExprF::Hole => self.s("_"),
+      ExprF::Lit(l) => match l {
         Literal::Nat(n) => self.s(n),
         Literal::Rat(n) => self.s(n),
         Literal::Chr(c) => self.s("'").s(c).s("'"),
         Literal::Str(s) => self.s("\"").s(s).s("\""),
-        Literal::Hole => self.s("_"),
       },
-      ExprF::Base(Base::Var(i)) => self.i(i),
-      ExprF::Base(Base::Prim(n)) => self.s("prim ").s(n),
-      ExprF::Base(Base::Syntax(s, se)) => {
+      ExprF::Var(i) => self.i(i),
+      ExprF::Prim(n) => self.s("prim ").s(n),
+      ExprF::Syntax(s, se) => {
         self.s("Syntax");
         for (i, e) in se.into_iter().enumerate() {
           self.s(" ");

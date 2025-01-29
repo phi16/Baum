@@ -297,7 +297,7 @@ impl<'a, 'b> ExprParser<'a, 'b> {
   }
 
   fn make_syntax(&self, s: &Syntax, elems: Vec<SyntaxElems<'a>>, pos: TokenPos) -> Expr<'a> {
-    Expr(ExprF::Base(Base::Syntax(s.clone(), elems)), pos)
+    Expr(ExprF::Syntax(s.clone(), elems), pos)
   }
 
   fn expr_leading(&mut self, base_p: &Precedence) -> Option<Expr<'a>> {
@@ -318,21 +318,21 @@ impl<'a, 'b> ExprParser<'a, 'b> {
     } {
       self.tracker.next();
       eprintln!("- expr1: lit = {:?}", lit);
-      return Some(Expr(ExprF::Base(Base::Lit(lit)), pos));
+      return Some(Expr(ExprF::Lit(lit), pos));
     }
     if !self.is_opname(t.str) && t.ty == TokenType::Ident {
       // identifier
       let id = Id::new(t.str);
       self.tracker.next();
       eprintln!("- expr1: var = {:?}", id);
-      return Some(Expr(ExprF::Base(Base::Var(id)), pos));
+      return Some(Expr(ExprF::Var(id), pos));
     }
     let pres: Vec<&'b Syntax> = self.filter_p(self.syntax.choose_pre(t.str)?, base_p);
     eprintln!("- expr1: pres = {:?}", pres);
     if pres.is_empty() && t.ty == TokenType::Ident {
       let id = Id::new(t.str);
       self.tracker.next();
-      return Some(Expr(ExprF::Base(Base::Var(id)), pos));
+      return Some(Expr(ExprF::Var(id), pos));
     }
     let e = self.parse_by_regex(pres, Vec::new())?;
     eprintln!("- expr1 result: {:?}", e);

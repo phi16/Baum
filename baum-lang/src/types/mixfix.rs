@@ -410,15 +410,14 @@ impl SyntaxTable {
     let fun_args = Regex::sep1(&Regex::seq(&ids, &Regex::may(&Regex::seq(&colon, &e))), ",");
     // (e | id+: e)%0,
     let types = Regex::sep0(&Regex::seq(&Regex::may(&Regex::seq(&ids, &colon)), &e), ",");
-    // e%2,
-    let tuple_vals = Regex::sep2(&e, ",");
+    // e%0,
+    let vals = Regex::sep0(&e, ",");
     // (id+: e)%0,
     let props = Regex::sep0(&Regex::seqs(vec![&ids, &colon, &e]), ",");
     // def%0,
-    let defs = Regex::sep0(&Regex::def(), ",");
+    let defs = Regex::sep0(&Regex::def(), ","); // comma or...
 
     // Base
-    db.def("", syntax_elems!["(", e, ")"]);
     db.def("", syntax_elems!["prim", s]);
     db.def("0", syntax_elems!["let", decls, "in", e]);
     // Function
@@ -429,8 +428,7 @@ impl SyntaxTable {
     db.def("4<", syntax_elems![e, e]);
     db.def("4<", syntax_elems![e, "{", e, "}"]);
     // Tuple/Object
-    db.def("", syntax_elems!["(", ")"]);
-    db.def("", syntax_elems!["(", tuple_vals, ")"]);
+    db.def("", syntax_elems!["(", vals, ")"]); // or unit or usual parenthesis
     db.def("", syntax_elems!["{", defs, "}"]);
     db.def("", syntax_elems!["Σ", "(", types, ")"]);
     db.def("", syntax_elems!["Σ", "{", props, "}"]);

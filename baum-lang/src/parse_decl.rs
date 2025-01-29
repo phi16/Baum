@@ -207,7 +207,7 @@ impl<'a> DeclParser<'a> {
     let pos = self.tracker.pos();
     match self.expr() {
       Some(e) => e,
-      None => Expr(ExprF::Base(Base::Lit(Literal::Hole)), pos),
+      None => Expr(ExprF::Hole, pos),
     }
   }
 
