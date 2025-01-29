@@ -1,4 +1,4 @@
-use crate::types::token::{Token, TokenType};
+use crate::types::token::TokenType;
 use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::collections::HashSet;
@@ -206,9 +206,6 @@ impl Regex {
   }
   fn decls() -> Rc<Self> {
     Rc::new(Regex::NonTerm(NonTerm::Decls))
-  }
-  fn ids() -> Rc<Self> {
-    Self::rep1(&Self::id())
   }
   fn token(s: &str) -> Rc<Self> {
     Rc::new(Regex::Token(s.to_string()))
@@ -480,6 +477,7 @@ impl SyntaxTable {
     v.push(Syntax::new(left, right, seqs));
   }
 
+  #[allow(dead_code)]
   pub fn dump(&self) {
     println!("[Prefixs]");
     for syn in &self.pres {
@@ -685,13 +683,6 @@ pub mod deriv {
       return Some(NonTerm::Decls);
     }
     panic!("Not allowed to have multiple non-terminals in a syntax");
-  }
-
-  pub fn is_fail(regex: &Regex) -> bool {
-    match regex {
-      Regex::Fail => true,
-      _ => false,
-    }
   }
 
   pub fn skip_e(regex: &Rc<Regex>, skip: usize) -> Rc<Regex> {

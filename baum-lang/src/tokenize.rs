@@ -77,7 +77,7 @@ impl<'a, I: Iterator<Item = CharLoc<'a>>> Tokenizer<'a, I> {
 
   fn make_token_addr(&mut self, addr: usize, l0: &Loc<'a>, ty: TokenType) -> Token<'a> {
     let str = match self.iter.peek() {
-      Some((l1, c1)) if l0.ln == l1.ln => &l0.str[addr..l1.col as usize],
+      Some((l1, _)) if l0.ln == l1.ln => &l0.str[addr..l1.col as usize],
       _ => &l0.str[addr..],
     };
     self.make_token_internal(l0, str, ty)

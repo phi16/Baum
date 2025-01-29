@@ -65,7 +65,7 @@ impl Pretty {
           Vis::Explicit => self.is(&ids, " "),
           Vis::Implicit => self.s("{").is(&ids, " ").s("}"),
         },
-        ArgF::Ty(e) => unreachable!(),
+        ArgF::Ty(_) => unreachable!(),
         ArgF::IdsTy(ids, e) => match vis {
           Vis::Explicit => self.s("(").is(ids, " ").s(": ").e(&*e).s(")"),
           Vis::Implicit => self.s("{").is(ids, " ").s(": ").e(&*e).s("}"),
@@ -114,9 +114,9 @@ impl Pretty {
         Literal::Str(s) => self.s("\"").s(s).s("\""),
       },
       ExprF::Var(i) => self.i(i),
-      ExprF::Syntax(s, se) => {
+      ExprF::Syntax(_, se) => {
         self.s("[");
-        for (i, e) in se.into_iter().enumerate() {
+        for e in se.into_iter() {
           self.s(" ");
           match e {
             SyntaxElem::Token(s) => self.s(s),
