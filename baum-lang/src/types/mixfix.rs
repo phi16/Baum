@@ -186,38 +186,38 @@ pub enum Regex {
   Nat,
   Str,
   Id,
+  NonTerm(NonTerm),
   Fail,
   Eps,
   Seq(Rc<Regex>, Rc<Regex>),
   Or(Rc<Regex>, Rc<Regex>),
   Rep(Rc<Regex>),
-  NonTerm(NonTerm),
 }
 
 impl Regex {
-  pub fn id() -> Rc<Self> {
+  fn id() -> Rc<Self> {
     Rc::new(Regex::Id)
   }
-  pub fn e() -> Rc<Self> {
+  fn e() -> Rc<Self> {
     Rc::new(Regex::NonTerm(NonTerm::Expr))
   }
-  pub fn def() -> Rc<Self> {
+  fn def() -> Rc<Self> {
     Rc::new(Regex::NonTerm(NonTerm::Def))
   }
-  pub fn decls() -> Rc<Self> {
+  fn decls() -> Rc<Self> {
     Rc::new(Regex::NonTerm(NonTerm::Decls))
   }
-  pub fn ids() -> Rc<Self> {
+  fn ids() -> Rc<Self> {
     Self::rep1(&Self::id())
   }
-  pub fn token(s: &str) -> Rc<Self> {
+  fn token(s: &str) -> Rc<Self> {
     Rc::new(Regex::Token(s.to_string()))
   }
 
-  pub fn seq(r1: &Rc<Regex>, r2: &Rc<Regex>) -> Rc<Self> {
+  fn seq(r1: &Rc<Regex>, r2: &Rc<Regex>) -> Rc<Self> {
     Rc::new(Regex::Seq(r1.clone(), r2.clone()))
   }
-  pub fn seqs(rs: Vec<&Rc<Regex>>) -> Rc<Self> {
+  fn seqs(rs: Vec<&Rc<Regex>>) -> Rc<Self> {
     let mut rs = rs.into_iter().rev();
     let mut r = match rs.next() {
       Some(r) => r.clone(),
@@ -228,13 +228,19 @@ impl Regex {
     }
     r
   }
-  pub fn rep1(r: &Rc<Regex>) -> Rc<Self> {
+  fn rep1(r: &Rc<Regex>) -> Rc<Self> {
     Rc::new(Regex::Seq(r.clone(), Rc::new(Regex::Rep(r.clone()))))
   }
-  pub fn sep0(r: &Rc<Regex>, s: &str) -> Rc<Self> {
+  fn sep0_(r: &Rc<Regex>, s: &str) -> Rc<Self> {
+    Rc::new(Regex::Seq(
+      Regex::sep0(r, s),
+      Regex::may(&Rc::new(Regex::Token(s.to_string()))),
+    ))
+  }
+  fn sep0(r: &Rc<Regex>, s: &str) -> Rc<Self> {
     Rc::new(Regex::Or(Rc::new(Regex::Eps), Regex::sep1(r, s)))
   }
-  pub fn sep1(r: &Rc<Regex>, s: &str) -> Rc<Self> {
+  fn sep1(r: &Rc<Regex>, s: &str) -> Rc<Self> {
     Rc::new(Regex::Seq(
       r.clone(),
       Rc::new(Regex::Rep(Rc::new(Regex::Seq(
@@ -243,10 +249,7 @@ impl Regex {
       )))),
     ))
   }
-  pub fn sep2(r: &Rc<Regex>, s: &str) -> Rc<Self> {
-    Regex::seqs(vec![&r, &Regex::token(s), &Self::sep1(r, s)])
-  }
-  pub fn may(r: &Rc<Regex>) -> Rc<Self> {
+  fn may(r: &Rc<Regex>) -> Rc<Self> {
     Rc::new(Regex::Or(r.clone(), Rc::new(Regex::Eps)))
   }
 }
@@ -406,16 +409,16 @@ impl SyntaxTable {
     let ids = Regex::rep1(&id);
     let colon = Regex::token(":");
 
-    // (id+ | id+: e)%1,
-    let fun_args = Regex::sep1(&Regex::seq(&ids, &Regex::may(&Regex::seq(&colon, &e))), ",");
+    // (id+ | id+: e)%0,
+    let fun_args = Regex::sep0_(&Regex::seq(&ids, &Regex::may(&Regex::seq(&colon, &e))), ",");
     // (e | id+: e)%0,
-    let types = Regex::sep0(&Regex::seq(&Regex::may(&Regex::seq(&ids, &colon)), &e), ",");
+    let types = Regex::sep0_(&Regex::seq(&Regex::may(&Regex::seq(&ids, &colon)), &e), ",");
     // e%0,
-    let vals = Regex::sep0(&e, ",");
+    let vals = Regex::sep0_(&e, ",");
     // (id+: e)%0,
-    let props = Regex::sep0(&Regex::seqs(vec![&ids, &colon, &e]), ",");
+    let props = Regex::sep0_(&Regex::seqs(vec![&ids, &colon, &e]), ",");
     // def%0,
-    let defs = Regex::sep0(&Regex::def(), ","); // comma or...
+    let defs = Regex::sep0_(&Regex::def(), ","); // comma or...
 
     // Base
     db.def("", syntax_elems!["prim", s]);
@@ -507,103 +510,102 @@ impl SyntaxTable {
 pub mod deriv {
   use super::*;
 
-  pub fn d(regex: &Rc<Regex>, t: &Token) -> Rc<Regex> {
+  pub enum Query<'a> {
+    Token(TokenType, &'a str),
+    NonTerm(NonTerm),
+  }
+
+  #[derive(PartialEq, Eq)]
+  pub enum ElemType {
+    Token,
+    Nat,
+    Str,
+    Id,
+  }
+
+  #[derive(PartialEq, Eq)]
+  pub enum QueryResult<'a> {
+    Token(ElemType, &'a str),
+    NonTerm,
+  }
+
+  pub fn d<'a>(regex: &Rc<Regex>, q: &Query<'a>) -> Option<(QueryResult<'a>, Rc<Regex>)> {
     match **regex {
-      Regex::Token(ref s) => {
-        if (t.ty == TokenType::Ident || t.ty == TokenType::Reserved) && s == t.str {
-          return Rc::new(Regex::Eps);
+      Regex::Token(ref s) => match q {
+        Query::Token(ty, str) if ty == &TokenType::Ident || ty == &TokenType::Reserved => {
+          if s == str {
+            return Some((
+              QueryResult::Token(ElemType::Token, str),
+              Rc::new(Regex::Eps),
+            ));
+          }
         }
-      }
-      Regex::Nat => {
-        if t.ty == TokenType::Natural {
-          return Rc::new(Regex::Eps);
+        _ => {}
+      },
+      Regex::Nat => match q {
+        Query::Token(TokenType::Natural, str) => {
+          return Some((QueryResult::Token(ElemType::Nat, str), Rc::new(Regex::Eps)))
         }
-      }
-      Regex::Str => {
-        if t.ty == TokenType::String {
-          return Rc::new(Regex::Eps);
+        _ => {}
+      },
+      Regex::Str => match q {
+        Query::Token(TokenType::String, str) => {
+          return Some((QueryResult::Token(ElemType::Str, str), Rc::new(Regex::Eps)))
         }
-      }
-      Regex::Id => {
-        if t.ty == TokenType::Ident {
-          return Rc::new(Regex::Eps);
+        _ => {}
+      },
+      Regex::Id => match q {
+        Query::Token(TokenType::Ident, str) => {
+          return Some((QueryResult::Token(ElemType::Id, str), Rc::new(Regex::Eps)))
         }
-      }
+        _ => {}
+      },
+      Regex::NonTerm(ref n) => match q {
+        Query::NonTerm(qn) if n == qn => return Some((QueryResult::NonTerm, Rc::new(Regex::Eps))),
+        _ => {}
+      },
       Regex::Fail => {}
       Regex::Eps => {}
       Regex::Seq(ref left, ref right) => {
-        let dl = d(left, t);
-        let sl = if is_fail(&dl) {
-          dl
-        } else {
-          Rc::new(Regex::Seq(dl, right.clone()))
+        let dl = d(left, q);
+        let sl = match dl {
+          Some((qr, dl)) => Some((qr, Rc::new(Regex::Seq(dl, right.clone())))),
+          None => None,
         };
         if has_eps(&left) {
-          let dr = d(right, t);
+          let dr = d(right, q);
           return or(sl, dr);
         } else {
           return sl;
         }
       }
       Regex::Or(ref left, ref right) => {
-        let dl = d(left, t);
-        let dr = d(right, t);
+        let dl = d(left, q);
+        let dr = d(right, q);
         return or(dl, dr);
       }
       Regex::Rep(ref r) => {
-        let dr = d(r, t);
-        return Rc::new(Regex::Seq(dr, regex.clone()));
+        let (qr, dr) = d(r, q)?;
+        return Some((qr, Rc::new(Regex::Seq(dr, regex.clone()))));
       }
-      Regex::NonTerm(_) => {}
     }
-    Rc::new(Regex::Fail)
+    None
   }
 
-  pub fn d_nonterm(regex: &Rc<Regex>, nt: &NonTerm) -> Rc<Regex> {
-    match **regex {
-      Regex::NonTerm(ref n) => {
-        if n == nt {
-          return Rc::new(Regex::Eps);
-        }
-      }
-      Regex::Fail => {}
-      Regex::Eps => {}
-      Regex::Seq(ref left, ref right) => {
-        let dl = d_nonterm(left, nt);
-        let sl = if is_fail(&dl) {
-          dl
-        } else {
-          Rc::new(Regex::Seq(dl, right.clone()))
-        };
-        if has_eps(&left) {
-          let dr = d_nonterm(right, nt);
-          return or(sl, dr);
-        } else {
-          return sl;
-        }
-      }
-      Regex::Or(ref left, ref right) => {
-        let dl = d_nonterm(left, nt);
-        let dr = d_nonterm(right, nt);
-        return or(dl, dr);
-      }
-      Regex::Rep(ref r) => {
-        let dr = d_nonterm(r, nt);
-        return Rc::new(Regex::Seq(dr, regex.clone()));
-      }
-      _ => {}
-    }
-    Rc::new(Regex::Fail)
-  }
-
-  fn or(left: Rc<Regex>, right: Rc<Regex>) -> Rc<Regex> {
-    if is_fail(&left) {
+  fn or<'a>(
+    left: Option<(QueryResult<'a>, Rc<Regex>)>,
+    right: Option<(QueryResult<'a>, Rc<Regex>)>,
+  ) -> Option<(QueryResult<'a>, Rc<Regex>)> {
+    if left.is_none() {
       return right;
     }
-    if is_fail(&right) {
+    if right.is_none() {
       return left;
     }
-    Rc::new(Regex::Or(left, right))
+    let (ql, l) = left.unwrap();
+    let (qr, r) = right.unwrap();
+    assert!(ql == qr);
+    Some((ql, Rc::new(Regex::Or(l, r))))
   }
 
   pub fn has_eps(regex: &Regex) -> bool {
@@ -641,7 +643,7 @@ pub mod deriv {
     set
   }
 
-  pub fn next_nonterm(regex: &Regex) -> Vec<NonTerm> {
+  pub fn next_nonterm(regex: &Regex) -> Option<NonTerm> {
     type NonTermBits = u8;
 
     const DEF_BITS: NonTermBits = 0b001;
@@ -670,17 +672,19 @@ pub mod deriv {
     }
 
     let bits = rec(regex);
-    let mut v = Vec::new();
-    if bits & DEF_BITS != 0 {
-      v.push(NonTerm::Def);
+    if bits == 0 {
+      return None;
     }
-    if bits & EXPR_BITS != 0 {
-      v.push(NonTerm::Expr);
+    if bits == DEF_BITS {
+      return Some(NonTerm::Def);
     }
-    if bits & DECLS_BITS != 0 {
-      v.push(NonTerm::Decls);
+    if bits == EXPR_BITS {
+      return Some(NonTerm::Expr);
     }
-    v
+    if bits == DECLS_BITS {
+      return Some(NonTerm::Decls);
+    }
+    panic!("Not allowed to have multiple non-terminals in a syntax");
   }
 
   pub fn is_fail(regex: &Regex) -> bool {

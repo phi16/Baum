@@ -1,19 +1,31 @@
 use crate::parse_expr::ExprParser;
-use crate::types::parse::*;
+use crate::types::{parse::*, tracker};
+use std::collections::HashSet;
 
 pub struct DeclParser<'a> {
-  pub tracker: Tracker<'a>,
-  pub syntax: SyntaxTable,
-  pub errors: Vec<String>,
+  tracker: Tracker<'a>,
+  syntax: SyntaxTable,
+  known_ops: HashSet<String>,
+  errors: Vec<String>,
 }
 
 impl<'a> DeclParser<'a> {
-  pub fn new(tokens: Vec<Token<'a>>) -> Self {
+  pub fn new(
+    tracker: Tracker<'a>,
+    syntax: SyntaxTable,
+    known_ops: HashSet<String>,
+    errors: Vec<String>,
+  ) -> Self {
     DeclParser {
-      tracker: Tracker::new(tokens),
-      syntax: SyntaxTable::default(),
-      errors: Vec::new(),
+      tracker,
+      syntax,
+      known_ops,
+      errors,
     }
+  }
+
+  pub fn into_inner(self) -> (Tracker<'a>, HashSet<String>, Vec<String>) {
+    (self.tracker, self.known_ops, self.errors)
   }
 
   pub fn add_error(&mut self, pos: TokenPos, msg: &str) {
@@ -195,11 +207,15 @@ impl<'a> DeclParser<'a> {
 
   fn expr(&mut self) -> Option<Expr<'a>> {
     let tracker = std::mem::take(&mut self.tracker);
-    let mut e = ExprParser::new(tracker, &self.syntax);
+    let known_ops = std::mem::take(&mut self.known_ops);
+    let errors = std::mem::take(&mut self.errors);
+    let mut e = ExprParser::new(tracker, &self.syntax, known_ops, errors);
     let res = e.expr();
     eprintln!("EXPR RES: {:?}", res);
-    self.tracker = e.tracker;
-    self.errors.extend(e.errors);
+    let (tracker, known_ops, errors) = e.into_inner();
+    self.tracker = tracker;
+    self.known_ops = known_ops;
+    self.errors = errors;
     res
   }
 
@@ -207,7 +223,10 @@ impl<'a> DeclParser<'a> {
     let pos = self.tracker.pos();
     match self.expr() {
       Some(e) => e,
-      None => Expr(ExprF::Hole, pos),
+      None => {
+        // TODO: skip to...
+        Expr(ExprF::Hole, pos)
+      }
     }
   }
 
@@ -373,6 +392,10 @@ impl<'a> DeclParser<'a> {
         self.tracker.next();
         self.tracker.skip_to_next_head();
       }
+    }
+    if let Some(t) = self.tracker.peek_raw() {
+      let t = t.clone();
+      self.add_error(t.pos, "not all tokens consumed");
     }
     ds
   }

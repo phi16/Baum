@@ -114,19 +114,21 @@ impl Pretty {
         Literal::Str(s) => self.s("\"").s(s).s("\""),
       },
       ExprF::Var(i) => self.i(i),
-      ExprF::Prim(n) => self.s("prim ").s(n),
       ExprF::Syntax(s, se) => {
-        self.s("Syntax");
+        self.s("[");
         for (i, e) in se.into_iter().enumerate() {
           self.s(" ");
           match e {
-            SyntaxElems::Token(s) => self.s(s),
-            SyntaxElems::Ident(i) => self.i(i),
-            SyntaxElems::Def(def) => self.def(def),
-            SyntaxElems::Expr(e) => self.e(e),
-            SyntaxElems::Decls(ds) => self.ds(ds),
+            SyntaxElem::Token(s) => self.s(s),
+            SyntaxElem::Ident(i) => self.i(i),
+            SyntaxElem::Nat(s) => self.s(s),
+            SyntaxElem::Str(s) => self.s("\"").s(s).s("\""),
+            SyntaxElem::Def(def) => self.def(def),
+            SyntaxElem::Expr(e) => self.e(e),
+            SyntaxElem::Decls(ds) => self.ds(ds),
           };
         }
+        self.s(" ]");
         self
       }
       _ => unimplemented!(),

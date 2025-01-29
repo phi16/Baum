@@ -6,9 +6,11 @@ pub use crate::types::token::*;
 pub use crate::types::tracker::*;
 
 #[derive(Debug, Clone)]
-pub enum SyntaxElems<'a> {
+pub enum SyntaxElem<'a> {
   Token(&'a str),
   Ident(Id<'a>),
+  Nat(&'a str),
+  Str(&'a str),
   Def(Def<'a>),
   Expr(Expr<'a>),
   Decls(Vec<Decl<'a>>),
@@ -16,7 +18,7 @@ pub enum SyntaxElems<'a> {
 
 #[derive(Debug, Clone)]
 pub struct Expr<'a>(
-  pub ExprF<&'a str, Id<'a>, Box<Vec<Decl<'a>>>, Box<Expr<'a>>, Vec<SyntaxElems<'a>>>,
+  pub ExprF<&'a str, Id<'a>, Box<Vec<Decl<'a>>>, Box<Expr<'a>>, Vec<SyntaxElem<'a>>>,
   pub TokenPos,
 );
 

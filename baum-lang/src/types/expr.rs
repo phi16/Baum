@@ -14,7 +14,6 @@ pub enum ExprF<S, I, Ds, E, Se> {
   Hole,
   Lit(Literal<S>),
   Var(I),
-  Prim(S),
   Ext(ModuleName<I>, I),
   Let(Ds, E),
   Syntax(Syntax, Se),
