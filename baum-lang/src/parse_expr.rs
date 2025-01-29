@@ -199,6 +199,7 @@ impl<'a, 'b> ExprParser<'a, 'b> {
     }
     let ts = last_tracker_state.unwrap();
     self.tracker.restore_state(ts);
+    eprintln!("Restored: {:?}", self.tracker.peek());
 
     if passes >= 1 && awaits >= 1 {
       self.add_error(pos, "ambiguous parse (pass/await)");
@@ -283,11 +284,11 @@ impl<'a, 'b> ExprParser<'a, 'b> {
           let last_known_ops = self.known_ops.clone();
           for sc in &conts {
             let nexts = deriv::next_tokens(&sc.cont);
-            eprintln!("Next Tokens: {:?}", nexts);
+            eprintln!("adding to known ops: {:?}", nexts);
             self.known_ops.extend(nexts);
           }
           eprintln!("Execute Await: {:?}", nt);
-          if nt == NonTerm::Expr {
+          let e = if nt == NonTerm::Expr {
             let p = if is_last {
               &conts[0].syntax.right
             } else {
@@ -301,31 +302,39 @@ impl<'a, 'b> ExprParser<'a, 'b> {
                 Expr(ExprF::Hole, pos)
               }
             };
-            eprintln!("Execute Await: completed ({:?})", e);
-            elems.push(SyntaxElem::Expr(e));
+            SyntaxElem::Expr(e)
           } else {
             let tracker = std::mem::take(&mut self.tracker);
             let known_ops = std::mem::take(&mut self.known_ops);
             let errors = std::mem::take(&mut self.errors);
             let mut d = DeclParser::new(tracker, self.syntax.clone(), known_ops, errors);
-            match nt {
+            let e = match nt {
               NonTerm::Def => {
                 let def = match d.def() {
                   Some(def) => def,
-                  None => unimplemented!(),
+                  None => {
+                    let (tracker, _, errors) = d.into_inner();
+                    self.tracker = tracker;
+                    self.errors = errors;
+                    return None;
+                  }
                 };
-                elems.push(SyntaxElem::Def(def));
+                SyntaxElem::Def(def)
               }
               NonTerm::Decls => {
                 let ds = d.decls();
-                elems.push(SyntaxElem::Decls(ds));
+                eprintln!("Decls: {:?}", ds);
+                SyntaxElem::Decls(ds)
               }
               _ => unreachable!(),
-            }
+            };
             let (tracker, _, errors) = d.into_inner();
             self.tracker = tracker;
             self.errors = errors;
-          }
+            e
+          };
+          eprintln!("Execute Await: completed ({:?})", e);
+          elems.push(e);
           self.known_ops = last_known_ops;
           for sc in &conts {
             if deriv::has_eps(&sc.cont) {
@@ -338,7 +347,8 @@ impl<'a, 'b> ExprParser<'a, 'b> {
             .into_iter()
             .map(|s| {
               if deriv::has_eps(&s.cont) {
-                todo!();
+                // TODO
+                panic!();
               }
               (SyntaxState::new(s.syntax), s.cont)
             })

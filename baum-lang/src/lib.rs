@@ -24,6 +24,21 @@ mod tests {
       b = g λ(a) x
       b = g λ(a: b) x
       b = Σ() λ(a: b c, ) λ{x: y} x
+      g = 1
+      k = let x = 1; y = 2 in t
+      g = k
+      ot = Σ{x: Π(Nat) Nat, y: Nat}
+      o = { x v: Nat = 1, y = 2 }
+      v = π(1) x
+      v = π(1 + 2) x -- fail
+      w = π{prop} x
+      x = (x) + () + (x,y) + (x,y,z)
+      y = {}
+      z = x {y}
+      z = x {y = 2} -- hmm...
+      y = {y = 1} + 2
+      y = {y} + 1 -- fail
+      u = 1 + 5
     "#;
     let res = parse::parse(str);
     eprintln!("");

@@ -175,6 +175,11 @@ impl<'a> DeclParser<'a> {
             self.add_error(pos, &format!("expected '{}', not '{}'", match_cl, cl));
           }
           args.push(arg);
+        } else {
+          let pos = self.tracker.pos();
+          self.add_error(pos, "expected argument list or assignment");
+          self.tracker.skip_to_next_head();
+          return None;
         }
       } else {
         let ids = self.ids();
@@ -209,6 +214,7 @@ impl<'a> DeclParser<'a> {
     let tracker = std::mem::take(&mut self.tracker);
     let known_ops = std::mem::take(&mut self.known_ops);
     let errors = std::mem::take(&mut self.errors);
+    eprintln!("EXPR INTO: {:?}", tracker.peek());
     let mut e = ExprParser::new(tracker, &self.syntax, known_ops, errors);
     let res = e.expr();
     eprintln!("EXPR RES: {:?}", res);
@@ -365,7 +371,15 @@ impl<'a> DeclParser<'a> {
 
   pub fn decls(&mut self) -> Vec<Decl<'a>> {
     let mut ds = Vec::new();
-    while self.tracker.peek().is_some() {
+    loop {
+      match self.tracker.peek() {
+        Some(t) => {
+          if self.known_ops.contains(t.str) {
+            break;
+          }
+        }
+        None => break,
+      }
       let orig_pos = self.tracker.pos();
       if let Some(d) = self.decl() {
         ds.push(d);

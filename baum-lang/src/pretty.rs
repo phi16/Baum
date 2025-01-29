@@ -125,7 +125,7 @@ impl Pretty {
             SyntaxElem::Str(s) => self.s("\"").s(s).s("\""),
             SyntaxElem::Def(def) => self.def(def),
             SyntaxElem::Expr(e) => self.e(e),
-            SyntaxElem::Decls(ds) => self.ds(ds),
+            SyntaxElem::Decls(ds) => self.open().ds(ds).close(),
           };
         }
         self.s(" ]");
