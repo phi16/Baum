@@ -1,5 +1,5 @@
 use crate::parse_expr::ExprParser;
-use crate::types::{parse::*, tracker};
+use crate::types::parse::*;
 use std::collections::HashSet;
 
 pub struct DeclParser<'a> {
@@ -33,25 +33,25 @@ impl<'a> DeclParser<'a> {
     self.errors.push(s);
   }
 
-  fn expect_reserved(&mut self, str: &str) -> Option<()> {
+  fn expect_reserved(&mut self, str: &str) -> Result<(), ()> {
     match self.tracker.peek() {
       Some(t) if t.ty == TokenType::Reserved && t.str == str => {
         self.tracker.next();
-        return Some(());
+        return Ok(());
       }
       _ => {
         let pos = self.tracker.pos();
         self.add_error(pos, &format!("expected '{}'", str));
         self.tracker.skip_to_next_head();
-        return None;
+        return Err(());
       }
     }
   }
 
-  fn peek_is(&mut self, ty: TokenType) -> Option<()> {
+  fn peek_is(&mut self, ty: TokenType) -> Result<(), ()> {
     match self.tracker.peek() {
       Some(t) if t.ty == ty => {
-        return Some(());
+        return Ok(());
       }
       _ => {
         let pos = self.tracker.pos();
@@ -64,16 +64,16 @@ impl<'a> DeclParser<'a> {
           },
         );
         self.tracker.skip_to_next_head();
-        return None;
+        return Err(());
       }
     }
   }
 
-  fn expect_id(&mut self) -> Option<Id<'a>> {
+  fn expect_id(&mut self) -> Result<Id<'a>, ()> {
     self.peek_is(TokenType::Ident)?;
     let s = self.tracker.peek().unwrap().str;
     self.tracker.next();
-    Some(Id::new(s))
+    Ok(Id::new(s))
   }
 
   fn ids(&mut self) -> Vec<Id<'a>> {
@@ -94,27 +94,20 @@ impl<'a> DeclParser<'a> {
     ids
   }
 
-  fn context(&mut self) -> Option<Context<'a>> {
-    let id = self.expect_id()?;
-    self.expect_reserved(":")?;
-    let e = self.expr_or_hole();
-    Some(Context::Ref(id, Box::new(e)))
-  }
-
   pub fn def(&mut self) -> Option<Def<'a>> {
     let outer_indent = self.tracker.save_indent();
     let indent = match self.tracker.peek() {
       Some(t) => t.indent,
       None => return None,
     };
-    let id = self.expect_id()?;
+    let id = self.expect_id().ok()?;
     self.tracker.set_indent(indent);
     let def = self.def_rest(id);
     self.tracker.restore_indent(outer_indent);
-    def
+    def.ok()
   }
 
-  fn def_rest(&mut self, name: Id<'a>) -> Option<Def<'a>> {
+  fn def_rest(&mut self, name: Id<'a>) -> Result<Def<'a>, ()> {
     let mut args = Vec::new();
     loop {
       let t = match self.tracker.peek() {
@@ -123,7 +116,7 @@ impl<'a> DeclParser<'a> {
           let pos = self.tracker.end_of_line();
           self.add_error(pos, "expected definition");
           self.tracker.skip_to_next_head();
-          return None;
+          return Err(());
         }
       };
       if t.ty == TokenType::Reserved {
@@ -144,9 +137,9 @@ impl<'a> DeclParser<'a> {
               hasType = true;
               self.tracker.next();
               let e = self.expr_or_hole();
-              (Arg::IdsTy(ids, Box::new(e)), vis)
+              (vis, ids, Some(Box::new(e)))
             }
-            _ => (Arg::Ids(ids), vis),
+            _ => (vis, ids, None),
           };
           let (pos, cl) = match self.tracker.peek() {
             Some(t) if t.ty == TokenType::Reserved && (t.str == ")" || t.str == "}") => {
@@ -164,7 +157,7 @@ impl<'a> DeclParser<'a> {
               let pos = self.tracker.pos();
               self.add_error(pos, msg);
               self.tracker.skip_to_next_head();
-              return None;
+              return Err(());
             }
           };
           let match_cl = match vis {
@@ -179,11 +172,11 @@ impl<'a> DeclParser<'a> {
           let pos = self.tracker.pos();
           self.add_error(pos, "expected argument list or assignment");
           self.tracker.skip_to_next_head();
-          return None;
+          return Err(());
         }
       } else {
         let ids = self.ids();
-        args.push((Arg::Ids(ids), Vis::Explicit));
+        args.push((Vis::Explicit, ids, None));
       }
     }
     let ty = match self.tracker.peek() {
@@ -202,7 +195,7 @@ impl<'a> DeclParser<'a> {
       }
       _ => {}
     }
-    Some(Def {
+    Ok(Def {
       name,
       args,
       ty,
@@ -230,143 +223,308 @@ impl<'a> DeclParser<'a> {
     match self.expr() {
       Some(e) => e,
       None => {
-        // TODO: skip to...
+        // TODO: skip to...?
         Expr(ExprF::Hole, pos)
       }
     }
   }
 
-  fn module(&mut self) -> Option<Module<'a>> {
-    let t = self.tracker.peek()?.clone();
-    match t.ty {
-      TokenType::Reserved => {
-        if t.str == "{" {
-          // anonymous module
+  fn syntax(&mut self, pos: TokenPos) -> Result<Decl<'a>, ()> {
+    // syntax (w/o "syntax")
+    let precs = match self.tracker.peek() {
+      Some(t) if t.ty == TokenType::Precedence => match Precedence::parse(t.str) {
+        Some(precs) => {
           self.tracker.next();
-          let ds = self.decls();
-          self.expect_reserved("}")?;
-          return Some(Module(ModuleF::Decls(None, Box::new(ds)), t.pos));
+          precs
         }
-      }
-      TokenType::Ident => {
-        if t.str == "import" {
-          // import
-          self.tracker.next();
-          self.peek_is(TokenType::String)?;
-          let s = self.tracker.peek().unwrap();
-          return Some(Module(ModuleF::Import(s.str), t.pos));
+        None => {
+          let pos = self.tracker.pos();
+          self.add_error(pos, "failed to parse precedence");
+          self.tracker.skip_to_next_head();
+          return Err(());
         }
-        // TODO: t is a known module name
-        self.tracker.next();
-        let t2 = match self.tracker.peek() {
-          Some(t) => t.clone(),
-          None => {
-            self.add_error(t.pos, "expected module or definition");
-            self.tracker.skip_to_next_head();
-            return None;
-          }
-        };
-        if t2.ty == TokenType::Reserved && t2.str == "{" {
-          // named module
-          self.tracker.next();
-          let ds = self.decls();
-          self.expect_reserved("}")?;
-          return Some(Module(
-            ModuleF::Decls(Some(Id::new(t.str)), Box::new(ds)),
-            t.pos,
-          ));
-        }
-      }
-      _ => {}
-    }
-    None
+      },
+      _ => (Precedence::Terminal, Precedence::Terminal),
+    };
+    let regex = unimplemented!();
+    let syntax = DeclF::Syntax(Syntax::new(precs.0, precs.1, regex));
+    return Ok(Decl(syntax, pos));
   }
 
-  fn decl(&mut self) -> Option<Decl<'a>> {
-    let t = self.tracker.peek()?.clone();
-    match t.ty {
-      TokenType::Reserved => {
-        if t.str == "[" {
-          // context
-          self.tracker.next();
-          let ctx = self.context()?;
-          self.expect_reserved("]")?;
-          let d = self.decl()?;
-          return Some(Decl(DeclF::Context(ctx, Box::new(d)), t.pos));
-        }
-        if t.str == "{" {
-          // anonymous module
-          let m = self.module()?;
-          return Some(Decl(DeclF::Module(Access::Keep, Box::new(m)), t.pos));
-        }
+  fn module_internal(&mut self) -> Result<Module<'a>, ()> {
+    let t = match self.tracker.peek() {
+      Some(t) => t.clone(),
+      None => {
+        let pos = self.tracker.end_of_line();
+        self.add_error(pos, "expected module reference");
+        self.tracker.skip_to_next_head();
+        return Err(());
       }
-      TokenType::Ident => {
-        if t.str == "syntax" {
-          let outer_indent = self.tracker.save_indent();
-          self.tracker.set_indent(t.indent);
-          // syntax
-          self.tracker.next();
-          let precs = match self.tracker.peek() {
-            Some(t) if t.ty == TokenType::Precedence => match Precedence::parse(t.str) {
-              Some(precs) => {
-                self.tracker.next();
-                precs
-              }
-              None => {
-                self.tracker.restore_indent(outer_indent);
-                let pos = self.tracker.pos();
-                self.add_error(pos, "failed to parse precedence");
-                self.tracker.skip_to_next_head();
-                return None;
-              }
-            },
-            _ => (Precedence::Terminal, Precedence::Terminal),
-          };
-          let regex = unimplemented!();
-          let syntax = DeclF::Syntax(Syntax::new(precs.0, precs.1, regex));
-          self.tracker.restore_indent(outer_indent);
-          return Some(Decl(syntax, t.pos));
+    };
+    if t.ty != TokenType::Ident {
+      self.add_error(t.pos, "expected module reference");
+      self.tracker.skip_to_next_head();
+      return Err(());
+    }
+    if t.str == "import" {
+      // import
+      let pos = t.pos;
+      self.tracker.next();
+      self.peek_is(TokenType::String)?;
+      let s = self.tracker.peek().unwrap().str;
+      self.tracker.next();
+      return Ok(Module(ModuleF::Import(s), pos));
+    }
+    // reference with parameters
+    let mut name = Vec::new();
+    loop {
+      let t = match self.tracker.peek() {
+        Some(t) => t.clone(),
+        None => {
+          let pos = self.tracker.end_of_line();
+          self.add_error(pos, "expected module name");
+          self.tracker.skip_to_next_head();
+          return Err(());
         }
-        if t.str == "open" {
-          // open
-          self.tracker.next();
-          let m = self.module()?;
-          return Some(Decl(DeclF::Module(Access::Open, Box::new(m)), t.pos));
+      };
+      if t.ty == TokenType::Reserved {
+        break;
+      }
+      if t.ty != TokenType::Ident {
+        let pos = self.tracker.pos();
+        self.add_error(pos, "expected module name");
+        self.tracker.skip_to_next_head();
+        return Err(());
+      }
+      name.push(Id::new(t.str));
+      self.tracker.next();
+      let t = match self.tracker.peek() {
+        Some(t) => t.clone(),
+        None => {
+          break;
         }
-        if t.str == "import" {
-          // import
-          let m = self.module()?;
-          return Some(Decl(DeclF::Module(Access::Keep, Box::new(m)), t.pos));
-        }
-        // TODO: t is a known module name
+      };
+      if t.ty == TokenType::Reserved && t.str == "." {
         self.tracker.next();
-        let t2 = match self.tracker.peek() {
+      } else {
+        break;
+      }
+    }
+    let mut params = Vec::new();
+    loop {
+      let t = match self.tracker.peek() {
+        Some(t) => t.clone(),
+        None => {
+          break;
+        }
+      };
+      if t.ty == TokenType::Reserved && t.str == "{" {
+        self.tracker.next();
+        let e = self.expr_or_hole();
+        self.expect_reserved("}")?;
+        params.push((Vis::Implicit, Box::new(e)));
+      } else if t.ty == TokenType::Reserved && t.str == "(" {
+        self.tracker.next();
+        let e = self.expr_or_hole();
+        self.expect_reserved(")")?;
+        params.push((Vis::Explicit, Box::new(e)));
+      } else if t.ty == TokenType::Ident {
+        let mut ids = Vec::new();
+        loop {
+          match self.tracker.peek() {
+            Some(t) if t.ty == TokenType::Ident => {
+              ids.push(Id::new(t.str));
+              self.tracker.next();
+            }
+            _ => break,
+          }
+          match self.tracker.peek() {
+            Some(t) if t.ty == TokenType::Reserved && t.str == "." => {
+              self.tracker.next();
+            }
+            _ => {
+              break;
+            }
+          };
+        }
+        let name = ids.pop().unwrap();
+        let e = if ids.is_empty() {
+          ExprF::Var(name)
+        } else {
+          ExprF::Ext(ids, name)
+        };
+        params.push((Vis::Explicit, Box::new(Expr(e, t.pos))));
+      } else {
+        let pos = self.tracker.pos();
+        self.add_error(pos, "expected module parameters");
+        self.tracker.skip_to_next_head();
+        return Err(());
+      }
+    }
+    return Ok(Module(ModuleF::Ref(name, params), t.pos));
+  }
+
+  fn module(&mut self, indent: Indent) -> Result<Module<'a>, ()> {
+    let outer_indent = self.tracker.save_indent();
+    self.tracker.set_indent(indent);
+    let module = self.module_internal();
+    self.tracker.restore_indent(outer_indent);
+    module
+  }
+
+  fn decl(&mut self) -> Result<Decl<'a>, ()> {
+    let t = match self.tracker.peek() {
+      Some(t) => t.clone(),
+      None => {
+        let pos = self.tracker.end_of_line();
+        self.add_error(pos, "expected declaration");
+        self.tracker.skip_to_next_head();
+        return Err(());
+      }
+    };
+    if t.ty != TokenType::Ident {
+      let pos = self.tracker.pos();
+      self.add_error(pos, "expected declaration");
+      self.tracker.skip_to_next_head();
+      return Err(());
+    }
+    if t.str == "local" {
+      // local
+      self.tracker.next();
+      let t2 = match self.tracker.peek() {
+        Some(t) => t.clone(),
+        None => {
+          self.add_error(t.pos, "expected declaration or block");
+          self.tracker.skip_to_next_head();
+          return Err(());
+        }
+      };
+      if t2.ty == TokenType::Reserved && t2.str == "{" {
+        // local block
+        self.tracker.next();
+        let ds = self.decls();
+        self.expect_reserved("}")?;
+        return Ok(Decl(DeclF::Local(ds), t.pos));
+      } else {
+        // local single declaration
+        let d = self.decl()?;
+        return Ok(Decl(DeclF::Local(vec![d]), t.pos));
+      }
+    };
+    if t.str == "module" {
+      // module declaration
+      self.tracker.next();
+      let mod_pos = self.tracker.pos();
+      let mod_indent = t.indent;
+      let name = self.expect_id()?;
+      let mut params = Vec::new();
+      loop {
+        let t = match self.tracker.peek() {
           Some(t) => t.clone(),
           None => {
-            self.add_error(t.pos, "expected module or definition");
+            let pos = self.tracker.end_of_line();
+            self.add_error(pos, "expected module parameters or body");
             self.tracker.skip_to_next_head();
-            return None;
+            return Err(());
           }
         };
-        if t2.ty == TokenType::Reserved && t2.str == "{" {
-          // named module
-          let mut m = self.module()?; // parse as an anonymous module
-          m.0 = match m.0 {
-            ModuleF::Decls(None, ds) => ModuleF::Decls(Some(Id::new(t.str)), ds),
-            _ => unreachable!(),
-          };
-          return Some(Decl(DeclF::Module(Access::Keep, Box::new(m)), t.pos));
+        if t.ty == TokenType::Reserved {
+          if t.str == "=" {
+            self.tracker.next();
+            break;
+          }
+          if t.str == "(" || t.str == "{" {
+            let vis = if t.str == "(" {
+              Vis::Explicit
+            } else {
+              Vis::Implicit
+            };
+            self.tracker.next();
+            let ids = self.ids();
+            self.expect_reserved(":")?;
+            let e = self.expr_or_hole();
+            let arg = (vis, ids, Some(Box::new(e)));
+            let (pos, cl) = match self.tracker.peek() {
+              Some(t) if t.ty == TokenType::Reserved && (t.str == ")" || t.str == "}") => {
+                let pos = t.pos;
+                let str = t.str;
+                self.tracker.next();
+                (pos, str)
+              }
+              _ => {
+                let pos = self.tracker.pos();
+                self.add_error(pos, "expected ')' or '}'");
+                self.tracker.skip_to_next_head();
+                return Err(());
+              }
+            };
+            let match_cl = match vis {
+              Vis::Explicit => ")",
+              Vis::Implicit => "}",
+            };
+            if cl != match_cl {
+              self.add_error(pos, &format!("expected '{}', not '{}'", match_cl, cl));
+            }
+            params.push(arg);
+          } else {
+            let pos = self.tracker.pos();
+            self.add_error(pos, "expected module parameters or body");
+            self.tracker.skip_to_next_head();
+            return Err(());
+          }
+        } else {
+          let pos = self.tracker.pos();
+          self.add_error(pos, "expected module parameters or body");
+          self.tracker.skip_to_next_head();
+          return Err(());
         }
-        // definition
-        let outer_indent = self.tracker.save_indent();
-        self.tracker.set_indent(t.indent);
-        let def = self.def_rest(Id::new(t.str))?;
-        self.tracker.restore_indent(outer_indent);
-        return Some(Decl(DeclF::Def(def), t.pos));
       }
-      _ => {}
+      let t = match self.tracker.peek() {
+        Some(t) => t.clone(),
+        None => {
+          let pos = self.tracker.pos();
+          self.add_error(pos, "expected module body");
+          self.tracker.skip_to_next_head();
+          return Err(());
+        }
+      };
+      let mod_decl = ModDeclF { name, params };
+      let m = if t.ty == TokenType::Reserved && t.str == "{" {
+        // declarations
+        self.tracker.next();
+        let pos = self.tracker.pos();
+        let ds = self.decls();
+        self.expect_reserved("}")?;
+        Module(ModuleF::Decls(ds), pos)
+      } else {
+        self.module(mod_indent)?
+      };
+      return Ok(Decl(DeclF::Module(mod_decl, Box::new(m)), mod_pos));
     }
-    return None;
+    if t.str == "use" {
+      // use
+      self.tracker.next();
+      let m = self.module(t.indent)?;
+      return Ok(Decl(DeclF::Use(Box::new(m)), t.pos));
+    }
+    if t.str == "open" {
+      // open
+      self.tracker.next();
+      let m = self.module(t.indent)?;
+      return Ok(Decl(DeclF::Open(Box::new(m)), t.pos));
+    }
+    if t.str == "syntax" {
+      let outer_indent = self.tracker.save_indent();
+      self.tracker.next();
+      self.tracker.set_indent(t.indent);
+      let syntax = self.syntax(t.pos);
+      self.tracker.restore_indent(outer_indent);
+      return syntax;
+    }
+
+    // general identifier: definition
+    let def = self.def().ok_or(())?;
+    return Ok(Decl(DeclF::Def(def), t.pos));
   }
 
   pub fn decls(&mut self) -> Vec<Decl<'a>> {
@@ -377,11 +535,14 @@ impl<'a> DeclParser<'a> {
           if self.known_ops.contains(t.str) {
             break;
           }
+          if t.ty != TokenType::Ident {
+            break;
+          }
         }
         None => break,
       }
       let orig_pos = self.tracker.pos();
-      if let Some(d) = self.decl() {
+      if let Ok(d) = self.decl() {
         ds.push(d);
       }
       let cur_pos = self.tracker.pos();

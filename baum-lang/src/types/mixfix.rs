@@ -420,6 +420,8 @@ impl SyntaxTable {
     // Base
     db.def("", syntax_elems!["prim", s]);
     db.def("0", syntax_elems!["let", decls, "in", e]);
+    // Universe
+    db.def("", syntax_elems!["U"]);
     // Function
     db.def("0", syntax_elems!["λ", "(", fun_args, ")", e]);
     db.def("0", syntax_elems!["λ", "{", fun_args, "}", e]);
@@ -434,8 +436,6 @@ impl SyntaxTable {
     db.def("", syntax_elems!["Σ", "{", props, "}"]);
     db.def("0", syntax_elems!["π", "(", n, ")", e]);
     db.def("0", syntax_elems!["π", "{", id, "}", e]);
-    // Context
-    db.def("0", syntax_elems!["σ", "{", defs, "}", e]);
     // Inductive/Coinductive
     let id_ty = Regex::seqs(vec![&id, &colon, &e]);
     db.def("", syntax_elems!["μ", "(", id_ty, ")", "{", defs, "}"]);
@@ -459,6 +459,7 @@ impl SyntaxTable {
       left = Precedence::Terminal;
     }
     let v = match &*seqs {
+      Regex::Token(ref s) => self.pres.entry(s.to_string()).or_insert(Vec::new()),
       Regex::Seq(first, cont) => match **first {
         Regex::Token(ref s) => self.pres.entry(s.to_string()).or_insert(Vec::new()),
         Regex::NonTerm(NonTerm::Expr) => match **cont {

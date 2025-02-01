@@ -50,27 +50,27 @@ impl Pretty {
     self
   }
 
-  fn c(&mut self, c: &Context) -> &mut Self {
-    match c {
-      ContextF::Ref(i, e) => self.i(i).s(": ").e(e),
+  fn arg(&mut self, arg: &Arg) -> &mut Self {
+    let (vis, ids, ty) = arg;
+    self.s(" ");
+    match vis {
+      Vis::Explicit => self.s("("),
+      Vis::Implicit => self.s("{"),
+    };
+    self.is(ids, " ");
+    if let Some(ty) = ty {
+      self.s(": ").e(&*ty);
+    }
+    match vis {
+      Vis::Explicit => self.s(")"),
+      Vis::Implicit => self.s("}"),
     }
   }
 
   fn def(&mut self, def: &Def) -> &mut Self {
     self.i(&def.name);
-    for (arg, vis) in &def.args {
-      self.s(" ");
-      match arg {
-        ArgF::Ids(ids) => match vis {
-          Vis::Explicit => self.is(&ids, " "),
-          Vis::Implicit => self.s("{").is(&ids, " ").s("}"),
-        },
-        ArgF::Ty(_) => unreachable!(),
-        ArgF::IdsTy(ids, e) => match vis {
-          Vis::Explicit => self.s("(").is(ids, " ").s(": ").e(&*e).s(")"),
-          Vis::Implicit => self.s("{").is(ids, " ").s(": ").e(&*e).s("}"),
-        },
-      };
+    for arg in &def.args {
+      self.arg(arg);
     }
     if let Some(ty) = &def.ty {
       self.s(": ").e(&*ty);
@@ -80,18 +80,41 @@ impl Pretty {
 
   fn m(&mut self, m: &Module) -> &mut Self {
     match &m.0 {
-      ModuleF::Decls(Some(i), ds) => self.i(i).s(" {").open().ds(ds).close().s("}"),
-      ModuleF::Decls(None, ds) => self.s("{").open().ds(ds).close().s("}"),
-      ModuleF::Import(s) => self.s("import ").s(s),
-      ModuleF::Ref(is) => self.is(is, "."),
+      ModuleF::Decls(ds) => self.s("{").open().ds(ds).close().s("}").ln(),
+      ModuleF::Import(s) => self.s("import ").s("\"").s(s).s("\"").ln(),
+      ModuleF::Ref(is, params) => {
+        self.is(is, ".");
+        if !params.is_empty() {
+          for (vis, e) in params {
+            self.s(" ");
+            match vis {
+              Vis::Explicit => self.s("("),
+              Vis::Implicit => self.s("{"),
+            };
+            self.e(&*e);
+            match vis {
+              Vis::Explicit => self.s(")"),
+              Vis::Implicit => self.s("}"),
+            };
+          }
+        }
+        self.ln()
+      }
     }
   }
 
   fn d(&mut self, d: &Decl) -> &mut Self {
     match &d.0 {
-      DeclF::Context(c, d) => self.s("[").c(c).s("] ").d(d),
-      DeclF::Module(Access::Keep, m) => self.m(m),
-      DeclF::Module(Access::Open, m) => self.s("open ").m(m),
+      DeclF::Local(ds) => self.s("local {").open().ds(ds).close().s("}").ln(),
+      DeclF::Module(md, m) => {
+        self.s("module ").i(&md.name);
+        for arg in &md.params {
+          self.arg(arg);
+        }
+        self.s(" = ").m(m)
+      }
+      DeclF::Use(m) => self.s("use ").m(m),
+      DeclF::Open(m) => self.s("open ").m(m),
       DeclF::Def(def) => self.def(def).ln(),
       DeclF::Syntax(_) => self.s("syntax ").ln(),
     }
@@ -114,7 +137,8 @@ impl Pretty {
         Literal::Str(s) => self.s("\"").s(s).s("\""),
       },
       ExprF::Var(i) => self.i(i),
-      ExprF::Syntax(_, se) => {
+      ExprF::Ext(m, i) => self.is(m, ".").s(".").i(i),
+      ExprF::Syntax((_, se)) => {
         self.s("[");
         for e in se.into_iter() {
           self.s(" ");

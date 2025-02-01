@@ -1,6 +1,3 @@
-use crate::types::mixfix::*;
-use crate::types::parse_base::*;
-
 #[derive(Debug, Clone)]
 pub enum Literal<S> {
   Nat(S),
@@ -10,11 +7,10 @@ pub enum Literal<S> {
 }
 
 #[derive(Debug, Clone)]
-pub enum ExprF<S, I, Ds, E, Se> {
+pub enum ExprF<S, I, X> {
   Hole,
   Lit(Literal<S>),
   Var(I),
-  Ext(ModuleName<I>, I),
-  Let(Ds, E),
-  Syntax(Syntax, Se),
+  Ext(Vec<I>, I),
+  Syntax(X),
 }

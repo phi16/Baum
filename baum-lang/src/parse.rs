@@ -4,7 +4,13 @@ use crate::tokenize::tokenize;
 use crate::types::parse::Decl;
 use crate::types::parse::SyntaxTable;
 use crate::types::tracker::Tracker;
+use baum_core::types as core;
 use std::collections::HashSet;
+
+fn convert(ds: Vec<Decl>) {
+  let h = core::Expr::Hole;
+  unimplemented!()
+}
 
 pub fn parse<'a>(code: &'a str) -> Result<Vec<Decl<'a>>, Vec<String>> {
   let tokens = match tokenize(code) {
@@ -17,6 +23,7 @@ pub fn parse<'a>(code: &'a str) -> Result<Vec<Decl<'a>>, Vec<String>> {
   let ds = parser.program();
   let (_, _, errors) = parser.into_inner();
   if errors.is_empty() {
+    convert(ds.clone());
     Ok(ds)
   } else {
     eprintln!("{}", pretty(&ds));

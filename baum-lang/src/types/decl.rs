@@ -1,28 +1,40 @@
 use crate::types::mixfix::*;
-use crate::types::parse_base::*;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Vis {
+  Explicit,
+  Implicit,
+}
+
+pub type ArgF<I, E> = (Vis, Vec<I>, Option<E>);
 
 #[derive(Debug, Clone)]
-pub enum ContextF<I, E> {
-  Ref(I, E),
+pub struct DefF<I, E> {
+  pub name: I,
+  pub args: Vec<ArgF<I, E>>,
+  pub ty: Option<E>,
+  pub body: E,
 }
 
 #[derive(Debug, Clone)]
-pub enum ModuleF<S, I, Ds> {
-  Decls(Option<I>, Ds),
+pub struct ModDeclF<I, E> {
+  pub name: I,
+  pub params: Vec<ArgF<I, E>>,
+}
+
+#[derive(Debug, Clone)]
+pub enum ModuleF<S, I, Ds, E> {
+  Decls(Ds),
   Import(S),
-  Ref(ModuleName<I>),
+  Ref(Vec<I>, Vec<(Vis, E)>),
 }
 
 #[derive(Debug, Clone)]
-pub enum Access {
-  Open,
-  Keep,
-}
-
-#[derive(Debug, Clone)]
-pub enum DeclF<I, D, E, M> {
-  Context(ContextF<I, E>, D),
-  Module(Access, M),
+pub enum DeclF<I, Ds, E, M> {
+  Local(Ds),
+  Module(ModDeclF<I, E>, M),
+  Use(M),
+  Open(M),
   Def(DefF<I, E>),
   Syntax(Syntax),
 }

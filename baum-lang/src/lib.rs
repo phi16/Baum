@@ -12,6 +12,27 @@ mod tests {
   #[test]
   fn it_works() {
     let str = r#"
+      u = A.x
+      module A = {
+        x = 1
+      }
+      module C (x: A) {y: B} = {
+        use A
+        open B c d
+        use import "mochi"
+        local local open import "mochi"
+        x = 1
+        local {
+          y = 2
+        }
+        module E = D x y z (a b) {x} {y z} A.p.r B.q
+        local module D {r: s t} (x: a) = {
+          local open A
+        }
+      }
+      k = let module X = {
+          x = 1
+        } in X.x
       f = - 2
       u = Σ(x y: Nat, Nat, z: Q x y, P x y z)
       v = Σ(x y: Nat, Nat, z: Q x y, P x y z,)

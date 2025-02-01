@@ -302,7 +302,7 @@ impl<'a, 'b> ExprParser<'a, 'b> {
                 Expr(ExprF::Hole, pos)
               }
             };
-            SyntaxElem::Expr(e)
+            SyntaxElem::Expr(Box::new(e))
           } else {
             let tracker = std::mem::take(&mut self.tracker);
             let known_ops = std::mem::take(&mut self.known_ops);
@@ -319,7 +319,7 @@ impl<'a, 'b> ExprParser<'a, 'b> {
                     return None;
                   }
                 };
-                SyntaxElem::Def(def)
+                SyntaxElem::Def(Box::new(def))
               }
               NonTerm::Decls => {
                 let ds = d.decls();
@@ -363,7 +363,7 @@ impl<'a, 'b> ExprParser<'a, 'b> {
   }
 
   fn make_syntax(&self, s: &Syntax, elems: Vec<SyntaxElem<'a>>, pos: TokenPos) -> Expr<'a> {
-    Expr(ExprF::Syntax(s.clone(), elems), pos)
+    Expr(ExprF::Syntax((s.clone(), elems)), pos)
   }
 
   fn expr_leading(&mut self, base_p: &Precedence) -> Option<Expr<'a>> {
@@ -421,7 +421,7 @@ impl<'a, 'b> ExprParser<'a, 'b> {
       Some(opes) => {
         let opes = self.filter_p(opes, base_p);
         eprintln!("- expr2: opes = {:?}", opes);
-        match self.parse_by_regex(opes, vec![SyntaxElem::Expr(e.clone())]) {
+        match self.parse_by_regex(opes, vec![SyntaxElem::Expr(Box::new(e.clone()))]) {
           Some(e) => e,
           None => {
             self.tracker.restore_state(state);
@@ -443,7 +443,13 @@ impl<'a, 'b> ExprParser<'a, 'b> {
         match self.expr_p(&p) {
           Some(e2) => {
             eprintln!("- expr2: e2 = {:?}", e2);
-            (apps[0], vec![SyntaxElem::Expr(e), SyntaxElem::Expr(e2)])
+            (
+              apps[0],
+              vec![
+                SyntaxElem::Expr(Box::new(e)),
+                SyntaxElem::Expr(Box::new(e2)),
+              ],
+            )
           }
           None => return Ok((true, e)),
         }
