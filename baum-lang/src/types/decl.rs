@@ -14,6 +14,7 @@ pub struct DefF<I, E> {
   pub args: Vec<ArgF<I, E>>,
   pub ty: Option<E>,
   pub body: E,
+  // pub where_: Vec<DefF<I, E>>,
 }
 
 #[derive(Debug, Clone)]
@@ -36,5 +37,5 @@ pub enum DeclF<I, Ds, E, M> {
   Use(M),
   Open(M),
   Def(DefF<I, E>),
-  Syntax(Syntax),
+  Syntax(Syntax /* , Vec<DefF<I, E>> */),
 }

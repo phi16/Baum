@@ -130,12 +130,6 @@ impl Pretty {
   fn e(&mut self, e: &Expr) -> &mut Self {
     match &e.0 {
       ExprF::Hole => self.s("_"),
-      ExprF::Lit(l) => match l {
-        Literal::Nat(n) => self.s(n),
-        Literal::Rat(n) => self.s(n),
-        Literal::Chr(c) => self.s("'").s(c).s("'"),
-        Literal::Str(s) => self.s("\"").s(s).s("\""),
-      },
       ExprF::Var(i) => self.i(i),
       ExprF::Ext(m, i) => self.is(m, ".").s(".").i(i),
       ExprF::Syntax((_, se)) => {
@@ -146,6 +140,8 @@ impl Pretty {
             SyntaxElem::Token(s) => self.s(s),
             SyntaxElem::Ident(i) => self.i(i),
             SyntaxElem::Nat(s) => self.s(s),
+            SyntaxElem::Rat(s) => self.s(s),
+            SyntaxElem::Chr(s) => self.s("'").s(s).s("'"),
             SyntaxElem::Str(s) => self.s("\"").s(s).s("\""),
             SyntaxElem::Def(def) => self.def(def),
             SyntaxElem::Expr(e) => self.e(e),

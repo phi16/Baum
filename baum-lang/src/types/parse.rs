@@ -21,6 +21,8 @@ pub enum SyntaxElem<'a> {
   Token(&'a str),
   Ident(Id<'a>),
   Nat(&'a str),
+  Rat(&'a str),
+  Chr(&'a str),
   Str(&'a str),
   Def(Box<Def<'a>>),
   Expr(Box<Expr<'a>>),
@@ -29,7 +31,7 @@ pub enum SyntaxElem<'a> {
 
 #[derive(Debug, Clone)]
 pub struct Expr<'a>(
-  pub ExprF<&'a str, Id<'a>, (Syntax, Vec<SyntaxElem<'a>>)>,
+  pub ExprF<Id<'a>, (Syntax, Vec<SyntaxElem<'a>>)>,
   pub TokenPos,
 );
 

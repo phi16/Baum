@@ -1,19 +1,31 @@
 use std::collections::HashMap;
 
+pub struct Nat(u32); // TODOO: BigUint
+pub struct Rat {
+  // TODO: BigRational
+  denom: u32,
+  base: u8,
+  exponent: i32,
+}
+
+type Id = String;
+type I = u32;
+type E = Box<Expr>;
 pub enum Literal {
-  Nat(u32),      // TODO: BigInt
-  Rat(u32, u32), // TODO: BigRational
+  Nat(Nat),
+  Rat(Rat),
   Chr(char),
   Str(String),
+}
+pub enum ModuleRef {
+  Import(String),
+  Sub(Box<ModuleRef>, Id),
 }
 pub enum Level {
   Nat(u8),
   Omega(u8),
   Infer,
 }
-type Id = String;
-type I = u32;
-type E = Box<Expr>;
 pub enum Expr {
   Hole,
   Ann(E, E),
@@ -22,24 +34,26 @@ pub enum Expr {
   Ext(ModuleRef, Id),
   Let(Vec<(I, E)>, E), // um... needs module ref
   Uni(Level),
+
   PiE(I, E, E),
   LamE(I, E, E),
   AppE(E, E),
+
   PiI(I, E, E),
   LamI(I, E, E),
   AppI(E, E),
+
   TupleTy(Vec<E>),
   TupelCon(Vec<E>),
   Proj(u8, E),
+
   ObjTy(Vec<(I, E)>),
   Obj(Vec<(I, E)>),
   Prop(I, E),
+
   Mu(I, E, Vec<(I, E)>),
+
   Nu(I, E, Vec<(I, E)>),
-}
-pub enum ModuleRef {
-  Import(String),
-  Sub(Box<ModuleRef>, Id),
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct DefRef(pub u32);

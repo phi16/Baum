@@ -101,6 +101,8 @@ impl<'a, 'b> ExprParser<'a, 'b> {
         match ty {
           ElemType::Token => SyntaxElem::Token(s),
           ElemType::Nat => SyntaxElem::Nat(s),
+          ElemType::Rat => SyntaxElem::Rat(s),
+          ElemType::Chr => SyntaxElem::Chr(s),
           ElemType::Str => SyntaxElem::Str(s),
           ElemType::Id => SyntaxElem::Ident(Id::new(s)),
         }
@@ -136,6 +138,7 @@ impl<'a, 'b> ExprParser<'a, 'b> {
     loop {
       let t = match self.tracker.peek() {
         Some(t) => {
+          // TODO: parse module names here?
           let t = t.clone();
           self.tracker.next();
           t
@@ -374,24 +377,18 @@ impl<'a, 'b> ExprParser<'a, 'b> {
     );
     let t = self.tracker.peek()?;
     let pos = t.pos;
-    if let Some(lit) = match t.ty {
-      TokenType::Natural => Some(Literal::Nat(t.str)),
-      TokenType::Rational => Some(Literal::Rat(t.str)),
-      TokenType::Char => Some(Literal::Chr(t.str)),
-      TokenType::String => Some(Literal::Str(t.str)),
-      TokenType::Precedence => unreachable!(),
-      TokenType::Ident | TokenType::Reserved => None,
-    } {
-      self.tracker.next();
-      eprintln!("- expr1: lit = {:?}", lit);
-      return Some(Expr(ExprF::Lit(lit), pos));
-    }
     if !self.is_opname(t.str) && t.ty == TokenType::Ident {
       // identifier
       let id = Id::new(t.str);
       self.tracker.next();
       eprintln!("- expr1: var = {:?}", id);
       return Some(Expr(ExprF::Var(id), pos));
+    }
+    if t.ty != TokenType::Ident && t.ty != TokenType::Reserved {
+      let lits: Vec<&'b Syntax> = self.filter_p(&self.syntax.lits, base_p);
+      eprintln!("- expr1: lits = {:?}", lits);
+      let e = self.parse_by_regex(lits, Vec::new())?;
+      return Some(self.make_syntax(e.0, e.1, pos));
     }
     let pres: Vec<&'b Syntax> = self.filter_p(self.syntax.choose_pre(t.str)?, base_p);
     eprintln!("- expr1: pres = {:?}", pres);

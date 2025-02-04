@@ -276,92 +276,10 @@ impl<'a> DeclParser<'a> {
       return Ok(Module(ModuleF::Import(s), pos));
     }
     // reference with parameters
-    let mut name = Vec::new();
-    loop {
-      let t = match self.tracker.peek() {
-        Some(t) => t.clone(),
-        None => {
-          let pos = self.tracker.end_of_line();
-          self.add_error(pos, "expected module name");
-          self.tracker.skip_to_next_head();
-          return Err(());
-        }
-      };
-      if t.ty == TokenType::Reserved {
-        break;
-      }
-      if t.ty != TokenType::Ident {
-        let pos = self.tracker.pos();
-        self.add_error(pos, "expected module name");
-        self.tracker.skip_to_next_head();
-        return Err(());
-      }
-      name.push(Id::new(t.str));
-      self.tracker.next();
-      let t = match self.tracker.peek() {
-        Some(t) => t.clone(),
-        None => {
-          break;
-        }
-      };
-      if t.ty == TokenType::Reserved && t.str == "." {
-        self.tracker.next();
-      } else {
-        break;
-      }
-    }
-    let mut params = Vec::new();
-    loop {
-      let t = match self.tracker.peek() {
-        Some(t) => t.clone(),
-        None => {
-          break;
-        }
-      };
-      if t.ty == TokenType::Reserved && t.str == "{" {
-        self.tracker.next();
-        let e = self.expr_or_hole();
-        self.expect_reserved("}")?;
-        params.push((Vis::Implicit, Box::new(e)));
-      } else if t.ty == TokenType::Reserved && t.str == "(" {
-        self.tracker.next();
-        let e = self.expr_or_hole();
-        self.expect_reserved(")")?;
-        params.push((Vis::Explicit, Box::new(e)));
-      } else if t.ty == TokenType::Ident {
-        let mut ids = Vec::new();
-        loop {
-          match self.tracker.peek() {
-            Some(t) if t.ty == TokenType::Ident => {
-              ids.push(Id::new(t.str));
-              self.tracker.next();
-            }
-            _ => break,
-          }
-          match self.tracker.peek() {
-            Some(t) if t.ty == TokenType::Reserved && t.str == "." => {
-              self.tracker.next();
-            }
-            _ => {
-              break;
-            }
-          };
-        }
-        let name = ids.pop().unwrap();
-        let e = if ids.is_empty() {
-          ExprF::Var(name)
-        } else {
-          ExprF::Ext(ids, name)
-        };
-        params.push((Vis::Explicit, Box::new(Expr(e, t.pos))));
-      } else {
-        let pos = self.tracker.pos();
-        self.add_error(pos, "expected module parameters");
-        self.tracker.skip_to_next_head();
-        return Err(());
-      }
-    }
-    return Ok(Module(ModuleF::Ref(name, params), t.pos));
+    let e = self.expr_or_hole();
+    println!("{:?}", e);
+    unimplemented!()
+    // return Ok(Module(ModuleF::Ref(name, params), t.pos));
   }
 
   fn module(&mut self, indent: Indent) -> Result<Module<'a>, ()> {

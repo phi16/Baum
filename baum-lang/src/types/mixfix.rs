@@ -184,6 +184,8 @@ pub enum NonTerm {
 pub enum Regex {
   Token(String),
   Nat,
+  Rat,
+  Chr,
   Str,
   Id,
   NonTerm(NonTerm),
@@ -280,6 +282,8 @@ impl std::fmt::Debug for Regex {
       match r {
         Regex::Token(s) => write!(f, "\"{}\"", s),
         Regex::Nat => write!(f, "n"),
+        Regex::Rat => write!(f, "r"),
+        Regex::Chr => write!(f, "c"),
         Regex::Str => write!(f, "s"),
         Regex::Id => write!(f, "i"),
         Regex::Fail => write!(f, "∅"),
@@ -341,6 +345,7 @@ impl Syntax {
 #[derive(Debug, Clone)]
 pub struct SyntaxTable {
   pub pres: HashMap<String, Vec<Syntax>>, // starts from token
+  pub lits: Vec<Syntax>,                  // literals
   pub opes: HashMap<String, Vec<Syntax>>, // starts from expr and token
   pub apps: Vec<Syntax>,                  // expr expr
 }
@@ -351,6 +356,12 @@ macro_rules! syntax_elem {
   };
   (n) => {
     Rc::new(Regex::Nat)
+  };
+  (r) => {
+    Rc::new(Regex::Rat)
+  };
+  (c) => {
+    Rc::new(Regex::Chr)
   };
   (s) => {
     Rc::new(Regex::Str)
@@ -397,6 +408,7 @@ impl SyntaxTable {
   pub fn default() -> Self {
     let mut db = SyntaxTable {
       pres: HashMap::new(),
+      lits: Vec::new(),
       opes: HashMap::new(),
       apps: Vec::new(),
     };
@@ -417,6 +429,11 @@ impl SyntaxTable {
     // def%0,
     let defs = Regex::sep0_(&Regex::def(), ","); // comma or...
 
+    // Literal
+    db.def("", syntax_elems![n]);
+    db.def("", syntax_elems![r]);
+    db.def("", syntax_elems![c]);
+    db.def("", syntax_elems![s]);
     // Base
     db.def("", syntax_elems!["prim", s]);
     db.def("0", syntax_elems!["let", decls, "in", e]);
@@ -471,9 +488,9 @@ impl SyntaxTable {
           },
           _ => panic!(),
         },
-        _ => panic!(),
+        _ => &mut self.lits,
       },
-      _ => panic!(),
+      _ => &mut self.lits,
     };
     v.push(Syntax::new(left, right, seqs));
   }
@@ -482,6 +499,10 @@ impl SyntaxTable {
   pub fn dump(&self) {
     println!("[Prefixs]");
     for syn in &self.pres {
+      println!("{:?}", syn);
+    }
+    println!("[Literals]");
+    for syn in &self.lits {
       println!("{:?}", syn);
     }
     println!("[Operators]");
@@ -518,13 +539,15 @@ pub mod deriv {
   pub enum ElemType {
     Token,
     Nat,
+    Rat,
+    Chr,
     Str,
     Id,
   }
 
   #[derive(PartialEq, Eq)]
   pub enum QueryResult<'a> {
-    Token(ElemType, &'a str),
+    Token(ElemType, &'a str), // TODO: Add module
     NonTerm,
   }
 
@@ -544,6 +567,18 @@ pub mod deriv {
       Regex::Nat => match q {
         Query::Token(TokenType::Natural, str) => {
           return Some((QueryResult::Token(ElemType::Nat, str), Rc::new(Regex::Eps)))
+        }
+        _ => {}
+      },
+      Regex::Rat => match q {
+        Query::Token(TokenType::Rational, str) => {
+          return Some((QueryResult::Token(ElemType::Rat, str), Rc::new(Regex::Eps)))
+        }
+        _ => {}
+      },
+      Regex::Chr => match q {
+        Query::Token(TokenType::Char, str) => {
+          return Some((QueryResult::Token(ElemType::Chr, str), Rc::new(Regex::Eps)))
         }
         _ => {}
       },
