@@ -109,6 +109,9 @@ impl<'a> Env<'a> {
         conflicts.push(id.clone());
       }
     });
+    if !conflicts.is_empty() {
+      return Err(conflicts);
+    }
     self.modules.extend(other.modules.clone());
     self.syntax.merge(other.syntax.clone());
     Ok(())

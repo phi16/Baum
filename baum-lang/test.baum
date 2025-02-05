@@ -27,6 +27,7 @@ k = let module X = {
     x = 1
   } in Y.x
 f = - 2
+g = 1.2
 u = Σ(x y: Nat, Nat, z: Q x y, P x y z)
 v = Σ(x y: Nat, Nat, z: Q x y, P x y z,)
 x = 1 + 2 * 3
