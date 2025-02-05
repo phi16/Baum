@@ -197,26 +197,26 @@ pub enum Regex {
 }
 
 impl Regex {
-  fn id() -> Rc<Self> {
+  pub fn id() -> Rc<Self> {
     Rc::new(Regex::Id)
   }
-  fn e() -> Rc<Self> {
+  pub fn e() -> Rc<Self> {
     Rc::new(Regex::NonTerm(NonTerm::Expr))
   }
-  fn def() -> Rc<Self> {
+  pub fn def() -> Rc<Self> {
     Rc::new(Regex::NonTerm(NonTerm::Def))
   }
-  fn decls() -> Rc<Self> {
+  pub fn decls() -> Rc<Self> {
     Rc::new(Regex::NonTerm(NonTerm::Decls))
   }
-  fn token(s: &str) -> Rc<Self> {
+  pub fn token(s: &str) -> Rc<Self> {
     Rc::new(Regex::Token(s.to_string()))
   }
 
-  fn seq(r1: &Rc<Regex>, r2: &Rc<Regex>) -> Rc<Self> {
+  pub fn seq(r1: &Rc<Regex>, r2: &Rc<Regex>) -> Rc<Self> {
     Rc::new(Regex::Seq(r1.clone(), r2.clone()))
   }
-  fn seqs(rs: Vec<&Rc<Regex>>) -> Rc<Self> {
+  pub fn seqs(rs: Vec<&Rc<Regex>>) -> Rc<Self> {
     let mut rs = rs.into_iter().rev();
     let mut r = match rs.next() {
       Some(r) => r.clone(),
@@ -227,19 +227,19 @@ impl Regex {
     }
     r
   }
-  fn rep1(r: &Rc<Regex>) -> Rc<Self> {
+  pub fn rep1(r: &Rc<Regex>) -> Rc<Self> {
     Rc::new(Regex::Seq(r.clone(), Rc::new(Regex::Rep(r.clone()))))
   }
-  fn sep0_(r: &Rc<Regex>, s: &str) -> Rc<Self> {
+  pub fn sep0_(r: &Rc<Regex>, s: &str) -> Rc<Self> {
     Rc::new(Regex::Seq(
       Regex::sep0(r, s),
       Regex::may(&Rc::new(Regex::Token(s.to_string()))),
     ))
   }
-  fn sep0(r: &Rc<Regex>, s: &str) -> Rc<Self> {
+  pub fn sep0(r: &Rc<Regex>, s: &str) -> Rc<Self> {
     Rc::new(Regex::Or(Rc::new(Regex::Eps), Regex::sep1(r, s)))
   }
-  fn sep1(r: &Rc<Regex>, s: &str) -> Rc<Self> {
+  pub fn sep1(r: &Rc<Regex>, s: &str) -> Rc<Self> {
     Rc::new(Regex::Seq(
       r.clone(),
       Rc::new(Regex::Rep(Rc::new(Regex::Seq(
@@ -248,7 +248,7 @@ impl Regex {
       )))),
     ))
   }
-  fn may(r: &Rc<Regex>) -> Rc<Self> {
+  pub fn may(r: &Rc<Regex>) -> Rc<Self> {
     Rc::new(Regex::Or(r.clone(), Rc::new(Regex::Eps)))
   }
 }
@@ -259,6 +259,8 @@ impl std::fmt::Debug for Regex {
       match r {
         Regex::Token(_)
         | Regex::Nat
+        | Regex::Rat
+        | Regex::Chr
         | Regex::Str
         | Regex::Id
         | Regex::Fail
@@ -344,138 +346,34 @@ impl Syntax {
 
 #[derive(Debug, Clone)]
 pub struct SyntaxTable {
-  pub pres: HashMap<String, Vec<Syntax>>, // starts from token
-  pub lits: Vec<Syntax>,                  // literals
-  pub opes: HashMap<String, Vec<Syntax>>, // starts from expr and token
-  pub apps: Vec<Syntax>,                  // expr expr
-}
-
-macro_rules! syntax_elem {
-  ($s:literal) => {
-    (Regex::token($s))
-  };
-  (n) => {
-    Rc::new(Regex::Nat)
-  };
-  (r) => {
-    Rc::new(Regex::Rat)
-  };
-  (c) => {
-    Rc::new(Regex::Chr)
-  };
-  (s) => {
-    Rc::new(Regex::Str)
-  };
-  (id) => {
-    Regex::id()
-  };
-  (e) => {
-    Regex::e()
-  };
-  (def) => {
-    Regex::def()
-  };
-  (decls) => {
-    Regex::decls()
-  };
-  ($i:tt) => {
-    $i.clone()
-  };
-}
-
-macro_rules! syntax_elems {
-  ($($e:tt),+) => {
-    Regex::seqs(vec![$(&syntax_elem!($e)),+])
-  };
-}
-
-#[cfg(test)]
-#[test]
-fn syntax_macro_test() {
-  let elems = syntax_elems!["λ", id, ".", e];
-  assert_eq!(
-    elems,
-    Regex::seqs(vec![
-      &Regex::token("λ"),
-      &Regex::id(),
-      &Regex::token("."),
-      &Regex::e(),
-    ])
-  );
+  pres: HashMap<String, Vec<Syntax>>, // starts from token
+  lits: Vec<Syntax>,                  // literals
+  opes: HashMap<String, Vec<Syntax>>, // starts from expr and token
+  apps: Vec<Syntax>,                  // expr expr
 }
 
 impl SyntaxTable {
-  pub fn default() -> Self {
-    let mut db = SyntaxTable {
+  pub fn new() -> Self {
+    SyntaxTable {
       pres: HashMap::new(),
       lits: Vec::new(),
       opes: HashMap::new(),
       apps: Vec::new(),
-    };
-
-    let id = Regex::id();
-    let e = Regex::e();
-    let ids = Regex::rep1(&id);
-    let colon = Regex::token(":");
-
-    // (id+ | id+: e)%0,
-    let fun_args = Regex::sep0_(&Regex::seq(&ids, &Regex::may(&Regex::seq(&colon, &e))), ",");
-    // (e | id+: e)%0,
-    let types = Regex::sep0_(&Regex::seq(&Regex::may(&Regex::seq(&ids, &colon)), &e), ",");
-    // e%0,
-    let vals = Regex::sep0_(&e, ",");
-    // (id+: e)%0,
-    let props = Regex::sep0_(&Regex::seqs(vec![&ids, &colon, &e]), ",");
-    // def%0,
-    let defs = Regex::sep0_(&Regex::def(), ","); // comma or...
-
-    // Literal
-    db.def("", syntax_elems![n]);
-    db.def("", syntax_elems![r]);
-    db.def("", syntax_elems![c]);
-    db.def("", syntax_elems![s]);
-    // Base
-    db.def("", syntax_elems!["prim", s]);
-    db.def("0", syntax_elems!["let", decls, "in", e]);
-    // Universe
-    db.def("", syntax_elems!["U"]);
-    // Function
-    db.def("0", syntax_elems!["λ", "(", fun_args, ")", e]);
-    db.def("0", syntax_elems!["λ", "{", fun_args, "}", e]);
-    db.def("0", syntax_elems!["Π", "(", types, ")", e]);
-    db.def("0", syntax_elems!["Π", "{", types, "}", e]);
-    db.def("4<", syntax_elems![e, e]);
-    db.def("4<", syntax_elems![e, "{", e, "}"]);
-    // Tuple/Object
-    db.def("", syntax_elems!["(", vals, ")"]); // or unit or usual parenthesis
-    db.def("", syntax_elems!["{", defs, "}"]);
-    db.def("", syntax_elems!["Σ", "(", types, ")"]);
-    db.def("", syntax_elems!["Σ", "{", props, "}"]);
-    db.def("0", syntax_elems!["π", "(", n, ")", e]);
-    db.def("0", syntax_elems!["π", "{", id, "}", e]);
-    // Inductive/Coinductive
-    let id_ty = Regex::seqs(vec![&id, &colon, &e]);
-    db.def("", syntax_elems!["μ", "(", id_ty, ")", "{", defs, "}"]);
-    db.def("", syntax_elems!["ν", "(", id_ty, ")", "{", defs, "}"]);
-
-    // Demo
-    db.def("2.1<", syntax_elems![e, "+", e]);
-    db.def("2.1<", syntax_elems![e, "-", e]);
-    db.def("2.2<", syntax_elems![e, "*", e]);
-    db.def("2.3>", syntax_elems!["-", e]);
-    db.def("2.4<", syntax_elems![e, "!"]);
-    db.def("", syntax_elems!["[", e, "|", e, "]"]);
-    db.def("", syntax_elems!["[", e, "?", e, "]"]);
-    db
+    }
   }
 
-  fn def(&mut self, prec: &str, seqs: Rc<Regex>) {
+  pub fn def(&mut self, prec: &str, seqs: Rc<Regex>) {
     let (mut left, right) = Precedence::parse(prec).unwrap();
     if right <= Precedence::Level(PrecLevel(vec![0]), PrecEps::Zero) {
       // allows `1 + π(0) x` for prefixs
       left = Precedence::Terminal;
     }
-    let v = match &*seqs {
+    self.add(Syntax::new(left, right, seqs));
+  }
+
+  pub fn add(&mut self, syn: Syntax) {
+    let seqs = &syn.regex;
+    let v = match &**seqs {
       Regex::Token(ref s) => self.pres.entry(s.to_string()).or_insert(Vec::new()),
       Regex::Seq(first, cont) => match **first {
         Regex::Token(ref s) => self.pres.entry(s.to_string()).or_insert(Vec::new()),
@@ -492,7 +390,7 @@ impl SyntaxTable {
       },
       _ => &mut self.lits,
     };
-    v.push(Syntax::new(left, right, seqs));
+    v.push(syn);
   }
 
   #[allow(dead_code)]
@@ -518,12 +416,32 @@ impl SyntaxTable {
   pub fn choose_pre(&self, s: &str) -> Option<&Vec<Syntax>> {
     self.pres.get(s)
   }
+  pub fn lits(&self) -> &Vec<Syntax> {
+    &self.lits
+  }
   pub fn choose_ope(&self, s: &str) -> Option<&Vec<Syntax>> {
     self.opes.get(s)
   }
+  pub fn apps(&self) -> &Vec<Syntax> {
+    &self.apps
+  }
 
-  pub fn is_head(&self, s: &str) -> bool {
-    self.pres.contains_key(s) || self.opes.contains_key(s)
+  pub fn is_pre_head(&self, s: &str) -> bool {
+    self.pres.contains_key(s)
+  }
+  pub fn is_ope_head(&self, s: &str) -> bool {
+    self.opes.contains_key(s)
+  }
+
+  pub fn merge(&mut self, other: SyntaxTable) {
+    for (k, v) in other.pres {
+      self.pres.entry(k).or_insert(Vec::new()).extend(v);
+    }
+    self.lits.extend(other.lits);
+    for (k, v) in other.opes {
+      self.opes.entry(k).or_insert(Vec::new()).extend(v);
+    }
+    self.apps.extend(other.apps);
   }
 }
 

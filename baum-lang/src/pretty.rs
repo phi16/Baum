@@ -78,11 +78,10 @@ impl Pretty {
     self.s(" = ").e(&*def.body)
   }
 
-  fn m(&mut self, m: &Module) -> &mut Self {
-    match &m.0 {
-      ModuleF::Decls(ds) => self.s("{").open().ds(ds).close().s("}").ln(),
-      ModuleF::Import(s) => self.s("import ").s("\"").s(s).s("\"").ln(),
-      ModuleF::Ref(is, params) => {
+  fn mr(&mut self, m: &ModRef) -> &mut Self {
+    match m {
+      ModRefF::Import(s) => self.s("import ").s("\"").s(s).s("\"").ln(),
+      ModRefF::App(is, params) => {
         self.is(is, ".");
         if !params.is_empty() {
           for (vis, e) in params {
@@ -103,18 +102,29 @@ impl Pretty {
     }
   }
 
+  fn md(&mut self, m: &ModDef) -> &mut Self {
+    match &m.0 {
+      ModDefF::Decls(ds) => self.s("{").open().ds(ds).close().s("}").ln(),
+      ModDefF::Ref(mr) => self.mr(mr),
+    }
+  }
+
   fn d(&mut self, d: &Decl) -> &mut Self {
     match &d.0 {
-      DeclF::Local(ds) => self.s("local {").open().ds(ds).close().s("}").ln(),
-      DeclF::Module(md, m) => {
-        self.s("module ").i(&md.name);
-        for arg in &md.params {
+      DeclF::Local(ds) => {
+        if let [Decl(DeclF::Open(mr), _)] = ds.as_slice() {
+          return self.s("use ").mr(mr);
+        }
+        self.s("local {").open().ds(ds).close().s("}").ln()
+      }
+      DeclF::ModDef(n, md) => {
+        self.s("module ").i(&n.name);
+        for arg in &n.params {
           self.arg(arg);
         }
-        self.s(" = ").m(m)
+        self.s(" = ").md(md)
       }
-      DeclF::Use(m) => self.s("use ").m(m),
-      DeclF::Open(m) => self.s("open ").m(m),
+      DeclF::Open(mr) => self.s("open ").mr(mr),
       DeclF::Def(def) => self.def(def).ln(),
       DeclF::Syntax(_) => self.s("syntax ").ln(),
     }

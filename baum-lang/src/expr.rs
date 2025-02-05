@@ -1,4 +1,4 @@
-use crate::parse_decl::DeclParser;
+use crate::decl::DeclParser;
 use crate::types::parse::*;
 use std::collections::HashSet;
 use std::rc::Rc;
@@ -53,7 +53,7 @@ enum ReadStatus<'b> {
 
 pub struct ExprParser<'a, 'b> {
   tracker: Tracker<'a>,
-  syntax: &'b SyntaxTable,
+  env: &'b Env<'a>,
   known_ops: HashSet<String>,
   errors: Vec<String>,
 }
@@ -61,13 +61,13 @@ pub struct ExprParser<'a, 'b> {
 impl<'a, 'b> ExprParser<'a, 'b> {
   pub fn new(
     tracker: Tracker<'a>,
-    syntax: &'b SyntaxTable,
+    env: &'b Env<'a>,
     known_ops: HashSet<String>,
     errors: Vec<String>,
   ) -> Self {
     ExprParser {
       tracker,
-      syntax,
+      env,
       known_ops,
       errors,
     }
@@ -80,10 +80,6 @@ impl<'a, 'b> ExprParser<'a, 'b> {
   fn add_error(&mut self, pos: TokenPos, msg: &str) {
     let s = format!("{}, expr: {}", pos.to_string(), msg);
     self.errors.push(s);
-  }
-
-  fn is_opname(&self, s: &str) -> bool {
-    self.syntax.is_head(s) || self.known_ops.contains(s)
   }
 
   fn advance(
@@ -310,7 +306,7 @@ impl<'a, 'b> ExprParser<'a, 'b> {
             let tracker = std::mem::take(&mut self.tracker);
             let known_ops = std::mem::take(&mut self.known_ops);
             let errors = std::mem::take(&mut self.errors);
-            let mut d = DeclParser::new(tracker, self.syntax.clone(), known_ops, errors);
+            let mut d = DeclParser::new(tracker, self.env.clone(), known_ops, errors);
             let e = match nt {
               NonTerm::Def => {
                 let def = match d.def() {
@@ -325,7 +321,8 @@ impl<'a, 'b> ExprParser<'a, 'b> {
                 SyntaxElem::Def(Box::new(def))
               }
               NonTerm::Decls => {
-                let ds = d.decls();
+                let mut empty_env = Env::new();
+                let ds = d.decls(&mut empty_env);
                 eprintln!("Decls: {:?}", ds);
                 SyntaxElem::Decls(ds)
               }
@@ -369,6 +366,39 @@ impl<'a, 'b> ExprParser<'a, 'b> {
     Expr(ExprF::Syntax((s.clone(), elems)), pos)
   }
 
+  fn module_name(&mut self) -> Option<(Vec<Id<'a>>, Option<&'b Env<'a>>)> {
+    // module: identifier or operator, or module itself
+    let mut mod_name = Vec::new();
+    let mut env = self.env;
+    loop {
+      let t = self.tracker.peek()?;
+      let pos = t.pos;
+      let name = t.str;
+      if !env.is_modname(name) {
+        break;
+      }
+      mod_name.push(Id::new(name));
+      self.tracker.next();
+      match self.tracker.peek() {
+        Some(t) if t.ty == TokenType::Reserved && t.str == "." => {
+          self.tracker.next();
+        }
+        _ => {
+          // module itself
+          return Some((mod_name, None));
+        }
+      }
+      match env.get_mod(name) {
+        Some(e) => env = e,
+        None => {
+          self.add_error(pos, &format!("module not found: {:?}.{}", mod_name, name));
+          return None;
+        }
+      }
+    }
+    Some((mod_name, Some(env)))
+  }
+
   fn expr_leading(&mut self, base_p: &Precedence) -> Option<Expr<'a>> {
     eprintln!(
       "- expr1: base_p = {:?}, t = {:?}",
@@ -377,20 +407,47 @@ impl<'a, 'b> ExprParser<'a, 'b> {
     );
     let t = self.tracker.peek()?;
     let pos = t.pos;
-    if !self.is_opname(t.str) && t.ty == TokenType::Ident {
-      // identifier
-      let id = Id::new(t.str);
-      self.tracker.next();
-      eprintln!("- expr1: var = {:?}", id);
-      return Some(Expr(ExprF::Var(id), pos));
-    }
+    let (t, env) = if self.env.is_modname(t.str) {
+      let (mod_name, env) = self.module_name()?;
+      match env {
+        Some(env) => {
+          match self.tracker.peek() {
+            Some(t) if t.ty == TokenType::Ident && !env.is_leading_opname(t.str) => {
+              // external identifier
+              let id = Id::new(t.str);
+              self.tracker.next();
+              eprintln!("- expr1: ext = {:?}", id);
+              return Some(Expr(ExprF::Ext(mod_name, id), pos));
+            }
+            _ => (self.tracker.peek()?, env),
+          }
+        }
+        None => {
+          // module itself
+          return Some(Expr(ExprF::Mod(mod_name), pos));
+        }
+      }
+    } else {
+      if t.ty == TokenType::Ident
+        && !self.env.is_leading_opname(t.str)
+        && !self.known_ops.contains(t.str)
+      {
+        // identifier
+        let id = Id::new(t.str);
+        self.tracker.next();
+        eprintln!("- expr1: var = {:?}", id);
+        return Some(Expr(ExprF::Var(id), pos));
+      }
+      // as-is
+      (t, self.env)
+    };
     if t.ty != TokenType::Ident && t.ty != TokenType::Reserved {
-      let lits: Vec<&'b Syntax> = self.filter_p(&self.syntax.lits, base_p);
+      let lits: Vec<&'b Syntax> = self.filter_p(env.syntax.lits(), base_p);
       eprintln!("- expr1: lits = {:?}", lits);
       let e = self.parse_by_regex(lits, Vec::new())?;
       return Some(self.make_syntax(e.0, e.1, pos));
     }
-    let pres: Vec<&'b Syntax> = self.filter_p(self.syntax.choose_pre(t.str)?, base_p);
+    let pres: Vec<&'b Syntax> = self.filter_p(env.syntax.choose_pre(t.str)?, base_p);
     eprintln!("- expr1: pres = {:?}", pres);
     if pres.is_empty() && t.ty == TokenType::Ident {
       let id = Id::new(t.str);
@@ -414,7 +471,29 @@ impl<'a, 'b> ExprParser<'a, 'b> {
     };
     let pos = t.pos;
     let state = self.tracker.save_state();
-    let e = match self.syntax.choose_ope(t.str) {
+    let (t, env) = if self.env.is_modname(t.str) {
+      match self.module_name() {
+        Some((_, Some(env))) => match self.tracker.peek() {
+          Some(t)
+            if (t.ty == TokenType::Ident || t.ty == TokenType::Reserved)
+              && env.is_trailing_opname(t.str) =>
+          {
+            (t, env)
+          }
+          _ => {
+            self.tracker.restore_state(state.clone());
+            (self.tracker.peek().unwrap(), self.env)
+          }
+        },
+        _ => {
+          self.tracker.restore_state(state.clone());
+          (self.tracker.peek().unwrap(), self.env)
+        }
+      }
+    } else {
+      (t, self.env)
+    };
+    let e = match env.syntax.choose_ope(t.str) {
       Some(opes) => {
         let opes = self.filter_p(opes, base_p);
         eprintln!("- expr2: opes = {:?}", opes);
@@ -427,7 +506,7 @@ impl<'a, 'b> ExprParser<'a, 'b> {
         }
       }
       None => {
-        let apps = self.filter_p(&self.syntax.apps, base_p);
+        let apps = self.filter_p(env.syntax.apps(), base_p);
         eprintln!("- expr2: apps = {:?}", apps);
         if apps.is_empty() {
           return Ok((true, e));

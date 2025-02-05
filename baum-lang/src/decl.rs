@@ -1,10 +1,10 @@
-use crate::parse_expr::ExprParser;
+use crate::expr::ExprParser;
 use crate::types::parse::*;
 use std::collections::HashSet;
 
 pub struct DeclParser<'a> {
   tracker: Tracker<'a>,
-  syntax: SyntaxTable,
+  scope: Env<'a>,
   known_ops: HashSet<String>,
   errors: Vec<String>,
 }
@@ -12,13 +12,13 @@ pub struct DeclParser<'a> {
 impl<'a> DeclParser<'a> {
   pub fn new(
     tracker: Tracker<'a>,
-    syntax: SyntaxTable,
+    scope: Env<'a>,
     known_ops: HashSet<String>,
     errors: Vec<String>,
   ) -> Self {
     DeclParser {
       tracker,
-      syntax,
+      scope,
       known_ops,
       errors,
     }
@@ -208,7 +208,8 @@ impl<'a> DeclParser<'a> {
     let known_ops = std::mem::take(&mut self.known_ops);
     let errors = std::mem::take(&mut self.errors);
     eprintln!("EXPR INTO: {:?}", tracker.peek());
-    let mut e = ExprParser::new(tracker, &self.syntax, known_ops, errors);
+    eprintln!("SCOPE: {:?}", self.scope.modules);
+    let mut e = ExprParser::new(tracker, &self.scope, known_ops, errors);
     let res = e.expr();
     eprintln!("EXPR RES: {:?}", res);
     let (tracker, known_ops, errors) = e.into_inner();
@@ -229,7 +230,7 @@ impl<'a> DeclParser<'a> {
     }
   }
 
-  fn syntax(&mut self, pos: TokenPos) -> Result<Decl<'a>, ()> {
+  fn syntax(&mut self) -> Result<Syntax, ()> {
     // syntax (w/o "syntax")
     let precs = match self.tracker.peek() {
       Some(t) if t.ty == TokenType::Precedence => match Precedence::parse(t.str) {
@@ -247,11 +248,11 @@ impl<'a> DeclParser<'a> {
       _ => (Precedence::Terminal, Precedence::Terminal),
     };
     let regex = unimplemented!();
-    let syntax = DeclF::Syntax(Syntax::new(precs.0, precs.1, regex));
-    return Ok(Decl(syntax, pos));
+    let syntax = Syntax::new(precs.0, precs.1, regex);
+    return Ok(syntax);
   }
 
-  fn module_internal(&mut self) -> Result<Module<'a>, ()> {
+  fn modref_internal(&mut self) -> Result<ModRef<'a>, ()> {
     let t = match self.tracker.peek() {
       Some(t) => t.clone(),
       None => {
@@ -268,29 +269,125 @@ impl<'a> DeclParser<'a> {
     }
     if t.str == "import" {
       // import
-      let pos = t.pos;
       self.tracker.next();
       self.peek_is(TokenType::String)?;
       let s = self.tracker.peek().unwrap().str;
       self.tracker.next();
-      return Ok(Module(ModuleF::Import(s), pos));
+      return Ok(ModRefF::Import(s));
     }
+
     // reference with parameters
-    let e = self.expr_or_hole();
-    println!("{:?}", e);
-    unimplemented!()
-    // return Ok(Module(ModuleF::Ref(name, params), t.pos));
+
+    // let e = self.expr_or_hole();
+    // println!("{:?}", e);
+    // unimplemented!()
+
+    let mut name = Vec::new();
+    loop {
+      let t = match self.tracker.peek() {
+        Some(t) => t.clone(),
+        None => {
+          let pos = self.tracker.end_of_line();
+          self.add_error(pos, "expected module name");
+          self.tracker.skip_to_next_head();
+          return Err(());
+        }
+      };
+      if t.ty == TokenType::Reserved {
+        break;
+      }
+      if t.ty != TokenType::Ident {
+        let pos = self.tracker.pos();
+        self.add_error(pos, "expected module name");
+        self.tracker.skip_to_next_head();
+        return Err(());
+      }
+      name.push(Id::new(t.str));
+      self.tracker.next();
+      let t = match self.tracker.peek() {
+        Some(t) => t.clone(),
+        None => {
+          break;
+        }
+      };
+      if t.ty == TokenType::Reserved && t.str == "." {
+        self.tracker.next();
+      } else {
+        break;
+      }
+    }
+    let mut params = Vec::new();
+    loop {
+      let t = match self.tracker.peek() {
+        Some(t) => t.clone(),
+        None => {
+          break;
+        }
+      };
+      if t.ty == TokenType::Reserved && t.str == "{" {
+        self.tracker.next();
+        let e = self.expr_or_hole();
+        self.expect_reserved("}")?;
+        params.push((Vis::Implicit, Box::new(e)));
+      } else if t.ty == TokenType::Reserved && t.str == "(" {
+        self.tracker.next();
+        let e = self.expr_or_hole();
+        self.expect_reserved(")")?;
+        params.push((Vis::Explicit, Box::new(e)));
+      } else if t.ty == TokenType::Ident {
+        let mut ids = Vec::new();
+        loop {
+          match self.tracker.peek() {
+            Some(t) if t.ty == TokenType::Ident => {
+              ids.push(Id::new(t.str));
+              self.tracker.next();
+            }
+            _ => break,
+          }
+          match self.tracker.peek() {
+            Some(t) if t.ty == TokenType::Reserved && t.str == "." => {
+              self.tracker.next();
+            }
+            _ => {
+              break;
+            }
+          };
+        }
+        let name = ids.pop().unwrap();
+        let e = if ids.is_empty() {
+          ExprF::Var(name)
+        } else {
+          ExprF::Ext(ids, name)
+        };
+        params.push((Vis::Explicit, Box::new(Expr(e, t.pos))));
+      } else {
+        let pos = self.tracker.pos();
+        self.add_error(pos, "expected module parameters");
+        self.tracker.skip_to_next_head();
+        return Err(());
+      }
+    }
+    return Ok(ModRefF::App(name, params));
   }
 
-  fn module(&mut self, indent: Indent) -> Result<Module<'a>, ()> {
+  fn modref(&mut self, indent: Indent) -> Result<ModRef<'a>, ()> {
     let outer_indent = self.tracker.save_indent();
     self.tracker.set_indent(indent);
-    let module = self.module_internal();
+    let module = self.modref_internal();
     self.tracker.restore_indent(outer_indent);
     module
   }
 
-  fn decl(&mut self) -> Result<Decl<'a>, ()> {
+  pub fn resolve_modref(&self, mr: &ModRef<'a>) -> Option<&Rc<Env<'a>>> {
+    match mr {
+      ModRefF::Import(_) => {
+        unimplemented!()
+      }
+      ModRefF::App(is, _) => self.scope.lookup(&is),
+    }
+  }
+
+  fn decl(&mut self, cur_mod: &mut Env<'a>) -> Result<Decl<'a>, ()> {
     let t = match self.tracker.peek() {
       Some(t) => t.clone(),
       None => {
@@ -317,17 +414,19 @@ impl<'a> DeclParser<'a> {
           return Err(());
         }
       };
-      if t2.ty == TokenType::Reserved && t2.str == "{" {
+      let mut empty_env = Env::new();
+      let d = if t2.ty == TokenType::Reserved && t2.str == "{" {
         // local block
         self.tracker.next();
-        let ds = self.decls();
+        let ds = self.decls(&mut empty_env);
         self.expect_reserved("}")?;
-        return Ok(Decl(DeclF::Local(ds), t.pos));
+        DeclF::Local(ds)
       } else {
         // local single declaration
-        let d = self.decl()?;
-        return Ok(Decl(DeclF::Local(vec![d]), t.pos));
-      }
+        let d = self.decl(&mut empty_env)?;
+        DeclF::Local(vec![d])
+      };
+      return Ok(Decl(d, t.pos));
     };
     if t.str == "module" {
       // module declaration
@@ -397,6 +496,7 @@ impl<'a> DeclParser<'a> {
           return Err(());
         }
       }
+      let mod_decl = ModDeclF { name, params };
       let t = match self.tracker.peek() {
         Some(t) => t.clone(),
         None => {
@@ -406,38 +506,70 @@ impl<'a> DeclParser<'a> {
           return Err(());
         }
       };
-      let mod_decl = ModDeclF { name, params };
-      let m = if t.ty == TokenType::Reserved && t.str == "{" {
+      let (md, env) = if t.ty == TokenType::Reserved && t.str == "{" {
         // declarations
-        self.tracker.next();
         let pos = self.tracker.pos();
-        let ds = self.decls();
+        self.tracker.next();
+        let scope = self.scope.clone();
+        let mut mod_env = Env::new();
+        let ds = self.decls(&mut mod_env);
+        self.scope = scope;
         self.expect_reserved("}")?;
-        Module(ModuleF::Decls(ds), pos)
+        (ModDef(ModDefF::Decls(ds), pos), Some(Rc::new(mod_env)))
       } else {
-        self.module(mod_indent)?
+        let mr = self.modref(mod_indent)?;
+        let e = self.resolve_modref(&mr).cloned();
+        (ModDef(ModDefF::Ref(mr), t.pos), e)
       };
-      return Ok(Decl(DeclF::Module(mod_decl, Box::new(m)), mod_pos));
+      match env {
+        Some(env) => {
+          let name = mod_decl.name.clone();
+          cur_mod.add_module(name.clone(), env.clone());
+          self.scope.add_module(name, env);
+        }
+        None => {
+          self.add_error(md.1, "module not found...");
+          self.tracker.skip_to_next_head();
+          return Err(());
+        }
+      }
+      return Ok(Decl(DeclF::ModDef(mod_decl, Box::new(md)), mod_pos));
     }
     if t.str == "use" {
-      // use
+      // use (= local open)
       self.tracker.next();
-      let m = self.module(t.indent)?;
-      return Ok(Decl(DeclF::Use(Box::new(m)), t.pos));
+      let mr = self.modref(t.indent)?;
+      if let Some(e) = self.resolve_modref(&mr).cloned() {
+        if let Err(_) = self.scope.merge(e) {
+          self.add_error(t.pos, "module name conflict");
+        }
+      }
+      let open = Decl(DeclF::Open(mr), t.pos);
+      return Ok(Decl(DeclF::Local(vec![open]), t.pos));
     }
     if t.str == "open" {
       // open
       self.tracker.next();
-      let m = self.module(t.indent)?;
-      return Ok(Decl(DeclF::Open(Box::new(m)), t.pos));
+      let mr = self.modref(t.indent)?;
+      if let Some(e) = self.resolve_modref(&mr).cloned() {
+        if let Err(_) = cur_mod.merge(e.clone()) {
+          self.add_error(t.pos, "module name conflict");
+        }
+        let _ = self.scope.merge(e);
+      }
+      return Ok(Decl(DeclF::Open(mr), t.pos));
     }
     if t.str == "syntax" {
+      // syntax
       let outer_indent = self.tracker.save_indent();
       self.tracker.next();
       self.tracker.set_indent(t.indent);
-      let syntax = self.syntax(t.pos);
+      let syntax = self.syntax();
       self.tracker.restore_indent(outer_indent);
-      return syntax;
+      let syntax = syntax?;
+      cur_mod.add_syntax(syntax.clone());
+      self.scope.add_syntax(syntax.clone());
+      return Ok(Decl(DeclF::Syntax(syntax), t.pos));
     }
 
     // general identifier: definition
@@ -445,7 +577,7 @@ impl<'a> DeclParser<'a> {
     return Ok(Decl(DeclF::Def(def), t.pos));
   }
 
-  pub fn decls(&mut self) -> Vec<Decl<'a>> {
+  pub fn decls(&mut self, cur_mod: &mut Env<'a>) -> Vec<Decl<'a>> {
     let mut ds = Vec::new();
     loop {
       match self.tracker.peek() {
@@ -460,7 +592,7 @@ impl<'a> DeclParser<'a> {
         None => break,
       }
       let orig_pos = self.tracker.pos();
-      if let Ok(d) = self.decl() {
+      if let Ok(d) = self.decl(cur_mod) {
         ds.push(d);
       }
       let cur_pos = self.tracker.pos();
@@ -473,10 +605,11 @@ impl<'a> DeclParser<'a> {
 
   pub fn program(&mut self) -> Vec<Decl<'a>> {
     let mut ds = Vec::new();
+    let mut cur_mod = Env::new();
     loop {
       let orig_pos = self.tracker.pos();
       match self.tracker.peek() {
-        Some(_) => ds.extend(self.decls()),
+        Some(_) => ds.extend(self.decls(&mut cur_mod)),
         None => break,
       }
       let cur_pos = self.tracker.pos();

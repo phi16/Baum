@@ -14,7 +14,6 @@ pub struct DefF<I, E> {
   pub args: Vec<ArgF<I, E>>,
   pub ty: Option<E>,
   pub body: E,
-  // pub where_: Vec<DefF<I, E>>,
 }
 
 #[derive(Debug, Clone)]
@@ -24,18 +23,22 @@ pub struct ModDeclF<I, E> {
 }
 
 #[derive(Debug, Clone)]
-pub enum ModuleF<S, I, Ds, E> {
-  Decls(Ds),
+pub enum ModRefF<S, I, E> {
   Import(S),
-  Ref(Vec<I>, Vec<(Vis, E)>),
+  App(Vec<I>, Vec<(Vis, E)>),
 }
 
 #[derive(Debug, Clone)]
-pub enum DeclF<I, Ds, E, M> {
+pub enum ModDefF<S, I, Ds, E> {
+  Decls(Ds),
+  Ref(ModRefF<S, I, E>),
+}
+
+#[derive(Debug, Clone)]
+pub enum DeclF<S, I, Ds, E, Md> {
   Local(Ds),
-  Module(ModDeclF<I, E>, M),
-  Use(M),
-  Open(M),
-  Def(DefF<I, E>),
+  ModDef(ModDeclF<I, E>, Md),
+  Open(ModRefF<S, I, E>),
+  Def(DefF<I, E> /* , Vec<DefF<I, E>> */),
   Syntax(Syntax /* , Vec<DefF<I, E>> */),
 }
