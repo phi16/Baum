@@ -81,6 +81,7 @@ pub fn default_syntax_table() -> SyntaxTable {
   syntax.def("", regex_elems![s]);
   // Base
   syntax.def("", regex_elems!["prim", s]);
+  syntax.def("", regex_elems!["_"]);
   syntax.def("0", regex_elems!["let", decls, "in", e]);
   // Universe
   syntax.def("", regex_elems!["U"]);

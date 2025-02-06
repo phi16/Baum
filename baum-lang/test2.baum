@@ -9,5 +9,7 @@ syntax 0> ∃( x ∈ a ) p = { x: a | p }
 three = (- 1 + 2 !) * 3
 evens = { x: Nat | ∃( y ∈ Nat ) x == y + y }
 
-
-
+f = U
+g = _
+k = prim "mochi"
+j = let a = b in a
