@@ -13,6 +13,7 @@ mod tests {
   #[test]
   fn it_works() {
     let str = include_str!("../test.baum");
+    // let str = include_str!("../test2.baum");
     let res = parse::parse(str);
     eprintln!("");
     match res {
@@ -28,7 +29,5 @@ mod tests {
         assert!(false);
       }
     }
-    eprintln!("");
-    assert!(false);
   }
 }

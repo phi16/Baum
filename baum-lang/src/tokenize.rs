@@ -16,7 +16,7 @@ fn get_char_type(c: char) -> CharType {
     'a'..='z' | 'A'..='Z' => CharType::Alpha,
     '0'..='9' => CharType::Number,
     '\'' | '"' => CharType::Quote,
-    '.' | ',' | ':' | ';' | '(' | ')' | '{' | '}' | '[' | ']' => CharType::Reserved,
+    '.' | ',' | ':' | ';' | '(' | ')' | '{' | '}' | '[' | '|' | ']' => CharType::Reserved,
     _ => CharType::Symbol,
   }
 }
@@ -48,7 +48,7 @@ impl<'a, I: Iterator<Item = CharLoc<'a>>> Tokenizer<'a, I> {
 
   fn make_token_internal(&mut self, loc: &Loc<'a>, str: &'a str, ty_base: TokenType) -> Token<'a> {
     let ty = match str {
-      "=" | "_" => TokenType::Reserved,
+      "=" | "_" | "where" => TokenType::Reserved,
       _ => ty_base,
     };
     if str == "syntax" {
@@ -256,6 +256,7 @@ impl<'a, I: Iterator<Item = (Loc<'a>, char)>> Iterator for Tokenizer<'a, I> {
     self.skip_space();
     let (l0, c0) = self.iter.peek()?.clone();
     if self.in_syntax {
+      self.in_syntax = false;
       let precedence = if c0 == '-' {
         self.iter.next();
         match self.iter.peek() {

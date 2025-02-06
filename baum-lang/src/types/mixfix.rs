@@ -147,8 +147,12 @@ impl Precedence {
       PrecEps::PosEps => PrecEps::NegEps,
       PrecEps::Zero => PrecEps::Zero,
     };
-    let left = Precedence::Level(PrecLevel(nums.clone()), left_eps);
+    let mut left = Precedence::Level(PrecLevel(nums.clone()), left_eps);
     let right = Precedence::Level(PrecLevel(nums), right_eps);
+    if right <= Precedence::Level(PrecLevel(vec![0]), PrecEps::Zero) {
+      // allows `1 + π(0) x` for prefixs
+      left = Precedence::Terminal;
+    }
     Some((left, right))
   }
 }
@@ -165,8 +169,8 @@ fn prec_parse_test() {
   );
   assert!(Precedence::parse("1.-2.3<").is_some());
   assert_eq!(
-    Precedence::parse("-10.42.2048>").unwrap().0,
-    Precedence::Level(PrecLevel(vec![-10, 42, 2048]), PrecEps::PosEps)
+    Precedence::parse("10.42.2048>").unwrap().0,
+    Precedence::Level(PrecLevel(vec![10, 42, 2048]), PrecEps::PosEps)
   );
   assert!(Precedence::parse("-10.42..2048>").is_none());
   assert!(Precedence::parse("--10.42.2048>").is_none());
@@ -363,11 +367,7 @@ impl SyntaxTable {
   }
 
   pub fn def(&mut self, prec: &str, seqs: Rc<Regex>) {
-    let (mut left, right) = Precedence::parse(prec).unwrap();
-    if right <= Precedence::Level(PrecLevel(vec![0]), PrecEps::Zero) {
-      // allows `1 + π(0) x` for prefixs
-      left = Precedence::Terminal;
-    }
+    let (left, right) = Precedence::parse(prec).unwrap();
     self.add(Syntax::new(left, right, seqs));
   }
 

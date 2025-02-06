@@ -1,0 +1,13 @@
+syntax 2.1< a + b = add a b
+syntax 2.2< a * b = mul a b
+syntax 2.3> - a = neg a
+syntax 2.4< a ! = fact a
+syntax 1 a == b = eq a b
+syntax { x: a | p } = Σ(x: a, proof: p)
+syntax 0> ∃( x ∈ a ) p = { x: a | p }
+
+three = (- 1 + 2 !) * 3
+evens = { x: Nat | ∃( y ∈ Nat ) x == y + y }
+
+
+

@@ -58,6 +58,7 @@ pub struct Decl<'a>(
 pub type Def<'a> = DefF<Id<'a>, Box<Expr<'a>>>;
 pub type Arg<'a> = ArgF<Id<'a>, Box<Expr<'a>>>;
 pub type ModRef<'a> = ModRefF<&'a str, Id<'a>, Box<Expr<'a>>>;
+pub type Where<'a> = WhereF<Id<'a>, Box<Expr<'a>>>;
 
 #[derive(Debug, Clone)]
 pub struct Env<'a> {
@@ -126,4 +127,37 @@ impl<'a> Env<'a> {
   pub fn is_trailing_opname(&self, id: &'a str) -> bool {
     self.syntax.is_ope_head(id)
   }
+}
+
+#[derive(Debug, Clone)]
+pub enum Role {
+  Expr,
+  Ident,
+}
+
+pub fn fv<'a>(e: &Expr<'a>) -> Vec<(Id<'a>, Role)> {
+  fn fv_internal<'a>(e: &Expr<'a>, v: &mut Vec<(Id<'a>, Role)>) {
+    match e.0 {
+      ExprF::Var(ref id) => {
+        v.push((id.clone(), Role::Expr));
+      }
+      ExprF::Syntax((_, ref elems)) => {
+        for elem in elems {
+          match elem {
+            SyntaxElem::Ident(ref id) => {
+              v.push((id.clone(), Role::Ident));
+            }
+            SyntaxElem::Expr(ref e) => {
+              fv_internal(e, v);
+            }
+            _ => {}
+          }
+        }
+      }
+      _ => {}
+    }
+  }
+  let mut v = Vec::new();
+  fv_internal(e, &mut v);
+  v
 }

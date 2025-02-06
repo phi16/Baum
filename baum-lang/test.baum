@@ -15,7 +15,7 @@ module C (x: A.u) {y: B} = {
   local {
     y = 2
   }
-  module E = D x y z (a b) {x} {y z} A.p.r B.q
+  module E = A x y z (a b) {x} {y z} A.p X.q
   local module D {r: s t} (x: a) = {
     local open A
   }
@@ -30,8 +30,18 @@ f = - 2
 g = 1.2
 u = Σ(x y: Nat, Nat, z: Q x y, P x y z)
 v = Σ(x y: Nat, Nat, z: Q x y, P x y z,)
+
+syntax 2.1< a + b = add a b
+syntax 2.1< a - b = sub a b
+syntax 2.2< a * b = mul a b
+syntax 2.3> - a = neg a
+syntax 2.4< a ! = fact a
+syntax [ a | b ] = f a b
+syntax [ a ? b ] = g a b
+
 x = 1 + 2 * 3
 y = 1 * 2 + 3
+z = 1 + 2 +
 z = 1 + [ 1 + 2 | 3 + 4 ] * 5
 w = 1 + [ 1 + 2 ? 3 + 4 ] * 5
 a = prim "a"
@@ -54,3 +64,23 @@ z = x {y = 2} -- hmm...
 y = {y = 1} + 2
 y = {y} + 1 -- fail
 u = 1 + 5
+      
+syntax [ a ] = block a
+syntax 4> a → b = Π(a) b
+syntax 5> (a: e) → b = Π(a: e) b
+syntax 0> |a| b = λ(a) b
+syntax 5> a f b = g a b where g a b = 0
+syntax 5> a f b = g a b
+  where g a b = 0
+syntax 5> a f b = g a b where
+  g a b = 0
+k = |a| |b| a
+j: (a: Nat) → b = |a| 0
+module A = {
+  syntax 0> & a & = a
+  syntax 4 a / b = add a b
+}
+pa' = & 0 &
+pi' = 1 / 2
+pa = A.& 0 &
+pi = 1 A./ 2

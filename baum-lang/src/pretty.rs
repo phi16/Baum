@@ -125,8 +125,8 @@ impl Pretty {
         self.s(" = ").md(md)
       }
       DeclF::Open(mr) => self.s("open ").mr(mr),
-      DeclF::Def(def) => self.def(def).ln(),
-      DeclF::Syntax(_) => self.s("syntax ").ln(),
+      DeclF::Def(def, wh) => self.def(def).ln(),
+      DeclF::Syntax(s, wh) => self.s("syntax: ").s(&format!("{:?}", s)).ln(),
     }
   }
 

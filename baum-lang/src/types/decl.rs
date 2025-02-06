@@ -35,10 +35,15 @@ pub enum ModDefF<S, I, Ds, E> {
 }
 
 #[derive(Debug, Clone)]
+pub struct WhereF<I, E> {
+  pub defs: Vec<DefF<I, E>>,
+}
+
+#[derive(Debug, Clone)]
 pub enum DeclF<S, I, Ds, E, Md> {
   Local(Ds),
   ModDef(ModDeclF<I, E>, Md),
   Open(ModRefF<S, I, E>),
-  Def(DefF<I, E> /* , Vec<DefF<I, E>> */),
-  Syntax(Syntax /* , Vec<DefF<I, E>> */),
+  Def(DefF<I, E>, WhereF<I, E>),
+  Syntax(Syntax, WhereF<I, E>),
 }

@@ -76,6 +76,15 @@ impl<'a> DeclParser<'a> {
     Ok(Id::new(s))
   }
 
+  fn allow_semicolon(&mut self) {
+    match self.tracker.peek() {
+      Some(t) if t.ty == TokenType::Reserved && t.str == ";" => {
+        self.tracker.next();
+      }
+      _ => {}
+    }
+  }
+
   fn ids(&mut self) -> Vec<Id<'a>> {
     let mut ids = Vec::new();
     loop {
@@ -189,12 +198,6 @@ impl<'a> DeclParser<'a> {
     };
     self.expect_reserved("=")?;
     let body = self.expr_or_hole();
-    match self.tracker.peek() {
-      Some(t) if t.ty == TokenType::Reserved && t.str == ";" => {
-        self.tracker.next();
-      }
-      _ => {}
-    }
     Ok(Def {
       name,
       args,
@@ -230,7 +233,32 @@ impl<'a> DeclParser<'a> {
     }
   }
 
-  fn syntax(&mut self) -> Result<Syntax, ()> {
+  fn where_clause(&mut self) -> Where<'a> {
+    let indent = match self.tracker.peek() {
+      Some(t) if t.ty == TokenType::Reserved && t.str == "where" => {
+        let indent = t.indent;
+        self.tracker.next();
+        indent
+      }
+      _ => return Where { defs: Vec::new() },
+    };
+    let outer_indent = self.tracker.save_indent();
+    self.tracker.set_indent(indent);
+
+    let mut defs = Vec::new();
+    loop {
+      let d = self.def();
+      match d {
+        Some(d) => defs.push(d),
+        None => break,
+      }
+    }
+
+    self.tracker.restore_indent(outer_indent);
+    Where { defs }
+  }
+
+  fn syntax(&mut self) -> Result<(Syntax, Where<'a>), ()> {
     // syntax (w/o "syntax")
     let precs = match self.tracker.peek() {
       Some(t) if t.ty == TokenType::Precedence => match Precedence::parse(t.str) {
@@ -247,9 +275,95 @@ impl<'a> DeclParser<'a> {
       },
       _ => (Precedence::Terminal, Precedence::Terminal),
     };
-    let regex = unimplemented!();
+    let mut tokens = Vec::new();
+    loop {
+      match self.tracker.peek() {
+        Some(t) => {
+          if t.ty == TokenType::Reserved && t.str == "=" {
+            self.tracker.next();
+            break;
+          } else {
+            tokens.push(t.clone());
+            self.tracker.next();
+          }
+        }
+        _ => {
+          let pos = self.tracker.end_of_line();
+          self.add_error(pos, "expected body of syntax definition");
+          self.tracker.skip_to_next_head();
+          return Err(());
+        }
+      }
+    }
+    let e = self.expr_or_hole(); // TODO: nat/rat/chr/str placeholder
+    let fvs = fv(&e);
+    // TODO: dup check?
+    let fvs: HashMap<Id, Role> = fvs.into_iter().collect();
+    let mut rs = Vec::new();
+    for t in tokens {
+      match t.ty {
+        TokenType::Reserved => {
+          rs.push(Regex::token(t.str));
+        }
+        TokenType::Ident => {
+          let id = Id::new(t.str);
+          if let Some(role) = fvs.get(&id) {
+            let r = match role {
+              Role::Expr => Regex::e(),
+              Role::Ident => Regex::id(),
+            };
+            rs.push(r);
+          } else {
+            rs.push(Regex::token(t.str));
+          }
+        }
+        _ => {
+          let pos = t.pos;
+          self.add_error(pos, "expected identifier or string");
+          self.tracker.skip_to_next_head();
+          return Err(());
+        }
+      }
+    }
+    let regex = Regex::seqs(rs.iter().collect());
     let syntax = Syntax::new(precs.0, precs.1, regex);
-    return Ok(syntax);
+    eprintln!("SYNTAX: {:?}", syntax);
+    let wh = self.where_clause();
+    return Ok((syntax, wh));
+  }
+
+  fn extract_modref(
+    &mut self,
+    e: Expr<'a>,
+  ) -> Result<(Vec<Id<'a>>, Vec<(Vis, Box<Expr<'a>>)>), ()> {
+    let mut rev_params = Vec::new();
+    let mut e = e;
+    loop {
+      match e.0 {
+        ExprF::Mod(name) => {
+          let params = rev_params.into_iter().rev().collect();
+          return Ok((name, params));
+        }
+        ExprF::Syntax((_, args)) => {
+          if let [SyntaxElem::Expr(e0), SyntaxElem::Expr(e1)] = args.as_slice() {
+            rev_params.push((Vis::Explicit, e1.clone()));
+            e = *e0.clone();
+            continue;
+          } else if let [SyntaxElem::Expr(e0), SyntaxElem::Token("{"), SyntaxElem::Expr(e1), SyntaxElem::Token("}")] =
+            args.as_slice()
+          {
+            rev_params.push((Vis::Implicit, e1.clone()));
+            e = *e0.clone();
+            continue;
+          }
+        }
+        _ => {}
+      }
+      let pos = e.1;
+      self.add_error(pos, "expected module application");
+      self.tracker.skip_to_next_head();
+      return Err(());
+    }
   }
 
   fn modref_internal(&mut self) -> Result<ModRef<'a>, ()> {
@@ -278,96 +392,9 @@ impl<'a> DeclParser<'a> {
 
     // reference with parameters
 
-    // let e = self.expr_or_hole();
-    // println!("{:?}", e);
-    // unimplemented!()
-
-    let mut name = Vec::new();
-    loop {
-      let t = match self.tracker.peek() {
-        Some(t) => t.clone(),
-        None => {
-          let pos = self.tracker.end_of_line();
-          self.add_error(pos, "expected module name");
-          self.tracker.skip_to_next_head();
-          return Err(());
-        }
-      };
-      if t.ty == TokenType::Reserved {
-        break;
-      }
-      if t.ty != TokenType::Ident {
-        let pos = self.tracker.pos();
-        self.add_error(pos, "expected module name");
-        self.tracker.skip_to_next_head();
-        return Err(());
-      }
-      name.push(Id::new(t.str));
-      self.tracker.next();
-      let t = match self.tracker.peek() {
-        Some(t) => t.clone(),
-        None => {
-          break;
-        }
-      };
-      if t.ty == TokenType::Reserved && t.str == "." {
-        self.tracker.next();
-      } else {
-        break;
-      }
-    }
-    let mut params = Vec::new();
-    loop {
-      let t = match self.tracker.peek() {
-        Some(t) => t.clone(),
-        None => {
-          break;
-        }
-      };
-      if t.ty == TokenType::Reserved && t.str == "{" {
-        self.tracker.next();
-        let e = self.expr_or_hole();
-        self.expect_reserved("}")?;
-        params.push((Vis::Implicit, Box::new(e)));
-      } else if t.ty == TokenType::Reserved && t.str == "(" {
-        self.tracker.next();
-        let e = self.expr_or_hole();
-        self.expect_reserved(")")?;
-        params.push((Vis::Explicit, Box::new(e)));
-      } else if t.ty == TokenType::Ident {
-        let mut ids = Vec::new();
-        loop {
-          match self.tracker.peek() {
-            Some(t) if t.ty == TokenType::Ident => {
-              ids.push(Id::new(t.str));
-              self.tracker.next();
-            }
-            _ => break,
-          }
-          match self.tracker.peek() {
-            Some(t) if t.ty == TokenType::Reserved && t.str == "." => {
-              self.tracker.next();
-            }
-            _ => {
-              break;
-            }
-          };
-        }
-        let name = ids.pop().unwrap();
-        let e = if ids.is_empty() {
-          ExprF::Var(name)
-        } else {
-          ExprF::Ext(ids, name)
-        };
-        params.push((Vis::Explicit, Box::new(Expr(e, t.pos))));
-      } else {
-        let pos = self.tracker.pos();
-        self.add_error(pos, "expected module parameters");
-        self.tracker.skip_to_next_head();
-        return Err(());
-      }
-    }
-    return Ok(ModRefF::App(name, params));
+    let e = self.expr_or_hole();
+    let (name, params) = self.extract_modref(e)?;
+    Ok(ModRefF::App(name, params))
   }
 
   fn modref(&mut self, indent: Indent) -> Result<ModRef<'a>, ()> {
@@ -387,7 +414,7 @@ impl<'a> DeclParser<'a> {
     }
   }
 
-  fn decl(&mut self, cur_mod: &mut Env<'a>) -> Result<Decl<'a>, ()> {
+  fn decl_internal(&mut self, cur_mod: &mut Env<'a>) -> Result<Decl<'a>, ()> {
     let t = match self.tracker.peek() {
       Some(t) => t.clone(),
       None => {
@@ -564,17 +591,24 @@ impl<'a> DeclParser<'a> {
       let outer_indent = self.tracker.save_indent();
       self.tracker.next();
       self.tracker.set_indent(t.indent);
-      let syntax = self.syntax();
+      let res = self.syntax();
       self.tracker.restore_indent(outer_indent);
-      let syntax = syntax?;
+      let (syntax, wh) = res?;
       cur_mod.add_syntax(syntax.clone());
       self.scope.add_syntax(syntax.clone());
-      return Ok(Decl(DeclF::Syntax(syntax), t.pos));
+      return Ok(Decl(DeclF::Syntax(syntax, wh), t.pos));
     }
 
     // general identifier: definition
     let def = self.def().ok_or(())?;
-    return Ok(Decl(DeclF::Def(def), t.pos));
+    let wh = self.where_clause();
+    return Ok(Decl(DeclF::Def(def, wh), t.pos));
+  }
+
+  fn decl(&mut self, cur_mod: &mut Env<'a>) -> Result<Decl<'a>, ()> {
+    let res = self.decl_internal(cur_mod)?;
+    self.allow_semicolon();
+    Ok(res)
   }
 
   pub fn decls(&mut self, cur_mod: &mut Env<'a>) -> Vec<Decl<'a>> {

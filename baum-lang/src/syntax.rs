@@ -103,13 +103,5 @@ pub fn default_syntax_table() -> SyntaxTable {
   syntax.def("", regex_elems!["μ", "(", id_ty, ")", "{", defs, "}"]);
   syntax.def("", regex_elems!["ν", "(", id_ty, ")", "{", defs, "}"]);
 
-  // Demo
-  syntax.def("2.1<", regex_elems![e, "+", e]);
-  syntax.def("2.1<", regex_elems![e, "-", e]);
-  syntax.def("2.2<", regex_elems![e, "*", e]);
-  syntax.def("2.3>", regex_elems!["-", e]);
-  syntax.def("2.4<", regex_elems![e, "!"]);
-  syntax.def("", regex_elems!["[", e, "|", e, "]"]);
-  syntax.def("", regex_elems!["[", e, "?", e, "]"]);
   syntax
 }
