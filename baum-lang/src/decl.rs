@@ -1,4 +1,5 @@
 use crate::expr::ExprParser;
+use crate::types::mixfix::{Precedence, Regex};
 use crate::types::parse::*;
 use std::collections::HashSet;
 
@@ -294,6 +295,7 @@ impl<'a> DeclParser<'a> {
             self.tracker.next();
             break;
           } else {
+            // TODO: restrict some symbols
             tokens.push(t.clone());
             self.tracker.next();
           }
@@ -324,7 +326,7 @@ impl<'a> DeclParser<'a> {
       match t.ty {
         TokenType::Reserved => {
           rs.push(Regex::token(t.str));
-          defs.push(SyntaxDefF::Token(t.str));
+          defs.push(SynDefF::Token(t.str));
         }
         TokenType::Ident => {
           let id = Id::new(t.str);
@@ -332,16 +334,16 @@ impl<'a> DeclParser<'a> {
             match role {
               Role::Expr => {
                 rs.push(Regex::e());
-                defs.push(SyntaxDefF::Expr(id));
+                defs.push(SynDefF::Expr(id));
               }
               Role::Ident => {
                 rs.push(Regex::id());
-                defs.push(SyntaxDefF::Ident(id));
+                defs.push(SynDefF::Ident(id));
               }
             }
           } else {
             rs.push(Regex::token(t.str));
-            defs.push(SyntaxDefF::Token(t.str));
+            defs.push(SynDefF::Token(t.str));
           }
         }
         _ => {
@@ -351,7 +353,7 @@ impl<'a> DeclParser<'a> {
       }
     }
     let regex = Regex::seqs(rs.iter().collect());
-    let syntax = Syntax::new(precs.0, precs.1, regex);
+    let syntax = Syntax::new(precs.0, precs.1, regex, ());
     log!("SYNTAX: {:?}", syntax);
     let wh = self.where_clause();
     return Ok((

@@ -1,4 +1,5 @@
 use crate::decl::DeclParser;
+use crate::types::mixfix::{deriv, NonTerm, Precedence, Regex};
 use crate::types::parse::*;
 use std::collections::HashSet;
 use std::rc::Rc;

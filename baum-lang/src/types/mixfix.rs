@@ -331,38 +331,40 @@ impl std::fmt::Debug for Regex {
   }
 }
 
-pub trait Interpreter {
-  fn run(&self, s: Vec<SyntaxElem>) -> Option<String>;
-}
-
 #[derive(Clone)]
-pub struct Syntax {
+pub struct Syntax<T> {
   pub left: Precedence,
   pub right: Precedence,
   pub regex: Rc<Regex>,
+  pub t: T,
 }
 
-impl std::fmt::Debug for Syntax {
+impl<T> std::fmt::Debug for Syntax<T> {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     write!(f, "Syn({:?}, {:?}) {:?}", self.left, self.right, self.regex)
   }
 }
 
-impl Syntax {
-  pub fn new(left: Precedence, right: Precedence, regex: Rc<Regex>) -> Self {
-    Syntax { left, right, regex }
+impl<T> Syntax<T> {
+  pub fn new(left: Precedence, right: Precedence, regex: Rc<Regex>, t: T) -> Self {
+    Syntax {
+      left,
+      right,
+      regex,
+      t,
+    }
   }
 }
 
 #[derive(Debug, Clone)]
-pub struct SyntaxTable {
-  pres: HashMap<String, Vec<Syntax>>, // starts from token
-  lits: Vec<Syntax>,                  // literals
-  opes: HashMap<String, Vec<Syntax>>, // starts from expr and token
-  apps: Vec<Syntax>,                  // expr expr
+pub struct SyntaxTable<T> {
+  pres: HashMap<String, Vec<Syntax<T>>>, // starts from token
+  lits: Vec<Syntax<T>>,                  // literals
+  opes: HashMap<String, Vec<Syntax<T>>>, // starts from expr and token
+  apps: Vec<Syntax<T>>,                  // expr expr
 }
 
-impl SyntaxTable {
+impl<T> SyntaxTable<T> {
   pub fn new() -> Self {
     SyntaxTable {
       pres: HashMap::new(),
@@ -372,12 +374,12 @@ impl SyntaxTable {
     }
   }
 
-  pub fn def(&mut self, prec: &str, seqs: Rc<Regex>) {
+  pub fn def(&mut self, prec: &str, seqs: Rc<Regex>, t: T) {
     let (left, right) = Precedence::parse(prec).unwrap();
-    self.add(Syntax::new(left, right, seqs));
+    self.add(Syntax::new(left, right, seqs, t));
   }
 
-  pub fn add(&mut self, syn: Syntax) {
+  pub fn add(&mut self, syn: Syntax<T>) {
     let seqs = &syn.regex;
     let v = match &**seqs {
       Regex::Token(ref s) => self.pres.entry(s.to_string()).or_insert(Vec::new()),
@@ -419,16 +421,16 @@ impl SyntaxTable {
     }
   }
 
-  pub fn choose_pre(&self, s: &str) -> Option<&Vec<Syntax>> {
+  pub fn choose_pre(&self, s: &str) -> Option<&Vec<Syntax<T>>> {
     self.pres.get(s)
   }
-  pub fn lits(&self) -> &Vec<Syntax> {
+  pub fn lits(&self) -> &Vec<Syntax<T>> {
     &self.lits
   }
-  pub fn choose_ope(&self, s: &str) -> Option<&Vec<Syntax>> {
+  pub fn choose_ope(&self, s: &str) -> Option<&Vec<Syntax<T>>> {
     self.opes.get(s)
   }
-  pub fn apps(&self) -> &Vec<Syntax> {
+  pub fn apps(&self) -> &Vec<Syntax<T>> {
     &self.apps
   }
 
@@ -439,7 +441,7 @@ impl SyntaxTable {
     self.opes.contains_key(s)
   }
 
-  pub fn merge(&mut self, other: SyntaxTable) {
+  pub fn merge(&mut self, other: SyntaxTable<T>) {
     for (k, v) in other.pres {
       self.pres.entry(k).or_insert(Vec::new()).extend(v);
     }

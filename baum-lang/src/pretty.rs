@@ -133,9 +133,9 @@ impl Pretty {
         }
         for def in defs {
           match def {
-            SyntaxDefF::Token(s) => self.s(s),
-            SyntaxDefF::Ident(i) => self.i(i),
-            SyntaxDefF::Expr(i) => self.i(i),
+            SynDefF::Token(s) => self.s(s),
+            SynDefF::Ident(i) => self.i(i),
+            SynDefF::Expr(i) => self.i(i),
           };
           self.s(" ");
         }

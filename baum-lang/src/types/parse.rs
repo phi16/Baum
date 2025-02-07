@@ -1,5 +1,5 @@
 pub use crate::types::ast::*;
-pub use crate::types::mixfix::*;
+pub use crate::types::mixfix;
 pub use crate::types::token::*;
 pub use crate::types::tracker::*;
 pub use std::collections::HashMap;
@@ -29,6 +29,10 @@ pub enum SyntaxElem<'a> {
   Expr(Box<Expr<'a>>),
   Decls(Vec<Decl<'a>>),
 }
+
+pub type SyntaxInterpreter = ();
+pub type Syntax = mixfix::Syntax<SyntaxInterpreter>;
+pub type SyntaxTable = mixfix::SyntaxTable<SyntaxInterpreter>;
 
 // TODO
 pub struct TokenRange {

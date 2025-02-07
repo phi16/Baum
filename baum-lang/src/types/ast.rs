@@ -1,5 +1,3 @@
-use crate::types::mixfix::*;
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Vis {
   Explicit,
@@ -40,7 +38,7 @@ pub struct WhereF<I, E> {
 }
 
 #[derive(Debug, Clone)]
-pub enum SyntaxDefF<S, I> {
+pub enum SynDefF<S, I> {
   Token(S),
   Ident(I),
   Expr(I),
@@ -52,7 +50,7 @@ pub enum DeclF<S, I, Ds, E, Md> {
   ModDef(ModDeclF<I, E>, Md),
   Open(ModRefF<S, I, E>),
   Def(DefF<I, E>, WhereF<I, E>),
-  Syntax(Option<S>, Vec<SyntaxDefF<S, I>>, E, WhereF<I, E>),
+  Syntax(Option<S>, Vec<SynDefF<S, I>>, E, WhereF<I, E>),
 }
 
 #[derive(Debug, Clone)]
