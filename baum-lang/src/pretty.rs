@@ -126,7 +126,21 @@ impl Pretty {
       }
       DeclF::Open(mr) => self.s("open ").mr(mr),
       DeclF::Def(def, wh) => self.def(def).ln(),
-      DeclF::Syntax(s, wh) => self.s("syntax: ").s(&format!("{:?}", s)).ln(),
+      DeclF::Syntax(prec_str, defs, e, wh) => {
+        self.s("syntax ");
+        if let Some(prec_str) = prec_str {
+          self.s(prec_str).s(" ");
+        }
+        for def in defs {
+          match def {
+            SyntaxDefF::Token(s) => self.s(s),
+            SyntaxDefF::Ident(i) => self.i(i),
+            SyntaxDefF::Expr(i) => self.i(i),
+          };
+          self.s(" ");
+        }
+        self.s("= ").e(e).ln()
+      }
     }
   }
 
@@ -142,7 +156,7 @@ impl Pretty {
       ExprF::Hole => self.s("_"),
       ExprF::Var(i) => self.i(i),
       ExprF::Ext(m, i) => self.is(m, ".").s(".").i(i),
-      ExprF::Syntax((_, se)) => {
+      ExprF::Syntax(_, se) => {
         self.s("[");
         for e in se.into_iter() {
           self.s(" ");

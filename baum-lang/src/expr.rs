@@ -369,7 +369,7 @@ impl<'a, 'b> ExprParser<'a, 'b> {
   }
 
   fn make_syntax(&self, s: &Syntax, elems: Vec<SyntaxElem<'a>>, pos: TokenPos) -> Expr<'a> {
-    Expr(ExprF::Syntax((s.clone(), elems)), pos)
+    Expr(ExprF::Syntax(s.clone(), elems), pos)
   }
 
   fn module_name(&mut self) -> Option<(Vec<Id<'a>>, Option<&'b Env<'a>>)> {

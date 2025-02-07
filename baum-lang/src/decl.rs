@@ -270,20 +270,21 @@ impl<'a> DeclParser<'a> {
     Where { defs }
   }
 
-  fn syntax(&mut self) -> Result<(Syntax, Where<'a>)> {
+  fn syntax(&mut self, pos: TokenPos) -> Result<(Syntax, Decl<'a>)> {
     // syntax (w/o "syntax")
-    let precs = match self.tracker.peek() {
+    let (precs, prec_str) = match self.tracker.peek() {
       Some(t) if t.ty == TokenType::Precedence => match Precedence::parse(t.str) {
         Some(precs) => {
+          let s = t.str;
           self.tracker.next();
-          precs
+          (precs, Some(s))
         }
         None => {
           self.add_error(self.tracker.pos(), "failed to parse precedence");
           return Err(());
         }
       },
-      _ => (Precedence::Terminal, Precedence::Terminal),
+      _ => ((Precedence::Terminal, Precedence::Terminal), None),
     };
     let mut tokens = Vec::new();
     loop {
@@ -318,21 +319,29 @@ impl<'a> DeclParser<'a> {
     // TODO: dup check?
     let fvs: HashMap<Id, Role> = fvs.into_iter().collect();
     let mut rs = Vec::new();
+    let mut defs = Vec::new();
     for t in tokens {
       match t.ty {
         TokenType::Reserved => {
           rs.push(Regex::token(t.str));
+          defs.push(SyntaxDefF::Token(t.str));
         }
         TokenType::Ident => {
           let id = Id::new(t.str);
           if let Some(role) = fvs.get(&id) {
-            let r = match role {
-              Role::Expr => Regex::e(),
-              Role::Ident => Regex::id(),
-            };
-            rs.push(r);
+            match role {
+              Role::Expr => {
+                rs.push(Regex::e());
+                defs.push(SyntaxDefF::Expr(id));
+              }
+              Role::Ident => {
+                rs.push(Regex::id());
+                defs.push(SyntaxDefF::Ident(id));
+              }
+            }
           } else {
             rs.push(Regex::token(t.str));
+            defs.push(SyntaxDefF::Token(t.str));
           }
         }
         _ => {
@@ -345,7 +354,10 @@ impl<'a> DeclParser<'a> {
     let syntax = Syntax::new(precs.0, precs.1, regex);
     log!("SYNTAX: {:?}", syntax);
     let wh = self.where_clause();
-    return Ok((syntax, wh));
+    return Ok((
+      syntax,
+      Decl(DeclF::Syntax(prec_str, defs, Box::new(e), wh), pos),
+    ));
   }
 
   fn extract_modref(&mut self, e: Expr<'a>) -> Result<(Vec<Id<'a>>, Vec<(Vis, Box<Expr<'a>>)>)> {
@@ -357,7 +369,7 @@ impl<'a> DeclParser<'a> {
           let params = rev_params.into_iter().rev().collect();
           return Ok((name, params));
         }
-        ExprF::Syntax((_, args)) => {
+        ExprF::Syntax(_, args) => {
           if let [SyntaxElem::Expr(e0), SyntaxElem::Expr(e1)] = args.as_slice() {
             rev_params.push((Vis::Explicit, e1.clone()));
             e = *e0.clone();
@@ -571,12 +583,12 @@ impl<'a> DeclParser<'a> {
       let outer_indent = self.tracker.save_indent();
       self.tracker.next();
       self.tracker.set_indent(t.indent);
-      let res = self.syntax();
+      let res = self.syntax(t.pos);
       self.tracker.restore_indent(outer_indent);
-      let (syntax, wh) = res?;
+      let (syntax, d) = res?;
       cur_mod.add_syntax(syntax.clone());
       self.scope.add_syntax(syntax.clone());
-      return Ok(Decl(DeclF::Syntax(syntax, wh), t.pos));
+      return Ok(d);
     }
 
     // general identifier: definition

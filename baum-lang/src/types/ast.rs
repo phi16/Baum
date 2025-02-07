@@ -40,19 +40,26 @@ pub struct WhereF<I, E> {
 }
 
 #[derive(Debug, Clone)]
+pub enum SyntaxDefF<S, I> {
+  Token(S),
+  Ident(I),
+  Expr(I),
+}
+
+#[derive(Debug, Clone)]
 pub enum DeclF<S, I, Ds, E, Md> {
   Local(Ds),
   ModDef(ModDeclF<I, E>, Md),
   Open(ModRefF<S, I, E>),
   Def(DefF<I, E>, WhereF<I, E>),
-  Syntax(Syntax, WhereF<I, E>),
+  Syntax(Option<S>, Vec<SyntaxDefF<S, I>>, E, WhereF<I, E>),
 }
 
 #[derive(Debug, Clone)]
-pub enum ExprF<I, X> {
+pub enum ExprF<I, X, Xe> {
   Hole,
   Var(I),
   Mod(Vec<I>),
   Ext(Vec<I>, I),
-  Syntax(X),
+  Syntax(X, Vec<Xe>),
 }

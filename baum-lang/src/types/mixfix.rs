@@ -4,6 +4,8 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 use std::rc::Rc;
 
+use super::parse::SyntaxElem;
+
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum PrecEps {
   NegEps,
@@ -327,6 +329,10 @@ impl std::fmt::Debug for Regex {
     write!(f, "/")?;
     Ok(())
   }
+}
+
+pub trait Interpreter {
+  fn run(&self, s: Vec<SyntaxElem>) -> Option<String>;
 }
 
 #[derive(Clone)]

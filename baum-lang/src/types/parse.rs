@@ -49,10 +49,7 @@ pub struct Decl<'a>(
 );
 
 #[derive(Debug, Clone)]
-pub struct Expr<'a>(
-  pub ExprF<Id<'a>, (Syntax, Vec<SyntaxElem<'a>>)>,
-  pub TokenPos,
-);
+pub struct Expr<'a>(pub ExprF<Id<'a>, Syntax, SyntaxElem<'a>>, pub TokenPos);
 
 pub type Def<'a> = DefF<Id<'a>, Box<Expr<'a>>>;
 pub type Arg<'a> = ArgF<Id<'a>, Box<Expr<'a>>>;
@@ -140,7 +137,7 @@ pub fn fv<'a>(e: &Expr<'a>) -> Option<Vec<(Id<'a>, Role)>> {
       ExprF::Var(ref id) => {
         v.push((id.clone(), Role::Expr));
       }
-      ExprF::Syntax((_, ref elems)) => {
+      ExprF::Syntax(_, ref elems) => {
         for elem in elems {
           match elem {
             SyntaxElem::Ident(ref id) => {
