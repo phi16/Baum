@@ -47,3 +47,12 @@ pub enum DeclF<S, I, Ds, E, Md> {
   Def(DefF<I, E>, WhereF<I, E>),
   Syntax(Syntax, WhereF<I, E>),
 }
+
+#[derive(Debug, Clone)]
+pub enum ExprF<I, X> {
+  Hole,
+  Var(I),
+  Mod(Vec<I>),
+  Ext(Vec<I>, I),
+  Syntax(X),
+}

@@ -332,14 +332,12 @@ pub fn tokenize<'a>(code: &'a str) -> Result<Vec<Token<'a>>, Vec<String>> {
       let indent = spaces.len() as u16;
 
       // remove comments
-      let rest = match rest.find(" --") {
-        Some(i) => &rest[..i],
-        None => {
-          if rest.len() >= 2 && &rest[0..2] == "--" {
-            ""
-          } else {
-            rest
-          }
+      let rest = if rest.len() >= 2 && &rest[0..2] == "--" {
+        ""
+      } else {
+        match rest.find(" --") {
+          Some(i) => &rest[..i],
+          None => rest,
         }
       };
 

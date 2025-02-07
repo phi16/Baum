@@ -1,5 +1,4 @@
-pub use crate::types::decl::*;
-pub use crate::types::expr::*;
+pub use crate::types::ast::*;
 pub use crate::types::mixfix::*;
 pub use crate::types::token::*;
 pub use crate::types::tracker::*;
@@ -38,12 +37,6 @@ pub struct TokenRange {
 }
 
 #[derive(Debug, Clone)]
-pub struct Expr<'a>(
-  pub ExprF<Id<'a>, (Syntax, Vec<SyntaxElem<'a>>)>,
-  pub TokenPos,
-);
-
-#[derive(Debug, Clone)]
 pub struct ModDef<'a>(
   pub ModDefF<&'a str, Id<'a>, Vec<Decl<'a>>, Box<Expr<'a>>>,
   pub TokenPos,
@@ -52,6 +45,12 @@ pub struct ModDef<'a>(
 #[derive(Debug, Clone)]
 pub struct Decl<'a>(
   pub DeclF<&'a str, Id<'a>, Vec<Decl<'a>>, Box<Expr<'a>>, Box<ModDef<'a>>>,
+  pub TokenPos,
+);
+
+#[derive(Debug, Clone)]
+pub struct Expr<'a>(
+  pub ExprF<Id<'a>, (Syntax, Vec<SyntaxElem<'a>>)>,
   pub TokenPos,
 );
 

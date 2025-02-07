@@ -2,6 +2,15 @@ use crate::expr::ExprParser;
 use crate::types::parse::*;
 use std::collections::HashSet;
 
+macro_rules! log {
+  ($($arg:tt)*) => {
+    // eprintln!($($arg)*);
+  };
+}
+
+type Error = ();
+type Result<T> = std::result::Result<T, Error>;
+
 pub struct DeclParser<'a> {
   tracker: Tracker<'a>,
   scope: Env<'a>,
@@ -28,48 +37,44 @@ impl<'a> DeclParser<'a> {
     (self.tracker, self.known_ops, self.errors)
   }
 
-  pub fn add_error(&mut self, pos: TokenPos, msg: &str) {
+  fn add_error(&mut self, pos: TokenPos, msg: &str) {
     let s = format!("{}, decl: {}", pos.to_string(), msg);
     self.errors.push(s);
   }
 
-  fn expect_reserved(&mut self, str: &str) -> Result<(), ()> {
+  fn expect_reserved(&mut self, str: &str) -> Result<()> {
     match self.tracker.peek() {
       Some(t) if t.ty == TokenType::Reserved && t.str == str => {
         self.tracker.next();
         return Ok(());
       }
       _ => {
-        let pos = self.tracker.pos();
-        self.add_error(pos, &format!("expected '{}'", str));
-        self.tracker.skip_to_next_head();
+        self.add_error(self.tracker.pos(), &format!("expected '{}'", str));
         return Err(());
       }
     }
   }
 
-  fn peek_is(&mut self, ty: TokenType) -> Result<(), ()> {
+  fn peek_is(&mut self, ty: TokenType) -> Result<()> {
     match self.tracker.peek() {
       Some(t) if t.ty == ty => {
         return Ok(());
       }
       _ => {
-        let pos = self.tracker.pos();
         self.add_error(
-          pos,
+          self.tracker.pos(),
           match ty {
             TokenType::Ident => "expected identifier",
             TokenType::String => "expected string",
-            _ => unimplemented!(),
+            _ => panic!(),
           },
         );
-        self.tracker.skip_to_next_head();
         return Err(());
       }
     }
   }
 
-  fn expect_id(&mut self) -> Result<Id<'a>, ()> {
+  fn expect_id(&mut self) -> Result<Id<'a>> {
     self.peek_is(TokenType::Ident)?;
     let s = self.tracker.peek().unwrap().str;
     self.tracker.next();
@@ -86,6 +91,7 @@ impl<'a> DeclParser<'a> {
   }
 
   fn ids(&mut self) -> Vec<Id<'a>> {
+    // space-separated identifiers
     let mut ids = Vec::new();
     loop {
       match self.tracker.peek() {
@@ -97,8 +103,7 @@ impl<'a> DeclParser<'a> {
       }
     }
     if ids.is_empty() {
-      let last_pos = self.tracker.pos();
-      self.add_error(last_pos, "expected identifier list");
+      self.add_error(self.tracker.pos(), "expected identifier list");
     }
     ids
   }
@@ -116,15 +121,13 @@ impl<'a> DeclParser<'a> {
     def.ok()
   }
 
-  fn def_rest(&mut self, name: Id<'a>) -> Result<Def<'a>, ()> {
+  fn def_rest(&mut self, name: Id<'a>) -> Result<Def<'a>> {
     let mut args = Vec::new();
     loop {
       let t = match self.tracker.peek() {
         Some(t) => t.clone(),
         None => {
-          let pos = self.tracker.end_of_line();
-          self.add_error(pos, "expected definition");
-          self.tracker.skip_to_next_head();
+          self.add_error(self.tracker.end_of_line(), "expected definition");
           return Err(());
         }
       };
@@ -138,49 +141,24 @@ impl<'a> DeclParser<'a> {
           } else {
             Vis::Implicit
           };
-          let mut hasType = false;
           self.tracker.next();
           let ids = self.ids();
-          let arg = match self.tracker.peek() {
-            Some(t) if t.ty == TokenType::Reserved && t.str == ":" => {
-              hasType = true;
-              self.tracker.next();
-              let e = self.expr_or_hole();
-              (vis, ids, Some(Box::new(e)))
-            }
-            _ => (vis, ids, None),
-          };
-          let (pos, cl) = match self.tracker.peek() {
-            Some(t) if t.ty == TokenType::Reserved && (t.str == ")" || t.str == "}") => {
-              let pos = t.pos;
-              let str = t.str;
-              self.tracker.next();
-              (pos, str)
-            }
-            _ => {
-              let msg = if hasType {
-                "expected ')' or '}'"
-              } else {
-                "expected ')', '}' or ':'"
-              };
-              let pos = self.tracker.pos();
-              self.add_error(pos, msg);
-              self.tracker.skip_to_next_head();
-              return Err(());
-            }
-          };
           let match_cl = match vis {
             Vis::Explicit => ")",
             Vis::Implicit => "}",
           };
-          if cl != match_cl {
-            self.add_error(pos, &format!("expected '{}', not '{}'", match_cl, cl));
-          }
+          let arg = match self.tracker.peek() {
+            Some(t) if t.ty == TokenType::Reserved && t.str == ":" => {
+              self.tracker.next();
+              let e = self.expr_or_hole(Some(match_cl));
+              (vis, ids, Some(Box::new(e)))
+            }
+            _ => (vis, ids, None),
+          };
+          self.expect_reserved(match_cl)?;
           args.push(arg);
         } else {
-          let pos = self.tracker.pos();
-          self.add_error(pos, "expected argument list or assignment");
-          self.tracker.skip_to_next_head();
+          self.add_error(self.tracker.pos(), "expected argument list or assignment");
           return Err(());
         }
       } else {
@@ -191,13 +169,13 @@ impl<'a> DeclParser<'a> {
     let ty = match self.tracker.peek() {
       Some(t) if t.ty == TokenType::Reserved && t.str == ":" => {
         self.tracker.next();
-        let e = self.expr_or_hole();
+        let e = self.expr_or_hole(Some("="));
         Some(Box::new(e))
       }
       _ => None,
     };
     self.expect_reserved("=")?;
-    let body = self.expr_or_hole();
+    let body = self.expr_or_hole(None);
     Ok(Def {
       name,
       args,
@@ -210,11 +188,11 @@ impl<'a> DeclParser<'a> {
     let tracker = std::mem::take(&mut self.tracker);
     let known_ops = std::mem::take(&mut self.known_ops);
     let errors = std::mem::take(&mut self.errors);
-    eprintln!("EXPR INTO: {:?}", tracker.peek());
-    eprintln!("SCOPE: {:?}", self.scope.modules);
+    log!("EXPR INTO: {:?}", tracker.peek());
+    log!("SCOPE: {:?}", self.scope.modules);
     let mut e = ExprParser::new(tracker, &self.scope, known_ops, errors);
     let res = e.expr();
-    eprintln!("EXPR RES: {:?}", res);
+    log!("EXPR RES: {:?}", res);
     let (tracker, known_ops, errors) = e.into_inner();
     self.tracker = tracker;
     self.known_ops = known_ops;
@@ -222,15 +200,46 @@ impl<'a> DeclParser<'a> {
     res
   }
 
-  fn expr_or_hole(&mut self) -> Expr<'a> {
+  fn end_of_expr(&mut self) -> bool {
+    match self.tracker.peek() {
+      Some(t) if t.ty == TokenType::Ident && self.known_ops.contains(t.str) => true,
+      Some(t)
+        if t.ty == TokenType::Reserved
+          && (self.known_ops.contains(t.str) || t.str == "where" || t.str == ";") =>
+      {
+        true
+      }
+      None => true,
+      _ => false,
+    }
+  }
+
+  fn expr_or_hole(&mut self, wait_next: Option<&str>) -> Expr<'a> {
     let pos = self.tracker.pos();
-    match self.expr() {
-      Some(e) => e,
-      None => {
-        // TODO: skip to...?
-        Expr(ExprF::Hole, pos)
+    let e = self.expr().unwrap_or(Expr(ExprF::Hole, pos));
+
+    // next must be in { wait_next, known_ops, where, semicolon }
+    if let Some(wait_next) = wait_next {
+      match self.tracker.peek() {
+        Some(t) if t.ty == TokenType::Reserved && t.str == wait_next => {}
+        _ => {
+          self.add_error(self.tracker.pos(), "unexpected token?");
+        }
+      }
+    } else {
+      if !self.end_of_expr() {
+        let t = self.tracker.peek().unwrap();
+        self.add_error(
+          self.tracker.pos(),
+          &format!("unexpected end of expr: {:?}", t.str),
+        );
+        while !self.end_of_expr() {
+          self.tracker.next();
+        }
       }
     }
+
+    e
   }
 
   fn where_clause(&mut self) -> Where<'a> {
@@ -258,7 +267,7 @@ impl<'a> DeclParser<'a> {
     Where { defs }
   }
 
-  fn syntax(&mut self) -> Result<(Syntax, Where<'a>), ()> {
+  fn syntax(&mut self) -> Result<(Syntax, Where<'a>)> {
     // syntax (w/o "syntax")
     let precs = match self.tracker.peek() {
       Some(t) if t.ty == TokenType::Precedence => match Precedence::parse(t.str) {
@@ -267,9 +276,7 @@ impl<'a> DeclParser<'a> {
           precs
         }
         None => {
-          let pos = self.tracker.pos();
-          self.add_error(pos, "failed to parse precedence");
-          self.tracker.skip_to_next_head();
+          self.add_error(self.tracker.pos(), "failed to parse precedence");
           return Err(());
         }
       },
@@ -288,14 +295,15 @@ impl<'a> DeclParser<'a> {
           }
         }
         _ => {
-          let pos = self.tracker.end_of_line();
-          self.add_error(pos, "expected body of syntax definition");
-          self.tracker.skip_to_next_head();
+          self.add_error(
+            self.tracker.end_of_line(),
+            "expected body of syntax definition",
+          );
           return Err(());
         }
       }
     }
-    let e = self.expr_or_hole(); // TODO: nat/rat/chr/str placeholder
+    let e = self.expr_or_hole(None); // TODO: nat/rat/chr/str placeholder
     let fvs = fv(&e);
     // TODO: dup check?
     let fvs: HashMap<Id, Role> = fvs.into_iter().collect();
@@ -318,24 +326,19 @@ impl<'a> DeclParser<'a> {
           }
         }
         _ => {
-          let pos = t.pos;
-          self.add_error(pos, "expected identifier or string");
-          self.tracker.skip_to_next_head();
+          self.add_error(t.pos, "expected identifier or symbols");
           return Err(());
         }
       }
     }
     let regex = Regex::seqs(rs.iter().collect());
     let syntax = Syntax::new(precs.0, precs.1, regex);
-    eprintln!("SYNTAX: {:?}", syntax);
+    log!("SYNTAX: {:?}", syntax);
     let wh = self.where_clause();
     return Ok((syntax, wh));
   }
 
-  fn extract_modref(
-    &mut self,
-    e: Expr<'a>,
-  ) -> Result<(Vec<Id<'a>>, Vec<(Vis, Box<Expr<'a>>)>), ()> {
+  fn extract_modref(&mut self, e: Expr<'a>) -> Result<(Vec<Id<'a>>, Vec<(Vis, Box<Expr<'a>>)>)> {
     let mut rev_params = Vec::new();
     let mut e = e;
     loop {
@@ -359,26 +362,21 @@ impl<'a> DeclParser<'a> {
         }
         _ => {}
       }
-      let pos = e.1;
-      self.add_error(pos, "expected module application");
-      self.tracker.skip_to_next_head();
+      self.add_error(e.1, "expected module application");
       return Err(());
     }
   }
 
-  fn modref_internal(&mut self) -> Result<ModRef<'a>, ()> {
+  fn modref_internal(&mut self) -> Result<ModRef<'a>> {
     let t = match self.tracker.peek() {
       Some(t) => t.clone(),
       None => {
-        let pos = self.tracker.end_of_line();
-        self.add_error(pos, "expected module reference");
-        self.tracker.skip_to_next_head();
+        self.add_error(self.tracker.end_of_line(), "expected module reference");
         return Err(());
       }
     };
     if t.ty != TokenType::Ident {
       self.add_error(t.pos, "expected module reference");
-      self.tracker.skip_to_next_head();
       return Err(());
     }
     if t.str == "import" {
@@ -392,12 +390,12 @@ impl<'a> DeclParser<'a> {
 
     // reference with parameters
 
-    let e = self.expr_or_hole();
+    let e = self.expr_or_hole(None);
     let (name, params) = self.extract_modref(e)?;
     Ok(ModRefF::App(name, params))
   }
 
-  fn modref(&mut self, indent: Indent) -> Result<ModRef<'a>, ()> {
+  fn modref(&mut self, indent: Indent) -> Result<ModRef<'a>> {
     let outer_indent = self.tracker.save_indent();
     self.tracker.set_indent(indent);
     let module = self.modref_internal();
@@ -414,20 +412,16 @@ impl<'a> DeclParser<'a> {
     }
   }
 
-  fn decl_internal(&mut self, cur_mod: &mut Env<'a>) -> Result<Decl<'a>, ()> {
+  fn decl_internal(&mut self, cur_mod: &mut Env<'a>) -> Result<Decl<'a>> {
     let t = match self.tracker.peek() {
       Some(t) => t.clone(),
       None => {
-        let pos = self.tracker.end_of_line();
-        self.add_error(pos, "expected declaration");
-        self.tracker.skip_to_next_head();
+        self.add_error(self.tracker.end_of_line(), "expected declaration");
         return Err(());
       }
     };
     if t.ty != TokenType::Ident {
-      let pos = self.tracker.pos();
-      self.add_error(pos, "expected declaration");
-      self.tracker.skip_to_next_head();
+      self.add_error(self.tracker.pos(), "expected declaration");
       return Err(());
     }
     if t.str == "local" {
@@ -437,7 +431,6 @@ impl<'a> DeclParser<'a> {
         Some(t) => t.clone(),
         None => {
           self.add_error(t.pos, "expected declaration or block");
-          self.tracker.skip_to_next_head();
           return Err(());
         }
       };
@@ -466,9 +459,10 @@ impl<'a> DeclParser<'a> {
         let t = match self.tracker.peek() {
           Some(t) => t.clone(),
           None => {
-            let pos = self.tracker.end_of_line();
-            self.add_error(pos, "expected module parameters or body");
-            self.tracker.skip_to_next_head();
+            self.add_error(
+              self.tracker.end_of_line(),
+              "expected module parameters or body",
+            );
             return Err(());
           }
         };
@@ -486,40 +480,19 @@ impl<'a> DeclParser<'a> {
             self.tracker.next();
             let ids = self.ids();
             self.expect_reserved(":")?;
-            let e = self.expr_or_hole();
-            let arg = (vis, ids, Some(Box::new(e)));
-            let (pos, cl) = match self.tracker.peek() {
-              Some(t) if t.ty == TokenType::Reserved && (t.str == ")" || t.str == "}") => {
-                let pos = t.pos;
-                let str = t.str;
-                self.tracker.next();
-                (pos, str)
-              }
-              _ => {
-                let pos = self.tracker.pos();
-                self.add_error(pos, "expected ')' or '}'");
-                self.tracker.skip_to_next_head();
-                return Err(());
-              }
-            };
             let match_cl = match vis {
               Vis::Explicit => ")",
               Vis::Implicit => "}",
             };
-            if cl != match_cl {
-              self.add_error(pos, &format!("expected '{}', not '{}'", match_cl, cl));
-            }
-            params.push(arg);
+            let e = self.expr_or_hole(Some(match_cl));
+            self.expect_reserved(match_cl)?;
+            params.push((vis, ids, Some(Box::new(e))));
           } else {
-            let pos = self.tracker.pos();
-            self.add_error(pos, "expected module parameters or body");
-            self.tracker.skip_to_next_head();
+            self.add_error(self.tracker.pos(), "expected module parameters or body");
             return Err(());
           }
         } else {
-          let pos = self.tracker.pos();
-          self.add_error(pos, "expected module parameters or body");
-          self.tracker.skip_to_next_head();
+          self.add_error(self.tracker.pos(), "expected module parameters or body");
           return Err(());
         }
       }
@@ -527,9 +500,7 @@ impl<'a> DeclParser<'a> {
       let t = match self.tracker.peek() {
         Some(t) => t.clone(),
         None => {
-          let pos = self.tracker.pos();
-          self.add_error(pos, "expected module body");
-          self.tracker.skip_to_next_head();
+          self.add_error(self.tracker.pos(), "expected module body");
           return Err(());
         }
       };
@@ -556,7 +527,6 @@ impl<'a> DeclParser<'a> {
         }
         None => {
           self.add_error(md.1, "module not found...");
-          self.tracker.skip_to_next_head();
           return Err(());
         }
       }
@@ -605,7 +575,7 @@ impl<'a> DeclParser<'a> {
     return Ok(Decl(DeclF::Def(def, wh), t.pos));
   }
 
-  fn decl(&mut self, cur_mod: &mut Env<'a>) -> Result<Decl<'a>, ()> {
+  fn decl(&mut self, cur_mod: &mut Env<'a>) -> Result<Decl<'a>> {
     let res = self.decl_internal(cur_mod)?;
     self.allow_semicolon();
     Ok(res)
@@ -626,8 +596,9 @@ impl<'a> DeclParser<'a> {
         None => break,
       }
       let orig_pos = self.tracker.pos();
-      if let Ok(d) = self.decl(cur_mod) {
-        ds.push(d);
+      match self.decl(cur_mod) {
+        Ok(d) => ds.push(d),
+        Err(_) => self.tracker.skip_to_next_head(),
       }
       let cur_pos = self.tracker.pos();
       if orig_pos == cur_pos {

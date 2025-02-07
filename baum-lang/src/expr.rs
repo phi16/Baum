@@ -3,6 +3,12 @@ use crate::types::parse::*;
 use std::collections::HashSet;
 use std::rc::Rc;
 
+macro_rules! log {
+  ($($arg:tt)*) => {
+    // eprintln!($($arg)*);
+  };
+}
+
 #[derive(Debug, Clone)]
 enum AdvanceResult {
   Remain(Rc<Regex>),
@@ -141,15 +147,15 @@ impl<'a, 'b> ExprParser<'a, 'b> {
         }
         None => break,
       };
-      eprintln!("READ {:?}", t);
+      log!("READ {:?}", t);
       let mut next_ss: Vec<(SyntaxState, Rc<Regex>)> = Vec::new();
       let mut first = true;
       for s in ss {
-        eprintln!("- Advance: s = {:?}", s);
+        log!("- Advance: s = {:?}", s);
         if let Some((e, conts)) = self.advance(s.1, &t) {
           for cont in conts {
             let ns = s.0.advance(e.clone());
-            eprintln!("- Cont: {:?}", cont);
+            log!("- Cont: {:?}", cont);
             match cont {
               AdvanceResult::Remain(r) => next_ss.push((ns, r)),
               AdvanceResult::Pass() => {
@@ -179,16 +185,16 @@ impl<'a, 'b> ExprParser<'a, 'b> {
       }
       ss = next_ss;
     }
-    eprintln!("----------");
-    eprintln!("[Passed]");
+    log!("----------");
+    log!("[Passed]");
     for s in &passed_ss {
-      eprintln!("- {:?}", s);
+      log!("- {:?}", s);
     }
-    eprintln!("[Awaiting]");
+    log!("[Awaiting]");
     for s in &awaiting_ss {
-      eprintln!("- {:?}", s);
+      log!("- {:?}", s);
     }
-    eprintln!("----------");
+    log!("----------");
 
     let passes = passed_ss.len();
     let awaits = awaiting_ss.len();
@@ -198,7 +204,7 @@ impl<'a, 'b> ExprParser<'a, 'b> {
     }
     let ts = last_tracker_state.unwrap();
     self.tracker.restore_state(ts);
-    eprintln!("Restored: {:?}", self.tracker.peek());
+    log!("Restored: {:?}", self.tracker.peek());
 
     if passes >= 1 && awaits >= 1 {
       self.add_error(pos, "ambiguous parse (pass/await)");
@@ -283,10 +289,10 @@ impl<'a, 'b> ExprParser<'a, 'b> {
           let last_known_ops = self.known_ops.clone();
           for sc in &conts {
             let nexts = deriv::next_tokens(&sc.cont);
-            eprintln!("adding to known ops: {:?}", nexts);
+            log!("adding to known ops: {:?}", nexts);
             self.known_ops.extend(nexts);
           }
-          eprintln!("Execute Await: {:?}", nt);
+          log!("Execute Await: {:?}", nt);
           let e = if nt == NonTerm::Expr {
             let p = if is_last {
               &conts[0].syntax.right
@@ -323,7 +329,7 @@ impl<'a, 'b> ExprParser<'a, 'b> {
               NonTerm::Decls => {
                 let mut empty_env = Env::new();
                 let ds = d.decls(&mut empty_env);
-                eprintln!("Decls: {:?}", ds);
+                log!("Decls: {:?}", ds);
                 SyntaxElem::Decls(ds)
               }
               _ => unreachable!(),
@@ -333,13 +339,13 @@ impl<'a, 'b> ExprParser<'a, 'b> {
             self.errors = errors;
             e
           };
-          eprintln!("Execute Await: completed ({:?})", e);
+          log!("Execute Await: completed ({:?})", e);
           elems.push(e);
           self.known_ops = last_known_ops;
           for sc in &conts {
             if deriv::has_eps(&sc.cont) {
               // TODO: need to check: no other syntaxes have eps...
-              eprintln!("EPS: {:?}, {:?}", sc.syntax, elems);
+              log!("EPS: {:?}, {:?}", sc.syntax, elems);
               return Some((sc.syntax, elems));
             }
           }
@@ -400,7 +406,7 @@ impl<'a, 'b> ExprParser<'a, 'b> {
   }
 
   fn expr_leading(&mut self, base_p: &Precedence) -> Option<Expr<'a>> {
-    eprintln!(
+    log!(
       "- expr1: base_p = {:?}, t = {:?}",
       base_p,
       self.tracker.peek()
@@ -416,7 +422,7 @@ impl<'a, 'b> ExprParser<'a, 'b> {
               // external identifier
               let id = Id::new(t.str);
               self.tracker.next();
-              eprintln!("- expr1: ext = {:?}", id);
+              log!("- expr1: ext = {:?}", id);
               return Some(Expr(ExprF::Ext(mod_name, id), pos));
             }
             _ => (self.tracker.peek()?, env),
@@ -435,7 +441,7 @@ impl<'a, 'b> ExprParser<'a, 'b> {
         // identifier
         let id = Id::new(t.str);
         self.tracker.next();
-        eprintln!("- expr1: var = {:?}", id);
+        log!("- expr1: var = {:?}", id);
         return Some(Expr(ExprF::Var(id), pos));
       }
       // as-is
@@ -443,24 +449,24 @@ impl<'a, 'b> ExprParser<'a, 'b> {
     };
     if t.ty != TokenType::Ident && t.ty != TokenType::Reserved {
       let lits: Vec<&'b Syntax> = self.filter_p(env.syntax.lits(), base_p);
-      eprintln!("- expr1: lits = {:?}", lits);
+      log!("- expr1: lits = {:?}", lits);
       let e = self.parse_by_regex(lits, Vec::new())?;
       return Some(self.make_syntax(e.0, e.1, pos));
     }
     let pres: Vec<&'b Syntax> = self.filter_p(env.syntax.choose_pre(t.str)?, base_p);
-    eprintln!("- expr1: pres = {:?}", pres);
+    log!("- expr1: pres = {:?}", pres);
     if pres.is_empty() && t.ty == TokenType::Ident {
       let id = Id::new(t.str);
       self.tracker.next();
       return Some(Expr(ExprF::Var(id), pos));
     }
     let e = self.parse_by_regex(pres, Vec::new())?;
-    eprintln!("- expr1 result: {:?}", e);
+    log!("- expr1 result: {:?}", e);
     return Some(self.make_syntax(e.0, e.1, pos));
   }
 
   fn expr_trailing(&mut self, base_p: &Precedence, e: Expr<'a>) -> Result<(bool, Expr<'a>), ()> {
-    eprintln!(
+    log!(
       "- expr2: base_p = {:?}, t = {:?}",
       base_p,
       self.tracker.peek()
@@ -496,7 +502,7 @@ impl<'a, 'b> ExprParser<'a, 'b> {
     let e = match env.syntax.choose_ope(t.str) {
       Some(opes) => {
         let opes = self.filter_p(opes, base_p);
-        eprintln!("- expr2: opes = {:?}", opes);
+        log!("- expr2: opes = {:?}", opes);
         match self.parse_by_regex(opes, vec![SyntaxElem::Expr(Box::new(e.clone()))]) {
           Some(e) => e,
           None => {
@@ -507,7 +513,7 @@ impl<'a, 'b> ExprParser<'a, 'b> {
       }
       None => {
         let apps = self.filter_p(env.syntax.apps(), base_p);
-        eprintln!("- expr2: apps = {:?}", apps);
+        log!("- expr2: apps = {:?}", apps);
         if apps.is_empty() {
           return Ok((true, e));
         }
@@ -518,7 +524,7 @@ impl<'a, 'b> ExprParser<'a, 'b> {
         let p = apps[0].right.clone();
         match self.expr_p(&p) {
           Some(e2) => {
-            eprintln!("- expr2: e2 = {:?}", e2);
+            log!("- expr2: e2 = {:?}", e2);
             (
               apps[0],
               vec![
@@ -531,17 +537,17 @@ impl<'a, 'b> ExprParser<'a, 'b> {
         }
       }
     };
-    eprintln!("- expr2: e = {:?}", e);
+    log!("- expr2: e = {:?}", e);
     return Ok((false, self.make_syntax(e.0, e.1, pos)));
   }
 
   fn expr_p(&mut self, base_p: &Precedence) -> Option<Expr<'a>> {
-    eprintln!("- EXPR_P: {:?}", base_p);
+    log!("- EXPR_P: {:?}", base_p);
     let mut e = self.expr_leading(base_p)?;
     loop {
       match self.expr_trailing(base_p, e).ok()? {
         (true, e) => {
-          eprintln!("- EXPR_P result: {:?}", e);
+          log!("- EXPR_P result: {:?}", e);
           return Some(e);
         }
         (false, e2) => e = e2,
@@ -550,8 +556,8 @@ impl<'a, 'b> ExprParser<'a, 'b> {
   }
 
   pub fn expr(&mut self) -> Option<Expr<'a>> {
-    eprintln!("");
-    eprintln!("EXPR: t = {:?}", self.tracker.peek());
+    log!("");
+    log!("EXPR: t = {:?}", self.tracker.peek());
     self.expr_p(&Precedence::Initial)
   }
 }
