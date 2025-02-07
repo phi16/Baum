@@ -134,8 +134,8 @@ pub enum Role {
   Ident,
 }
 
-pub fn fv<'a>(e: &Expr<'a>) -> Vec<(Id<'a>, Role)> {
-  fn fv_internal<'a>(e: &Expr<'a>, v: &mut Vec<(Id<'a>, Role)>) {
+pub fn fv<'a>(e: &Expr<'a>) -> Option<Vec<(Id<'a>, Role)>> {
+  fn fv_internal<'a>(e: &Expr<'a>, v: &mut Vec<(Id<'a>, Role)>, invalid: &mut bool) {
     match e.0 {
       ExprF::Var(ref id) => {
         v.push((id.clone(), Role::Expr));
@@ -147,7 +147,13 @@ pub fn fv<'a>(e: &Expr<'a>) -> Vec<(Id<'a>, Role)> {
               v.push((id.clone(), Role::Ident));
             }
             SyntaxElem::Expr(ref e) => {
-              fv_internal(e, v);
+              fv_internal(e, v, invalid);
+            }
+            SyntaxElem::Def(_) => {
+              *invalid = true;
+            }
+            SyntaxElem::Decls(_) => {
+              *invalid = true;
             }
             _ => {}
           }
@@ -157,6 +163,11 @@ pub fn fv<'a>(e: &Expr<'a>) -> Vec<(Id<'a>, Role)> {
     }
   }
   let mut v = Vec::new();
-  fv_internal(e, &mut v);
-  v
+  let mut invalid = false;
+  fv_internal(e, &mut v, &mut invalid);
+  if invalid {
+    None
+  } else {
+    Some(v)
+  }
 }

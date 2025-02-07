@@ -67,6 +67,6 @@ fn test() {
   )
   .is_ok());
   assert!(parse("a = b; c = d").is_ok());
-  // assert!(parse("module A (n: Nat) = { module B = {} }\nopen A 1\nopen A 2").is_ok());
+  assert!(parse("module A (n: Nat) = { module B = {} }\nopen A 1\nopen A 2").is_err());
   // assert!(parse("module A = { module B = {} }\nopen A\nopen A").is_ok());
 }

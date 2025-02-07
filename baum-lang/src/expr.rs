@@ -506,6 +506,7 @@ impl<'a, 'b> ExprParser<'a, 'b> {
         match self.parse_by_regex(opes, vec![SyntaxElem::Expr(Box::new(e.clone()))]) {
           Some(e) => e,
           None => {
+            // TODO: try apps?
             self.tracker.restore_state(state);
             return Ok((true, e));
           }

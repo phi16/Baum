@@ -205,7 +205,10 @@ impl<'a> DeclParser<'a> {
       Some(t) if t.ty == TokenType::Ident && self.known_ops.contains(t.str) => true,
       Some(t)
         if t.ty == TokenType::Reserved
-          && (self.known_ops.contains(t.str) || t.str == "where" || t.str == ";") =>
+          && (self.known_ops.contains(t.str)
+            || t.str == "where"
+            || t.str == ";"
+            || t.str == "}") =>
       {
         true
       }
@@ -218,8 +221,8 @@ impl<'a> DeclParser<'a> {
     let pos = self.tracker.pos();
     let e = self.expr().unwrap_or(Expr(ExprF::Hole, pos));
 
-    // next must be in { wait_next, known_ops, where, semicolon }
     if let Some(wait_next) = wait_next {
+      // next must be wait_next
       match self.tracker.peek() {
         Some(t) if t.ty == TokenType::Reserved && t.str == wait_next => {}
         _ => {
@@ -303,8 +306,15 @@ impl<'a> DeclParser<'a> {
         }
       }
     }
+    let e_pos = self.tracker.pos();
     let e = self.expr_or_hole(None); // TODO: nat/rat/chr/str placeholder
-    let fvs = fv(&e);
+    let fvs = match fv(&e) {
+      Some(fvs) => fvs,
+      None => {
+        self.add_error(e_pos, "declarations cannot be found in syntax declaration");
+        return Err(());
+      }
+    };
     // TODO: dup check?
     let fvs: HashMap<Id, Role> = fvs.into_iter().collect();
     let mut rs = Vec::new();
