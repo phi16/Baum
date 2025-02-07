@@ -4,8 +4,6 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 use std::rc::Rc;
 
-use super::parse::SyntaxElem;
-
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum PrecEps {
   NegEps,
@@ -92,7 +90,7 @@ impl std::fmt::Debug for Precedence {
 
 impl Precedence {
   pub fn parse(s: &str) -> Option<(Self, Self)> {
-    // (-?[0-9]+)%.[<>]
+    // (-?[0-9]+)%.[<>←→]
     // example: "1.-2.3<"
     if s == "" {
       return Some((Precedence::Terminal, Precedence::Terminal));
@@ -126,11 +124,11 @@ impl Precedence {
       nums.push(nat);
       match ss.next() {
         Some('.') => {}
-        Some('<') => {
+        Some('<') | Some('←') => {
           left_eps = PrecEps::NegEps;
           break;
         }
-        Some('>') => {
+        Some('>') | Some('→') => {
           left_eps = PrecEps::PosEps;
           break;
         }
@@ -170,6 +168,7 @@ fn prec_parse_test() {
     Precedence::Level(PrecLevel(vec![1, 2, 3]), PrecEps::Zero)
   );
   assert!(Precedence::parse("1.-2.3<").is_some());
+  assert!(Precedence::parse("1.-2.3→").is_some());
   assert_eq!(
     Precedence::parse("10.42.2048>").unwrap().0,
     Precedence::Level(PrecLevel(vec![10, 42, 2048]), PrecEps::PosEps)

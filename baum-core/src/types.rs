@@ -1,11 +1,11 @@
 use std::collections::HashMap;
 
-pub struct Nat(u32); // TODOO: BigUint
+pub struct Nat(pub u32); // TODOO: BigUint
 pub struct Rat {
   // TODO: BigRational
-  denom: u32,
-  base: u8,
-  exponent: i32,
+  pub denom: u32,
+  pub base: u8,
+  pub exponent: i32,
 }
 
 type Id = String;
@@ -26,6 +26,7 @@ pub enum Level {
   Omega(u8),
   Infer,
 }
+// TODO: decompose all
 pub enum Expr {
   Hole,
   Ann(E, E),
@@ -63,12 +64,12 @@ pub enum Vis {
   Implicit,
 }
 pub struct Modules {
-  params: Vec<(Vis, I, E)>,
-  defs: HashMap<Id, DefRef>,
-  subs: HashMap<Id, Modules>,
+  pub params: Vec<(Vis, I, E)>,
+  pub defs: HashMap<Id, DefRef>,
+  pub subs: HashMap<Id, Modules>,
 }
 pub struct Program {
-  defs: HashMap<DefRef, E>,
-  mods: Modules,
-  symbols: HashMap<I, Id>,
+  pub defs: HashMap<DefRef, E>,
+  pub mods: Modules,
+  pub symbols: HashMap<I, Id>,
 }
