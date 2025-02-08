@@ -125,8 +125,8 @@ impl Pretty {
         self.s(" = ").md(md)
       }
       DeclF::Open(mr) => self.s("open ").mr(mr),
-      DeclF::Def(def, wh) => self.def(def).ln(),
-      DeclF::Syntax(prec_str, defs, e, wh) => {
+      DeclF::Def(def) => self.def(def).ln(),
+      DeclF::Syntax(prec_str, defs, e) => {
         self.s("syntax ");
         if let Some(prec_str) = prec_str {
           self.s(prec_str).s(" ");

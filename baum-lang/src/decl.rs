@@ -206,10 +206,7 @@ impl<'a> DeclParser<'a> {
       Some(t) if t.ty == TokenType::Ident && self.known_ops.contains(t.str) => true,
       Some(t)
         if t.ty == TokenType::Reserved
-          && (self.known_ops.contains(t.str)
-            || t.str == "where"
-            || t.str == ";"
-            || t.str == "}") =>
+          && (self.known_ops.contains(t.str) || t.str == ";" || t.str == "}") =>
       {
         true
       }
@@ -244,31 +241,6 @@ impl<'a> DeclParser<'a> {
     }
 
     e
-  }
-
-  fn where_clause(&mut self) -> Where<'a> {
-    let indent = match self.tracker.peek() {
-      Some(t) if t.ty == TokenType::Reserved && t.str == "where" => {
-        let indent = t.indent;
-        self.tracker.next();
-        indent
-      }
-      _ => return Where { defs: Vec::new() },
-    };
-    let outer_indent = self.tracker.save_indent();
-    self.tracker.set_indent(indent);
-
-    let mut defs = Vec::new();
-    loop {
-      let d = self.def();
-      match d {
-        Some(d) => defs.push(d),
-        None => break,
-      }
-    }
-
-    self.tracker.restore_indent(outer_indent);
-    Where { defs }
   }
 
   fn syntax(&mut self, pos: TokenPos) -> Result<(Syntax, Decl<'a>)> {
@@ -355,10 +327,9 @@ impl<'a> DeclParser<'a> {
     let regex = Regex::seqs(rs.iter().collect());
     let syntax = Syntax::new(precs.0, precs.1, regex, ());
     log!("SYNTAX: {:?}", syntax);
-    let wh = self.where_clause();
     return Ok((
       syntax,
-      Decl(DeclF::Syntax(prec_str, defs, Box::new(e), wh), pos),
+      Decl(DeclF::Syntax(prec_str, defs, Box::new(e)), pos),
     ));
   }
 
@@ -595,8 +566,7 @@ impl<'a> DeclParser<'a> {
 
     // general identifier: definition
     let def = self.def().ok_or(())?;
-    let wh = self.where_clause();
-    return Ok(Decl(DeclF::Def(def, wh), t.pos));
+    return Ok(Decl(DeclF::Def(def), t.pos));
   }
 
   fn decl(&mut self, cur_mod: &mut Env<'a>) -> Result<Decl<'a>> {

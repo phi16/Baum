@@ -48,7 +48,7 @@ impl<'a, I: Iterator<Item = CharLoc<'a>>> Tokenizer<'a, I> {
 
   fn make_token_internal(&mut self, loc: &Loc<'a>, str: &'a str, ty_base: TokenType) -> Token<'a> {
     let ty = match str {
-      "=" | "where" => TokenType::Reserved,
+      "=" => TokenType::Reserved,
       _ => ty_base,
     };
     if str == "syntax" {

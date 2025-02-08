@@ -43,12 +43,6 @@ impl<'a> Builder<'a> {
     }
   }
 
-  fn fresh(&mut self) -> I {
-    let i = self.next_i;
-    self.next_i += 1;
-    i
-  }
-
   fn e(&mut self, e: &Expr<'a>) -> core::Expr {
     core::Expr::Hole
   }
@@ -66,21 +60,11 @@ impl<'a> Builder<'a> {
     }
   }
 
-  fn def(&mut self, def: &Def<'a>, wh: &Where<'a>) -> core::Decl {
+  fn def(&mut self, def: &Def<'a>) -> core::Decl {
     let name = self.id(&def.name);
     let e = self.e(&*def.body);
     let e = if let Some(ty) = &def.ty {
       core::Expr::Ann(Rc::new(e), Rc::new(self.e(&*ty)))
-    } else {
-      e
-    };
-    let e = if !wh.defs.is_empty() {
-      let whs = wh
-        .defs
-        .iter()
-        .map(|def| self.def(def, &Where { defs: Vec::new() }))
-        .collect();
-      core::Expr::Let(whs, Rc::new(e))
     } else {
       e
     };
@@ -101,9 +85,9 @@ impl<'a> Builder<'a> {
     core::Decl::Def(name, Rc::new(e))
   }
 
-  fn d(&mut self, d: &Decl<'a>) -> core::Decl {
+  fn d(&mut self, d: &Decl<'a>) -> Option<core::Decl> {
     match &d.0 {
-      DeclF::Local(ds) => core::Decl::Local(self.ds(ds)),
+      DeclF::Local(ds) => Some(core::Decl::Local(self.ds(ds))),
       DeclF::ModDef(md, def) => {
         let mut params = Vec::new();
         for p in &md.params {
@@ -123,21 +107,20 @@ impl<'a> Builder<'a> {
           ModDefF::Decls(ds) => core::ModDef::Decls(self.ds(ds)),
           ModDefF::Ref(mr) => core::ModDef::Ref(self.mr(mr)),
         };
-        core::Decl::ModDef(decl, def)
+        Some(core::Decl::ModDef(decl, def))
       }
-      DeclF::Open(mr) => core::Decl::Open(self.mr(mr)),
-      DeclF::Def(def, wh) => self.def(def, wh),
-      DeclF::Syntax(_, ds, e, wh) => {
-        // TODO!
-        core::Decl::Local(vec![])
-      }
+      DeclF::Open(mr) => Some(core::Decl::Open(self.mr(mr))),
+      DeclF::Def(def) => Some(self.def(def)),
+      DeclF::Syntax(_, _, _) => None,
     }
   }
 
   fn ds(&mut self, ds: &Vec<Decl<'a>>) -> Vec<core::Decl> {
     let mut rs = Vec::new();
     for d in ds {
-      rs.push(self.d(d));
+      if let Some(d) = self.d(d) {
+        rs.push(d);
+      }
     }
     rs
   }

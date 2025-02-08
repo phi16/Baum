@@ -70,11 +70,6 @@ syntax [ a ] = block a
 syntax 4> a → b = Π(a) b
 syntax 5> (a: e) → b = Π(a: e) b
 syntax 0> |a| b = λ(a) b
-syntax 5> a f b = g a b where g a b = 0
-syntax 5> a f b = g a b
-  where g a b = 0
-syntax 5> a f b = g a b where
-  g a b = 0
 k = |a| |b| a
 j: (a: Nat) → b = |a| 0
 module A = {

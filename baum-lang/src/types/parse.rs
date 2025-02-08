@@ -58,7 +58,6 @@ pub struct Expr<'a>(pub ExprF<Id<'a>, Syntax, SyntaxElem<'a>>, pub TokenPos);
 pub type Def<'a> = DefF<Id<'a>, Box<Expr<'a>>>;
 pub type Arg<'a> = ArgF<Id<'a>, Box<Expr<'a>>>;
 pub type ModRef<'a> = ModRefF<&'a str, Id<'a>, Box<Expr<'a>>>;
-pub type Where<'a> = WhereF<Id<'a>, Box<Expr<'a>>>;
 
 #[derive(Debug, Clone)]
 pub struct Env<'a> {
