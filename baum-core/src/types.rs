@@ -1,40 +1,35 @@
 use std::collections::HashMap;
+use std::rc::Rc;
 
-pub struct Nat(pub u32); // TODOO: BigUint
+pub struct Nat(pub u32); // TODO: BigUint
 pub struct Rat {
   // TODO: BigRational
   pub denom: u32,
   pub base: u8,
   pub exponent: i32,
 }
-
-type Id = String;
-type I = u32;
-type E = Box<Expr>;
 pub enum Literal {
   Nat(Nat),
   Rat(Rat),
   Chr(char),
   Str(String),
 }
-pub enum ModuleRef {
-  Import(String),
-  Sub(Box<ModuleRef>, Id),
-}
-pub enum Level {
-  Nat(u8),
-  Omega(u8),
-  Infer,
-}
+
+pub type Id = String;
+pub type I = u32;
+
+type E = Rc<Expr>;
+
 // TODO: decompose all
 pub enum Expr {
   Hole,
+  Var(I),
+  Ext(Vec<I>, I),
+
   Ann(E, E),
   Lit(Literal),
-  Var(I),
-  Ext(ModuleRef, Id),
-  Let(Vec<(I, E)>, E), // um... needs module ref
-  Uni(Level),
+  Uni,
+  Let(Vec<Decl>, E),
 
   PiE(I, E, E),
   LamE(I, E, E),
@@ -56,20 +51,31 @@ pub enum Expr {
 
   Nu(I, E, Vec<(I, E)>),
 }
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct DefRef(pub u32);
 
+#[derive(Debug, Clone)]
 pub enum Vis {
   Explicit,
   Implicit,
 }
-pub struct Modules {
+pub enum ModRef {
+  Import(String),
+  App(Vec<I>, Vec<(Vis, E)>),
+}
+pub enum ModDef {
+  Decls(Vec<Decl>),
+  Ref(ModRef),
+}
+pub struct ModDecl {
+  pub name: I,
   pub params: Vec<(Vis, I, E)>,
-  pub defs: HashMap<Id, DefRef>,
-  pub subs: HashMap<Id, Modules>,
+}
+pub enum Decl {
+  Local(Vec<Decl>),
+  ModDef(ModDecl, ModDef),
+  Open(ModRef),
+  Def(I, E),
 }
 pub struct Program {
-  pub defs: HashMap<DefRef, E>,
-  pub mods: Modules,
+  pub decls: Vec<Decl>,
   pub symbols: HashMap<I, Id>,
 }

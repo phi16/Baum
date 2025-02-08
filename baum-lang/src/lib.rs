@@ -1,3 +1,4 @@
+mod convert;
 mod decl;
 mod expr;
 pub mod parse;
