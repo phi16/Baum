@@ -4,6 +4,7 @@ pub use crate::types::token::*;
 pub use crate::types::tracker::*;
 use baum_core::types as core;
 use std::collections::HashMap;
+use std::f32::consts::E;
 use std::rc::Rc;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -31,12 +32,26 @@ pub enum SyntaxElem<'a> {
   Decls(Vec<Decl<'a>>),
 }
 
-pub enum InterpretResult<'a> {
-  Core(core::Expr),
-  Continue(Expr<'a>),
+#[derive(Debug, Clone)]
+pub enum CoreElem<'a> {
+  Token(&'a str),
+  Ident(core::Id),
+  Nat(&'a str),
+  Rat(&'a str),
+  Chr(&'a str),
+  Str(&'a str),
+  Def(core::Id, core::Expr),
+  Expr(core::Expr),
+  Decls(Vec<core::Decl>),
 }
 
-pub type SyntaxInterpreter<'a> = Rc<dyn Fn(Vec<SyntaxElem<'a>>) -> InterpretResult<'a>>;
+pub trait SyntaxHandler<'a> {
+  fn convert_e(&mut self, e: &Expr<'a>) -> core::Expr;
+  fn convert_se(&mut self, e: &SyntaxElem<'a>) -> CoreElem<'a>;
+}
+
+pub type SyntaxInterpreter<'a> =
+  Rc<dyn Fn(Vec<CoreElem<'a>>, &mut dyn SyntaxHandler<'a>) -> core::Expr + 'a>;
 pub type Syntax<'a> = mixfix::Syntax<SyntaxInterpreter<'a>>;
 pub type SyntaxTable<'a> = mixfix::SyntaxTable<SyntaxInterpreter<'a>>;
 

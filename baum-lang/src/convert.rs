@@ -3,8 +3,6 @@ use baum_core::types as core;
 use std::collections::HashMap;
 use std::rc::Rc;
 
-type I = core::I;
-
 impl From<&Vis> for core::Vis {
   fn from(v: &Vis) -> Self {
     match v {
@@ -15,8 +13,8 @@ impl From<&Vis> for core::Vis {
 }
 
 struct Builder<'a> {
-  id_map: HashMap<Id<'a>, I>,
-  next_i: I,
+  id_map: HashMap<Id<'a>, core::Id>,
+  next_i: u32,
   p: core::Program,
 }
 
@@ -32,11 +30,11 @@ impl<'a> Builder<'a> {
     }
   }
 
-  fn id(&mut self, id: &Id<'a>) -> I {
+  fn id(&mut self, id: &Id<'a>) -> core::Id {
     match self.id_map.get(id) {
       Some(i) => *i,
       None => {
-        let i = self.next_i;
+        let i = core::Id(self.next_i);
         self.next_i += 1;
         self.id_map.insert(id.clone(), i);
         self.p.symbols.insert(i, id.as_str().to_string());
@@ -45,8 +43,38 @@ impl<'a> Builder<'a> {
     }
   }
 
+  fn syntax_elem(&mut self, e: &SyntaxElem<'a>) -> CoreElem<'a> {
+    match e {
+      SyntaxElem::Token(s) => CoreElem::Token(s),
+      SyntaxElem::Ident(id) => CoreElem::Ident(self.id(id)),
+      SyntaxElem::Nat(s) => CoreElem::Nat(s),
+      SyntaxElem::Rat(s) => CoreElem::Rat(s),
+      SyntaxElem::Chr(s) => CoreElem::Chr(s),
+      SyntaxElem::Str(s) => CoreElem::Str(s),
+      SyntaxElem::Def(def) => {
+        let (name, e) = self.def(def);
+        CoreElem::Def(name, e)
+      }
+      SyntaxElem::Expr(e) => CoreElem::Expr(self.e(e)),
+      SyntaxElem::Decls(ds) => CoreElem::Decls(self.ds(ds)),
+    }
+  }
+
   fn e(&mut self, e: &Expr<'a>) -> core::Expr {
-    core::Expr::Hole
+    match &e.0 {
+      ExprF::Hole => core::Expr::Hole,
+      ExprF::Var(i) => core::Expr::Var(self.id(i)),
+      ExprF::Mod(ids) => {
+        // not allowed!
+        // TODO: return error
+        panic!()
+      }
+      ExprF::Ext(ids, i) => core::Expr::Ext(ids.iter().map(|i| self.id(i)).collect(), self.id(&i)),
+      ExprF::Syntax(x, es) => {
+        let es = es.iter().map(|e| self.syntax_elem(e)).collect();
+        (x.t)(es, self)
+      }
+    }
   }
 
   fn mr(&mut self, mr: &ModRef<'a>) -> core::ModRef {
@@ -62,7 +90,7 @@ impl<'a> Builder<'a> {
     }
   }
 
-  fn def(&mut self, def: &Def<'a>) -> core::Decl {
+  fn def(&mut self, def: &Def<'a>) -> (core::Id, core::Expr) {
     let name = self.id(&def.name);
     let e = self.e(&*def.body);
     let e = if let Some(ty) = &def.ty {
@@ -84,12 +112,12 @@ impl<'a> Builder<'a> {
         };
       }
     }
-    core::Decl::Def(name, Rc::new(e))
+    (name, e)
   }
 
-  fn d(&mut self, d: &Decl<'a>) -> Option<core::Decl> {
+  fn d(&mut self, d: &Decl<'a>) -> Vec<core::Decl> {
     match &d.0 {
-      DeclF::Local(ds) => Some(core::Decl::Local(self.ds(ds))),
+      DeclF::Local(ds) => self.ds(ds),
       DeclF::ModDef(md, def) => {
         let mut params = Vec::new();
         for p in &md.params {
@@ -109,22 +137,33 @@ impl<'a> Builder<'a> {
           ModDefF::Decls(ds) => core::ModDef::Decls(self.ds(ds)),
           ModDefF::Ref(mr) => core::ModDef::Ref(self.mr(mr)),
         };
-        Some(core::Decl::ModDef(decl, def))
+        vec![core::Decl::ModDef(decl, def)]
       }
-      DeclF::Open(mr) => Some(core::Decl::Open(self.mr(mr))),
-      DeclF::Def(def) => Some(self.def(def)),
-      DeclF::Syntax(_, _, _) => None,
+      DeclF::Open(mr) => vec![core::Decl::Open(self.mr(mr))],
+      DeclF::Def(def) => {
+        let (name, e) = self.def(def);
+        vec![core::Decl::Def(name, Rc::new(e))]
+      }
+      DeclF::Syntax(_, _, _) => Vec::new(),
     }
   }
 
   fn ds(&mut self, ds: &Vec<Decl<'a>>) -> Vec<core::Decl> {
     let mut rs = Vec::new();
     for d in ds {
-      if let Some(d) = self.d(d) {
-        rs.push(d);
-      }
+      rs.extend(self.d(d));
     }
     rs
+  }
+}
+
+impl<'a> SyntaxHandler<'a> for Builder<'a> {
+  fn convert_e(&mut self, e: &Expr<'a>) -> core::Expr {
+    self.e(e)
+  }
+
+  fn convert_se(&mut self, e: &SyntaxElem<'a>) -> CoreElem<'a> {
+    self.syntax_elem(e)
   }
 }
 

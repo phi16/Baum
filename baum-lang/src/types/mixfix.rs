@@ -236,6 +236,7 @@ impl Regex {
     Rc::new(Regex::Seq(r.clone(), Rc::new(Regex::Rep(r.clone()))))
   }
   pub fn sep0_(r: &Rc<Regex>, s: &str) -> Rc<Self> {
+    // accepts: ε, s, r, rs, rsr, rsrs, ...
     Rc::new(Regex::Seq(
       Regex::sep0(r, s),
       Regex::may(&Rc::new(Regex::Token(s.to_string()))),

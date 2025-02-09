@@ -18,7 +18,8 @@ pub fn parse<'a>(code: &'a str) -> Result<Vec<Decl<'a>>, Vec<String>> {
   let ds = parser.program();
   let (_, _, errors) = parser.into_inner();
   if errors.is_empty() {
-    let _ = convert(ds.clone());
+    let core = convert(ds.clone());
+    eprintln!("{:?}", core);
     Ok(ds)
   } else {
     eprintln!("{}", pretty(&ds));

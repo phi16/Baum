@@ -1,6 +1,7 @@
 use crate::expr::ExprParser;
 use crate::types::mixfix::{Precedence, Regex};
 use crate::types::parse::*;
+use baum_core::types as core;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::rc::Rc;
@@ -327,10 +328,79 @@ impl<'a> DeclParser<'a> {
       }
     }
     let regex = Regex::seqs(rs.iter().collect());
+    let captured_defs = defs.clone();
     let captured_e = e.clone();
-    let interpreter: SyntaxInterpreter<'a> = Rc::new(|elems| {
-      let e: Expr<'a> = unimplemented!(); // &captured_e;
-      InterpretResult::Continue(e.clone())
+    let interpreter: SyntaxInterpreter<'a> = Rc::new(move |elems, c| {
+      fn replace<'a>(
+        e: &Expr<'a>,
+        e_map: &HashMap<Id<'a>, core::Expr>,
+        i_map: &HashMap<Id<'a>, core::Id>,
+        c: &mut dyn SyntaxHandler<'a>,
+      ) -> core::Expr {
+        match &e.0 {
+          ExprF::Var(id) => match e_map.get(id) {
+            Some(e) => e.clone(),
+            None => c.convert_e(&e),
+          },
+          ExprF::Syntax(x, ref elems) => {
+            let es = elems
+              .iter()
+              .map(|elem| match elem {
+                SyntaxElem::Ident(id) => match i_map.get(id) {
+                  Some(i) => CoreElem::Ident(i.clone()),
+                  None => c.convert_se(elem),
+                },
+                SyntaxElem::Expr(e) => {
+                  let e = replace(e, e_map, i_map, c);
+                  CoreElem::Expr(e)
+                }
+                _ => c.convert_se(elem),
+              })
+              .collect();
+            (x.t)(es, c)
+          }
+          _ => c.convert_e(&e),
+        }
+      }
+      let defs = &captured_defs;
+      assert!(elems.len() == defs.len());
+      let mut e_map = HashMap::new();
+      let mut i_map = HashMap::new();
+      for (d, e) in defs.iter().zip(elems.iter()) {
+        match d {
+          SynDefF::Token(s1) => match e {
+            CoreElem::Token(s2) => {
+              assert_eq!(s1, s2);
+            }
+            _ => panic!(),
+          },
+          SynDefF::Expr(id) => match e {
+            CoreElem::Expr(e) => {
+              e_map.insert(id.clone(), e.clone());
+            }
+            _ => panic!(),
+          },
+          SynDefF::Ident(id) => match e {
+            CoreElem::Ident(i) => {
+              i_map.insert(id.clone(), i.clone());
+            }
+            CoreElem::Nat(n) => {
+              todo!();
+            }
+            CoreElem::Rat(r) => {
+              todo!();
+            }
+            CoreElem::Chr(c) => {
+              todo!();
+            }
+            CoreElem::Str(s) => {
+              todo!();
+            }
+            _ => panic!(),
+          },
+        }
+      }
+      replace(&captured_e, &e_map, &i_map, c)
     });
     let syntax = Syntax::new(precs.0, precs.1, regex, interpreter);
     log!("SYNTAX: {:?}", syntax);
