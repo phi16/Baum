@@ -56,7 +56,7 @@ fn regex_macro_test() {
   );
 }
 
-pub fn default_syntax_table() -> SyntaxTable<SyntaxInterpreter<'static>> {
+pub fn default_syntax_table<'a>() -> SyntaxTable<SyntaxInterpreter<'a>> {
   let mut syntax: SyntaxTable<SyntaxInterpreter> = SyntaxTable::new();
 
   let id = Regex::id();
