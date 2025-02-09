@@ -19,13 +19,13 @@ enum AdvanceResult {
 
 #[derive(Debug, Clone)]
 struct SyntaxState<'a, 'b> {
-  syntax: &'b Syntax,
+  syntax: &'b Syntax<'a>,
   read: usize,
   elems: Vec<SyntaxElem<'a>>,
 }
 
 impl<'a, 'b> SyntaxState<'a, 'b> {
-  fn new(syntax: &'b Syntax) -> Self {
+  fn new(syntax: &'b Syntax<'a>) -> Self {
     SyntaxState {
       syntax,
       read: 0,
@@ -47,15 +47,15 @@ impl<'a, 'b> SyntaxState<'a, 'b> {
 }
 
 #[derive(Debug, Clone)]
-struct SyntaxCont<'b> {
-  syntax: &'b Syntax,
+struct SyntaxCont<'a, 'b> {
+  syntax: &'b Syntax<'a>,
   cont: Rc<Regex>,
 }
 
 #[derive(Debug, Clone)]
-enum ReadStatus<'b> {
-  Pass(&'b Syntax),
-  Await(NonTerm, Vec<SyntaxCont<'b>>),
+enum ReadStatus<'a, 'b> {
+  Pass(&'b Syntax<'a>),
+  Await(NonTerm, Vec<SyntaxCont<'a, 'b>>),
 }
 
 pub struct ExprParser<'a, 'b> {
@@ -127,7 +127,7 @@ impl<'a, 'b> ExprParser<'a, 'b> {
   fn read_until_nonterm(
     &mut self,
     ss: Vec<(SyntaxState<'a, 'b>, Rc<Regex>)>,
-  ) -> Result<(Vec<SyntaxElem<'a>>, ReadStatus<'b>), ()> {
+  ) -> Result<(Vec<SyntaxElem<'a>>, ReadStatus<'a, 'b>), ()> {
     let mut ss = ss;
     for (_, r) in &ss {
       assert!(deriv::next_nonterm(r).is_none());
@@ -255,9 +255,9 @@ impl<'a, 'b> ExprParser<'a, 'b> {
 
   fn parse_by_regex(
     &mut self,
-    ss: Vec<&'b Syntax>,
+    ss: Vec<&'b Syntax<'a>>,
     heads: Vec<SyntaxElem<'a>>,
-  ) -> Option<(&'b Syntax, Vec<SyntaxElem<'a>>)> {
+  ) -> Option<(&'b Syntax<'a>, Vec<SyntaxElem<'a>>)> {
     if ss.is_empty() {
       return None;
     }
@@ -365,11 +365,11 @@ impl<'a, 'b> ExprParser<'a, 'b> {
     }
   }
 
-  fn filter_p(&self, ss: &'b Vec<Syntax>, base_p: &Precedence) -> Vec<&'b Syntax> {
+  fn filter_p(&self, ss: &'b Vec<Syntax<'a>>, base_p: &Precedence) -> Vec<&'b Syntax<'a>> {
     ss.into_iter().filter(|p| *base_p <= p.left).collect()
   }
 
-  fn make_syntax(&self, s: &Syntax, elems: Vec<SyntaxElem<'a>>, pos: TokenPos) -> Expr<'a> {
+  fn make_syntax(&self, s: &Syntax<'a>, elems: Vec<SyntaxElem<'a>>, pos: TokenPos) -> Expr<'a> {
     Expr(ExprF::Syntax(s.clone(), elems), pos)
   }
 

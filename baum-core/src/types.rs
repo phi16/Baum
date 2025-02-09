@@ -27,8 +27,9 @@ pub enum Expr {
   Ext(Vec<I>, I),
 
   Ann(E, E),
-  Lit(Literal),
   Uni,
+
+  Lit(Literal),
   Let(Vec<Decl>, E),
 
   PiE(I, E, E),

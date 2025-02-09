@@ -2,8 +2,9 @@ pub use crate::types::ast::*;
 pub use crate::types::mixfix;
 pub use crate::types::token::*;
 pub use crate::types::tracker::*;
-pub use std::collections::HashMap;
-pub use std::rc::Rc;
+use baum_core::types as core;
+use std::collections::HashMap;
+use std::rc::Rc;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Id<'a>(&'a str);
@@ -30,9 +31,14 @@ pub enum SyntaxElem<'a> {
   Decls(Vec<Decl<'a>>),
 }
 
-pub type SyntaxInterpreter = ();
-pub type Syntax = mixfix::Syntax<SyntaxInterpreter>;
-pub type SyntaxTable = mixfix::SyntaxTable<SyntaxInterpreter>;
+pub enum InterpretResult<'a> {
+  Core(core::Expr),
+  Continue(Expr<'a>),
+}
+
+pub type SyntaxInterpreter<'a> = Rc<dyn Fn(Vec<SyntaxElem<'a>>) -> InterpretResult<'a>>;
+pub type Syntax<'a> = mixfix::Syntax<SyntaxInterpreter<'a>>;
+pub type SyntaxTable<'a> = mixfix::SyntaxTable<SyntaxInterpreter<'a>>;
 
 // TODO
 pub struct TokenRange {
@@ -53,7 +59,7 @@ pub struct Decl<'a>(
 );
 
 #[derive(Debug, Clone)]
-pub struct Expr<'a>(pub ExprF<Id<'a>, Syntax, SyntaxElem<'a>>, pub TokenPos);
+pub struct Expr<'a>(pub ExprF<Id<'a>, Syntax<'a>, SyntaxElem<'a>>, pub TokenPos);
 
 pub type Def<'a> = DefF<Id<'a>, Box<Expr<'a>>>;
 pub type Arg<'a> = ArgF<Id<'a>, Box<Expr<'a>>>;
@@ -61,7 +67,7 @@ pub type ModRef<'a> = ModRefF<&'a str, Id<'a>, Box<Expr<'a>>>;
 
 #[derive(Debug, Clone)]
 pub struct Env<'a> {
-  pub syntax: SyntaxTable,
+  pub syntax: SyntaxTable<'a>,
   pub modules: HashMap<Id<'a>, Rc<Env<'a>>>,
 }
 
@@ -73,14 +79,14 @@ impl<'a> Env<'a> {
     }
   }
 
-  pub fn from_syntax(syntax: SyntaxTable) -> Self {
+  pub fn from_syntax(syntax: SyntaxTable<'a>) -> Self {
     Env {
       syntax,
       modules: HashMap::new(),
     }
   }
 
-  pub fn add_syntax(&mut self, syntax: Syntax) {
+  pub fn add_syntax(&mut self, syntax: Syntax<'a>) {
     self.syntax.add(syntax);
   }
   pub fn add_module(&mut self, name: Id<'a>, e: Rc<Env<'a>>) -> bool {

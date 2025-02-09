@@ -56,8 +56,8 @@ fn regex_macro_test() {
   );
 }
 
-pub fn default_syntax_table() -> SyntaxTable<SyntaxInterpreter> {
-  let mut syntax = SyntaxTable::new();
+pub fn default_syntax_table() -> SyntaxTable<SyntaxInterpreter<'static>> {
+  let mut syntax: SyntaxTable<SyntaxInterpreter> = SyntaxTable::new();
 
   let id = Regex::id();
   let e = Regex::e();
@@ -75,35 +75,37 @@ pub fn default_syntax_table() -> SyntaxTable<SyntaxInterpreter> {
   // def%0,
   let defs = Regex::sep0_(&Regex::def(), ","); // comma or...
 
+  let t = unimplemented!();
+
   // Literal
-  syntax.def("", regex_elems![n], ());
-  syntax.def("", regex_elems![r], ());
-  syntax.def("", regex_elems![c], ());
-  syntax.def("", regex_elems![s], ());
+  syntax.def("", regex_elems![n], t);
+  syntax.def("", regex_elems![r], t);
+  syntax.def("", regex_elems![c], t);
+  syntax.def("", regex_elems![s], t);
   // Base
-  syntax.def("", regex_elems!["prim", s], ());
-  syntax.def("", regex_elems!["_"], ());
-  syntax.def("0", regex_elems!["let", decls, "in", e], ());
+  syntax.def("", regex_elems!["prim", s], t);
+  syntax.def("", regex_elems!["_"], t);
+  syntax.def("0", regex_elems!["let", decls, "in", e], t);
   // Universe
-  syntax.def("", regex_elems!["U"], ());
+  syntax.def("", regex_elems!["U"], t);
   // Function
-  syntax.def("0", regex_elems!["λ", "(", fun_args, ")", e], ());
-  syntax.def("0", regex_elems!["λ", "{", fun_args, "}", e], ());
-  syntax.def("0", regex_elems!["Π", "(", types, ")", e], ());
-  syntax.def("0", regex_elems!["Π", "{", types, "}", e], ());
-  syntax.def("4<", regex_elems![e, e], ());
-  syntax.def("4<", regex_elems![e, "{", e, "}"], ());
+  syntax.def("0", regex_elems!["λ", "(", fun_args, ")", e], t);
+  syntax.def("0", regex_elems!["λ", "{", fun_args, "}", e], t);
+  syntax.def("0", regex_elems!["Π", "(", types, ")", e], t);
+  syntax.def("0", regex_elems!["Π", "{", types, "}", e], t);
+  syntax.def("4<", regex_elems![e, e], t);
+  syntax.def("4<", regex_elems![e, "{", e, "}"], t);
   // Tuple/Object
-  syntax.def("", regex_elems!["(", vals, ")"], ()); // or unit or usual parenthesis
-  syntax.def("", regex_elems!["{", defs, "}"], ());
-  syntax.def("", regex_elems!["Σ", "(", types, ")"], ());
-  syntax.def("", regex_elems!["Σ", "{", props, "}"], ());
-  syntax.def("0", regex_elems!["π", "(", n, ")", e], ());
-  syntax.def("0", regex_elems!["π", "{", id, "}", e], ());
+  syntax.def("", regex_elems!["(", vals, ")"], t); // or unit or usual parenthesis
+  syntax.def("", regex_elems!["{", defs, "}"], t);
+  syntax.def("", regex_elems!["Σ", "(", types, ")"], t);
+  syntax.def("", regex_elems!["Σ", "{", props, "}"], t);
+  syntax.def("0", regex_elems!["π", "(", n, ")", e], t);
+  syntax.def("0", regex_elems!["π", "{", id, "}", e], t);
   // Inductive/Coinductive
   let id_ty = Regex::seqs(vec![&id, &colon, &e]);
-  syntax.def("", regex_elems!["μ", "(", id_ty, ")", "{", defs, "}"], ());
-  syntax.def("", regex_elems!["ν", "(", id_ty, ")", "{", defs, "}"], ());
+  syntax.def("", regex_elems!["μ", "(", id_ty, ")", "{", defs, "}"], t);
+  syntax.def("", regex_elems!["ν", "(", id_ty, ")", "{", defs, "}"], t);
 
   syntax
 }

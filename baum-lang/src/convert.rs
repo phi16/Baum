@@ -1,5 +1,7 @@
 use crate::types::parse::*;
 use baum_core::types as core;
+use std::collections::HashMap;
+use std::rc::Rc;
 
 type I = core::I;
 

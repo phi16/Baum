@@ -1,7 +1,9 @@
 use crate::expr::ExprParser;
 use crate::types::mixfix::{Precedence, Regex};
 use crate::types::parse::*;
+use std::collections::HashMap;
 use std::collections::HashSet;
+use std::rc::Rc;
 
 macro_rules! log {
   ($($arg:tt)*) => {
@@ -243,7 +245,7 @@ impl<'a> DeclParser<'a> {
     e
   }
 
-  fn syntax(&mut self, pos: TokenPos) -> Result<(Syntax, Decl<'a>)> {
+  fn syntax(&mut self, pos: TokenPos) -> Result<(Syntax<'a>, Decl<'a>)> {
     // syntax (w/o "syntax")
     let (precs, prec_str) = match self.tracker.peek() {
       Some(t) if t.ty == TokenType::Precedence => match Precedence::parse(t.str) {
@@ -325,7 +327,12 @@ impl<'a> DeclParser<'a> {
       }
     }
     let regex = Regex::seqs(rs.iter().collect());
-    let syntax = Syntax::new(precs.0, precs.1, regex, ());
+    let captured_e = e.clone();
+    let interpreter: SyntaxInterpreter<'a> = Rc::new(|elems| {
+      let e: Expr<'a> = unimplemented!(); // &captured_e;
+      InterpretResult::Continue(e.clone())
+    });
+    let syntax = Syntax::new(precs.0, precs.1, regex, interpreter);
     log!("SYNTAX: {:?}", syntax);
     return Ok((
       syntax,

@@ -355,12 +355,24 @@ impl<T> Syntax<T> {
   }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct SyntaxTable<T> {
   pres: HashMap<String, Vec<Syntax<T>>>, // starts from token
   lits: Vec<Syntax<T>>,                  // literals
   opes: HashMap<String, Vec<Syntax<T>>>, // starts from expr and token
   apps: Vec<Syntax<T>>,                  // expr expr
+}
+
+// Note: this is necessary to avoid T: Debug bound
+impl<T> std::fmt::Debug for SyntaxTable<T> {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    f.debug_struct("SyntaxTable")
+      .field("pres", &self.pres)
+      .field("lits", &self.lits)
+      .field("opes", &self.opes)
+      .field("apps", &self.apps)
+      .finish()
+  }
 }
 
 impl<T> SyntaxTable<T> {
