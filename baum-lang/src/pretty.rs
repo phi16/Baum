@@ -156,7 +156,7 @@ impl Pretty {
       ExprF::Hole => self.s("_"),
       ExprF::Var(i) => self.i(i),
       ExprF::Ext(m, i) => self.is(m, ".").s(".").i(i),
-      ExprF::Syntax(_, se) => {
+      ExprF::Syntax(_, _, se) => {
         self.s("[");
         for e in se.into_iter() {
           self.s(" ");
@@ -175,7 +175,7 @@ impl Pretty {
         self.s(" ]");
         self
       }
-      _ => unimplemented!(),
+      ExprF::Mod(m) => self.s("module ").is(m, "."),
     }
   }
 }

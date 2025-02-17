@@ -141,7 +141,6 @@ impl<'a, 'b> ExprParser<'a, 'b> {
     loop {
       let t = match self.tracker.peek() {
         Some(t) => {
-          // TODO: parse module names here?
           let t = t.clone();
           self.tracker.next();
           t
@@ -369,8 +368,14 @@ impl<'a, 'b> ExprParser<'a, 'b> {
     ss.into_iter().filter(|p| *base_p <= p.left).collect()
   }
 
-  fn make_syntax(&self, s: &Syntax<'a>, elems: Vec<SyntaxElem<'a>>, pos: TokenPos) -> Expr<'a> {
-    Expr(ExprF::Syntax(s.clone(), elems), pos)
+  fn make_syntax(
+    &self,
+    s: &Syntax<'a>,
+    elems: Vec<SyntaxElem<'a>>,
+    mod_name: Vec<Id<'a>>,
+    pos: TokenPos,
+  ) -> Expr<'a> {
+    Expr(ExprF::Syntax(s.clone(), mod_name, elems), pos)
   }
 
   fn module_name(&mut self) -> Option<(Vec<Id<'a>>, Option<&'b Env<'a>>)> {
@@ -414,7 +419,7 @@ impl<'a, 'b> ExprParser<'a, 'b> {
     );
     let t = self.tracker.peek()?;
     let pos = t.pos;
-    let (t, env) = if self.env.is_modname(t.str) {
+    let (t, mod_name, env) = if self.env.is_modname(t.str) {
       let (mod_name, env) = self.module_name()?;
       match env {
         Some(env) => {
@@ -426,7 +431,7 @@ impl<'a, 'b> ExprParser<'a, 'b> {
               log!("- expr1: ext = {:?}", id);
               return Some(Expr(ExprF::Ext(mod_name, id), pos));
             }
-            _ => (self.tracker.peek()?, env),
+            _ => (self.tracker.peek()?, mod_name, env),
           }
         }
         None => {
@@ -446,13 +451,13 @@ impl<'a, 'b> ExprParser<'a, 'b> {
         return Some(Expr(ExprF::Var(id), pos));
       }
       // as-is
-      (t, self.env)
+      (t, Vec::new(), self.env)
     };
     if t.ty != TokenType::Ident && t.ty != TokenType::Reserved {
       let lits: Vec<&'b Syntax> = self.filter_p(env.syntax.lits(), base_p);
       log!("- expr1: lits = {:?}", lits);
       let e = self.parse_by_regex(lits, Vec::new())?;
-      return Some(self.make_syntax(e.0, e.1, pos));
+      return Some(self.make_syntax(e.0, e.1, mod_name, pos));
     }
     let pres: Vec<&'b Syntax> = self.filter_p(env.syntax.choose_pre(t.str)?, base_p);
     log!("- expr1: pres = {:?}", pres);
@@ -463,7 +468,7 @@ impl<'a, 'b> ExprParser<'a, 'b> {
     }
     let e = self.parse_by_regex(pres, Vec::new())?;
     log!("- expr1 result: {:?}", e);
-    return Some(self.make_syntax(e.0, e.1, pos));
+    return Some(self.make_syntax(e.0, e.1, mod_name, pos));
   }
 
   fn expr_trailing(&mut self, base_p: &Precedence, e: Expr<'a>) -> Result<(bool, Expr<'a>), ()> {
@@ -478,34 +483,34 @@ impl<'a, 'b> ExprParser<'a, 'b> {
     };
     let pos = t.pos;
     let state = self.tracker.save_state();
-    let (t, env) = if self.env.is_modname(t.str) {
+    let (t, mod_name, env) = if self.env.is_modname(t.str) {
       match self.module_name() {
-        Some((_, Some(env))) => match self.tracker.peek() {
+        Some((mod_name, Some(env))) => match self.tracker.peek() {
           Some(t)
             if (t.ty == TokenType::Ident || t.ty == TokenType::Reserved)
               && env.is_trailing_opname(t.str) =>
           {
-            (t, env)
+            (t, mod_name, env)
           }
           _ => {
             self.tracker.restore_state(state.clone());
-            (self.tracker.peek().unwrap(), self.env)
+            (self.tracker.peek().unwrap(), mod_name, self.env)
           }
         },
         _ => {
           self.tracker.restore_state(state.clone());
-          (self.tracker.peek().unwrap(), self.env)
+          (self.tracker.peek().unwrap(), Vec::new(), self.env)
         }
       }
     } else {
-      (t, self.env)
+      (t, Vec::new(), self.env)
     };
-    let e = match env.syntax.choose_ope(t.str) {
+    let (e, mod_name) = match env.syntax.choose_ope(t.str) {
       Some(opes) => {
         let opes = self.filter_p(opes, base_p);
         log!("- expr2: opes = {:?}", opes);
         match self.parse_by_regex(opes, vec![SyntaxElem::Expr(Box::new(e.clone()))]) {
-          Some(e) => e,
+          Some(e) => (e, mod_name),
           None => {
             // TODO: try apps?
             self.tracker.restore_state(state);
@@ -527,20 +532,21 @@ impl<'a, 'b> ExprParser<'a, 'b> {
         match self.expr_p(&p) {
           Some(e2) => {
             log!("- expr2: e2 = {:?}", e2);
-            (
+            let e = (
               apps[0],
               vec![
                 SyntaxElem::Expr(Box::new(e)),
                 SyntaxElem::Expr(Box::new(e2)),
               ],
-            )
+            );
+            (e, Vec::new())
           }
           None => return Ok((true, e)),
         }
       }
     };
     log!("- expr2: e = {:?}", e);
-    return Ok((false, self.make_syntax(e.0, e.1, pos)));
+    return Ok((false, self.make_syntax(e.0, e.1, mod_name, pos)));
   }
 
   fn expr_p(&mut self, base_p: &Precedence) -> Option<Expr<'a>> {

@@ -330,11 +330,12 @@ impl<'a> DeclParser<'a> {
     let regex = Regex::seqs(rs.iter().collect());
     let captured_defs = defs.clone();
     let captured_e = e.clone();
-    let interpreter: SyntaxInterpreter<'a> = Rc::new(move |elems, c| {
+    let interpreter: SyntaxInterpreter<'a> = Rc::new(move |elems, mod_name, c| {
       fn replace<'a>(
         e: &Expr<'a>,
         e_map: &HashMap<Id<'a>, core::Expr>,
         i_map: &HashMap<Id<'a>, core::Id>,
+        mod_name: &Vec<Id<'a>>,
         c: &mut dyn SyntaxHandler<'a>,
       ) -> core::Expr {
         match &e.0 {
@@ -342,7 +343,7 @@ impl<'a> DeclParser<'a> {
             Some(e) => e.clone(),
             None => c.convert_e(&e),
           },
-          ExprF::Syntax(x, ref elems) => {
+          ExprF::Syntax(x, _, ref elems) => {
             let es = elems
               .iter()
               .map(|elem| match elem {
@@ -351,13 +352,13 @@ impl<'a> DeclParser<'a> {
                   None => c.convert_se(elem),
                 },
                 SyntaxElem::Expr(e) => {
-                  let e = replace(e, e_map, i_map, c);
+                  let e = replace(e, e_map, i_map, &mod_name, c);
                   CoreElem::Expr(e)
                 }
                 _ => c.convert_se(elem),
               })
               .collect();
-            (x.t)(es, c)
+            (x.t)(es, mod_name, c)
           }
           _ => c.convert_e(&e),
         }
@@ -400,7 +401,7 @@ impl<'a> DeclParser<'a> {
           },
         }
       }
-      replace(&captured_e, &e_map, &i_map, c)
+      replace(&captured_e, &e_map, &i_map, mod_name, c)
     });
     let syntax = Syntax::new(precs.0, precs.1, regex, interpreter);
     log!("SYNTAX: {:?}", syntax);
@@ -419,7 +420,7 @@ impl<'a> DeclParser<'a> {
           let params = rev_params.into_iter().rev().collect();
           return Ok((name, params));
         }
-        ExprF::Syntax(_, args) => {
+        ExprF::Syntax(_, _, args) => {
           if let [SyntaxElem::Expr(e0), SyntaxElem::Expr(e1)] = args.as_slice() {
             rev_params.push((Vis::Explicit, e1.clone()));
             e = *e0.clone();

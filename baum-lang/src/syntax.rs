@@ -144,7 +144,7 @@ pub fn default_syntax_table<'a>() -> SyntaxTable<SyntaxInterpreter<'a>> {
   // def%0,
   let defs = Regex::sep0_(&Regex::def(), ","); // comma or...
 
-  let t: SyntaxInterpreter<'a> = Rc::new(move |elems, _| {
+  let t: SyntaxInterpreter<'a> = Rc::new(move |elems, _, _| {
     eprintln!("Interpreting: {:?}", elems);
     let res = unimplemented!();
     res
@@ -154,7 +154,7 @@ pub fn default_syntax_table<'a>() -> SyntaxTable<SyntaxInterpreter<'a>> {
   syntax.def(
     "",
     regex_elems![n],
-    Rc::new(|elems, _| match elems[..] {
+    Rc::new(|elems, _, _| match elems[..] {
       [CoreElem::Nat(s)] => core::Expr::Lit(core::Literal::Nat(core::Nat(s.parse().unwrap()))),
       _ => panic!(),
     }),
@@ -164,15 +164,15 @@ pub fn default_syntax_table<'a>() -> SyntaxTable<SyntaxInterpreter<'a>> {
   syntax.def("", regex_elems![s], t.clone());
   // Base
   syntax.def("", regex_elems!["prim", s], t.clone());
-  syntax.def("", regex_elems!["_"], Rc::new(|_, _| core::Expr::Hole));
-  syntax.def("0", regex_elems!["let", decls, "in", e], Rc::new(|elems, _| match elems.as_slice() {
+  syntax.def("", regex_elems!["_"], Rc::new(|_, _, _| core::Expr::Hole));
+  syntax.def("0", regex_elems!["let", decls, "in", e], Rc::new(|elems, _, _| match elems.as_slice() {
     [CoreElem::Token("let"), CoreElem::Decls(decls), CoreElem::Token("in"), CoreElem::Expr(e)] => {
       core::Expr::Let(decls.clone(), Rc::new(e.clone()))
     },
     _ => panic!(),
   }),);
   // Universe
-  syntax.def("", regex_elems!["U"], Rc::new(|_, _| core::Expr::Uni));
+  syntax.def("", regex_elems!["U"], Rc::new(|_, _, _| core::Expr::Uni));
   // Function
   syntax.def("0", regex_elems!["λ", "(", fun_args, ")", e], t.clone());
   syntax.def("0", regex_elems!["λ", "{", fun_args, "}", e], t.clone());
@@ -181,7 +181,7 @@ pub fn default_syntax_table<'a>() -> SyntaxTable<SyntaxInterpreter<'a>> {
   syntax.def(
     "4<",
     regex_elems![e, e],
-    Rc::new(|elems, _| match elems.as_slice() {
+    Rc::new(|elems, _, _| match elems.as_slice() {
       [CoreElem::Expr(e1), CoreElem::Expr(e2)] => {
         core::Expr::AppE(Rc::new(e1.clone()), Rc::new(e2.clone()))
       }
@@ -191,7 +191,7 @@ pub fn default_syntax_table<'a>() -> SyntaxTable<SyntaxInterpreter<'a>> {
   syntax.def(
     "4<",
     regex_elems![e, "{", e, "}"],
-    Rc::new(|elems, _| match elems.as_slice() {
+    Rc::new(|elems, _, _| match elems.as_slice() {
       [CoreElem::Expr(e1), CoreElem::Token("{"), CoreElem::Expr(e2), CoreElem::Token("}")] => {
         core::Expr::AppI(Rc::new(e1.clone()), Rc::new(e2.clone()))
       }
@@ -202,7 +202,7 @@ pub fn default_syntax_table<'a>() -> SyntaxTable<SyntaxInterpreter<'a>> {
   syntax.def(
     "",
     regex_elems!["(", vals, ")"],
-    Rc::new(|elems, _| match elems.as_slice() {
+    Rc::new(|elems, _, _| match elems.as_slice() {
       [CoreElem::Token("("), CoreElem::Token(")")] => core::Expr::TupelCon(Vec::new()),
       [CoreElem::Token("("), CoreElem::Expr(e), CoreElem::Token(")")] => e.clone(),
       _ => panic!(),
@@ -212,7 +212,7 @@ pub fn default_syntax_table<'a>() -> SyntaxTable<SyntaxInterpreter<'a>> {
   syntax.def(
     "",
     regex_elems!["Σ", "(", types, ")"],
-    Rc::new(|elems, _| {
+    Rc::new(|elems, _, _| {
       let mut v = Vec::new();
       let mut p = MiniParser::new(elems);
       p.take_token("Σ").unwrap();

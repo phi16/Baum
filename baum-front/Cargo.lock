@@ -12,11 +12,3 @@ version = "0.1.0"
 dependencies = [
  "baum-core",
 ]
-
-[[package]]
-name = "baum-lang"
-version = "0.1.0"
-dependencies = [
- "baum-core",
- "baum-front",
-]

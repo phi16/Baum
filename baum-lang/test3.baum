@@ -1,0 +1,39 @@
+syntax 2.1< a + b = add a b
+syntax 2.2< a * b = mul a b
+
+module P = {
+  local {
+    div = _
+  }
+  module Q = {
+    u = _
+    v = _
+    module R = {
+      w = _
+      syntax 5 S n = n + v + w
+    }
+  }
+  syntax 4 a / b = Q.u * Q.R.S a + b
+}
+x = _
+y = _
+p = x P./ y
+-- p' = P.Q.u * (x + P.Q.v + P.Q.R.w) + y
+
+-- module F = {
+--   local {
+--     y = 1
+--   }
+--   syntax f[ x ] = x + y
+-- }
+-- module G = {
+--   local {
+--     y = 2
+--   }
+--   syntax g[ x ] = x + y
+-- }
+-- 
+-- open F
+-- open G
+-- a = f[ 1 ]
+-- b = g[ 1 ]

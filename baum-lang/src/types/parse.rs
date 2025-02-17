@@ -4,7 +4,6 @@ pub use crate::types::token::*;
 pub use crate::types::tracker::*;
 use baum_core::types as core;
 use std::collections::HashMap;
-use std::f32::consts::E;
 use std::rc::Rc;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -46,12 +45,13 @@ pub enum CoreElem<'a> {
 }
 
 pub trait SyntaxHandler<'a> {
+  fn convert_i(&mut self, id: &Id<'a>) -> core::Id;
   fn convert_e(&mut self, e: &Expr<'a>) -> core::Expr;
   fn convert_se(&mut self, e: &SyntaxElem<'a>) -> CoreElem<'a>;
 }
 
 pub type SyntaxInterpreter<'a> =
-  Rc<dyn Fn(Vec<CoreElem<'a>>, &mut dyn SyntaxHandler<'a>) -> core::Expr + 'a>;
+  Rc<dyn Fn(Vec<CoreElem<'a>>, &Vec<Id<'a>>, &mut dyn SyntaxHandler<'a>) -> core::Expr + 'a>;
 pub type Syntax<'a> = mixfix::Syntax<SyntaxInterpreter<'a>>;
 pub type SyntaxTable<'a> = mixfix::SyntaxTable<SyntaxInterpreter<'a>>;
 
@@ -161,7 +161,7 @@ pub fn fv<'a>(e: &Expr<'a>) -> Option<Vec<(Id<'a>, Role)>> {
       ExprF::Var(ref id) => {
         v.push((id.clone(), Role::Expr));
       }
-      ExprF::Syntax(_, ref elems) => {
+      ExprF::Syntax(_, _, ref elems) => {
         for elem in elems {
           match elem {
             SyntaxElem::Ident(ref id) => {

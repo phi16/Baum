@@ -64,15 +64,15 @@ impl<'a> Builder<'a> {
     match &e.0 {
       ExprF::Hole => core::Expr::Hole,
       ExprF::Var(i) => core::Expr::Var(self.id(i)),
-      ExprF::Mod(ids) => {
+      ExprF::Mod(_) => {
         // not allowed!
         // TODO: return error
         panic!()
       }
       ExprF::Ext(ids, i) => core::Expr::Ext(ids.iter().map(|i| self.id(i)).collect(), self.id(&i)),
-      ExprF::Syntax(x, es) => {
+      ExprF::Syntax(x, mod_name, es) => {
         let es = es.iter().map(|e| self.syntax_elem(e)).collect();
-        (x.t)(es, self)
+        (x.t)(es, mod_name, self)
       }
     }
   }
@@ -158,6 +158,10 @@ impl<'a> Builder<'a> {
 }
 
 impl<'a> SyntaxHandler<'a> for Builder<'a> {
+  fn convert_i(&mut self, id: &Id<'a>) -> core::Id {
+    self.id(id)
+  }
+
   fn convert_e(&mut self, e: &Expr<'a>) -> core::Expr {
     self.e(e)
   }

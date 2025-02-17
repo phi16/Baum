@@ -54,5 +54,5 @@ pub enum ExprF<I, X, Xe> {
   Var(I),
   Mod(Vec<I>),
   Ext(Vec<I>, I),
-  Syntax(X, Vec<Xe>),
+  Syntax(X, Vec<I>, Vec<Xe>),
 }
