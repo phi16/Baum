@@ -8,16 +8,16 @@ macro_rules! regex_elem {
     (Regex::token($s))
   };
   (n) => {
-    Rc::new(Regex::Nat)
+    Rc::new(Regex::Terminal(Terminal::Nat))
   };
   (r) => {
-    Rc::new(Regex::Rat)
+    Rc::new(Regex::Terminal(Terminal::Rat))
   };
   (c) => {
-    Rc::new(Regex::Chr)
+    Rc::new(Regex::Terminal(Terminal::Chr))
   };
   (s) => {
-    Rc::new(Regex::Str)
+    Rc::new(Regex::Terminal(Terminal::Str))
   };
   (id) => {
     Regex::id()
@@ -63,9 +63,7 @@ enum ElemType {
   Rat,
   Chr,
   Str,
-  Def,
   Expr,
-  Decls,
 }
 
 fn match_elem(e: &CoreElem, ty: ElemType) -> bool {
@@ -124,15 +122,16 @@ pub fn default_syntax_table<'a>() -> SyntaxTable<SyntaxInterpreter<'a>> {
   let e = &Regex::e();
   let ids = &Regex::rep1(&id);
   let colon = &Regex::token(":");
+  let comma = &Regex::token(",");
 
   // (id+ | id+: e)%0,
-  let fun_args = &Regex::sep0_(&Regex::seq(ids, &Regex::may(&Regex::seq(colon, e))), ",");
+  let fun_args = &Regex::sep0_(&Regex::seq(ids, &Regex::may(&Regex::seq(colon, e))), comma);
   // (e | id+: e)%0,
-  let types = &Regex::sep0_(&Regex::seq(&Regex::may(&Regex::seq(ids, colon)), e), ",");
+  let types = &Regex::sep0_(&Regex::seq(&Regex::may(&Regex::seq(ids, colon)), e), comma);
   // e%0,
-  let vals = &Regex::sep0_(e, ",");
+  let vals = &Regex::sep0_(e, comma);
   // (id+: e)%0,
-  let props = &Regex::sep0_(&Regex::seqs(vec![ids, colon, e]), ",");
+  let props = &Regex::sep0_(&Regex::seqs(vec![ids, colon, e]), comma);
   // def%0,
   let may_type = &Regex::may(&Regex::seq(colon, e));
   let arg = &Regex::or(
@@ -144,7 +143,7 @@ pub fn default_syntax_table<'a>() -> SyntaxTable<SyntaxInterpreter<'a>> {
   );
   let args = &Regex::rep0(arg);
   let def = &Regex::seqs(vec![id, args, may_type, &Regex::token("="), &e]);
-  let defs = &Regex::sep0_(def, ","); // comma or...
+  let defs = &Regex::sep0_(def, comma); // comma or...
 
   let t: SyntaxInterpreter<'a> = Rc::new(move |elems, _, _| {
     eprintln!("Interpreting: {:?}", elems);
@@ -253,15 +252,16 @@ pub fn default_syntax_table<'a>() -> SyntaxTable<SyntaxInterpreter<'a>> {
   syntax.def("0", regex_elems!["π", "(", n, ")", e], t.clone());
   syntax.def("0", regex_elems!["π", "{", id, "}", e], t.clone());
   // Inductive/Coinductive
-  let id_ty = Regex::seqs(vec![&id, &colon, &e]);
+  let id_ty = &Regex::seqs(vec![id, colon, e]);
+  let id_ty_list = &Regex::sep0_(id_ty, comma);
   syntax.def(
     "",
-    regex_elems!["μ", "(", id_ty, ")", "{", defs, "}"],
+    regex_elems!["μ", "(", id_ty, ")", "{", id_ty_list, "}"],
     t.clone(),
   );
   syntax.def(
     "",
-    regex_elems!["ν", "(", id_ty, ")", "{", defs, "}"],
+    regex_elems!["ν", "(", id_ty, ")", "{", id_ty_list, "}"],
     t.clone(),
   );
 

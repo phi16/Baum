@@ -179,13 +179,18 @@ fn prec_parse_test() {
 }
 
 #[derive(Clone, PartialEq, Eq)]
-pub enum Regex {
+pub enum Terminal {
   Token(String),
   Nat,
   Rat,
   Chr,
   Str,
   Id,
+}
+
+#[derive(Clone, PartialEq, Eq)]
+pub enum Regex {
+  Terminal(Terminal),
   Expr,
   Fail,
   Eps,
@@ -196,13 +201,13 @@ pub enum Regex {
 
 impl Regex {
   pub fn id() -> Rc<Self> {
-    Rc::new(Regex::Id)
+    Rc::new(Regex::Terminal(Terminal::Id))
   }
   pub fn e() -> Rc<Self> {
     Rc::new(Regex::Expr)
   }
   pub fn token(s: &str) -> Rc<Self> {
-    Rc::new(Regex::Token(s.to_string()))
+    Rc::new(Regex::Terminal(Terminal::Token(s.to_string())))
   }
 
   pub fn seq(r1: &Rc<Regex>, r2: &Rc<Regex>) -> Rc<Self> {
@@ -228,23 +233,17 @@ impl Regex {
   pub fn rep1(r: &Rc<Regex>) -> Rc<Self> {
     Rc::new(Regex::Seq(r.clone(), Rc::new(Regex::Rep(r.clone()))))
   }
-  pub fn sep0_(r: &Rc<Regex>, s: &str) -> Rc<Self> {
+  pub fn sep0_(r: &Rc<Regex>, s: &Rc<Regex>) -> Rc<Self> {
     // accepts: ε, s, r, rs, rsr, rsrs, ...
-    Rc::new(Regex::Seq(
-      Regex::sep0(r, s),
-      Regex::may(&Rc::new(Regex::Token(s.to_string()))),
-    ))
+    Rc::new(Regex::Seq(Regex::sep0(r, s), Regex::may(s)))
   }
-  pub fn sep0(r: &Rc<Regex>, s: &str) -> Rc<Self> {
+  pub fn sep0(r: &Rc<Regex>, s: &Rc<Regex>) -> Rc<Self> {
     Rc::new(Regex::Or(Rc::new(Regex::Eps), Regex::sep1(r, s)))
   }
-  pub fn sep1(r: &Rc<Regex>, s: &str) -> Rc<Self> {
+  pub fn sep1(r: &Rc<Regex>, s: &Rc<Regex>) -> Rc<Self> {
     Rc::new(Regex::Seq(
       r.clone(),
-      Rc::new(Regex::Rep(Rc::new(Regex::Seq(
-        Rc::new(Regex::Token(s.to_string())),
-        r.clone(),
-      )))),
+      Rc::new(Regex::Rep(Rc::new(Regex::Seq(s.clone(), r.clone())))),
     ))
   }
   pub fn may(r: &Rc<Regex>) -> Rc<Self> {
@@ -256,16 +255,7 @@ impl std::fmt::Debug for Regex {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     fn is_simple(r: &Regex) -> bool {
       match r {
-        Regex::Token(_)
-        | Regex::Nat
-        | Regex::Rat
-        | Regex::Chr
-        | Regex::Str
-        | Regex::Id
-        | Regex::Fail
-        | Regex::Eps
-        | Regex::Rep(_)
-        | Regex::Expr => true,
+        Regex::Terminal(_) | Regex::Fail | Regex::Eps | Regex::Rep(_) | Regex::Expr => true,
         Regex::Or(r1, _) => **r1 == Regex::Eps,
         _ => false,
       }
@@ -281,12 +271,14 @@ impl std::fmt::Debug for Regex {
     }
     fn fmt_rec(r: &Regex, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
       match r {
-        Regex::Token(s) => write!(f, "\"{}\"", s),
-        Regex::Nat => write!(f, "n"),
-        Regex::Rat => write!(f, "r"),
-        Regex::Chr => write!(f, "c"),
-        Regex::Str => write!(f, "s"),
-        Regex::Id => write!(f, "i"),
+        Regex::Terminal(t) => match t {
+          Terminal::Token(s) => write!(f, "\"{}\"", s),
+          Terminal::Nat => write!(f, "n"),
+          Terminal::Rat => write!(f, "r"),
+          Terminal::Chr => write!(f, "c"),
+          Terminal::Str => write!(f, "s"),
+          Terminal::Id => write!(f, "i"),
+        },
         Regex::Fail => write!(f, "∅"),
         Regex::Eps => write!(f, "ε"),
         Regex::Seq(r1, r2) => {
@@ -387,14 +379,22 @@ impl<T> SyntaxTable<T> {
   pub fn add(&mut self, syn: Syntax<T>) {
     let seqs = &syn.regex;
     let v = match &**seqs {
-      Regex::Token(ref s) => self.pres.entry(s.to_string()).or_insert(Vec::new()),
+      Regex::Terminal(Terminal::Token(ref s)) => {
+        self.pres.entry(s.to_string()).or_insert(Vec::new())
+      }
       Regex::Seq(first, cont) => match **first {
-        Regex::Token(ref s) => self.pres.entry(s.to_string()).or_insert(Vec::new()),
+        Regex::Terminal(Terminal::Token(ref s)) => {
+          self.pres.entry(s.to_string()).or_insert(Vec::new())
+        }
         Regex::Expr => match **cont {
-          Regex::Token(ref s) => self.opes.entry(s.to_string()).or_insert(Vec::new()),
+          Regex::Terminal(Terminal::Token(ref s)) => {
+            self.opes.entry(s.to_string()).or_insert(Vec::new())
+          }
           Regex::Expr => &mut self.apps,
           Regex::Seq(ref second, _) => match **second {
-            Regex::Token(ref s) => self.opes.entry(s.to_string()).or_insert(Vec::new()),
+            Regex::Terminal(Terminal::Token(ref s)) => {
+              self.opes.entry(s.to_string()).or_insert(Vec::new())
+            }
             _ => panic!(),
           },
           _ => panic!(),
@@ -484,44 +484,20 @@ pub mod deriv {
 
   pub fn d<'a>(regex: &Rc<Regex>, q: &Query<'a>) -> Option<(QueryResult<'a>, Rc<Regex>)> {
     match **regex {
-      Regex::Token(ref s) => match q {
-        Query::Token(ty, str) if ty == &TokenType::Ident || ty == &TokenType::Reserved => {
-          if s == str {
-            return Some((
-              QueryResult::Token(ElemType::Token, str),
-              Rc::new(Regex::Eps),
-            ));
+      Regex::Terminal(ref t) => match q {
+        Query::Token(ty, str) => {
+          if let Some(ety) = match (t, ty) {
+            (Terminal::Token(ref s), TokenType::Ident) if s == str => Some(ElemType::Token),
+            (Terminal::Token(ref s), TokenType::Reserved) if s == str => Some(ElemType::Token),
+            (Terminal::Nat, TokenType::Natural) => Some(ElemType::Nat),
+            (Terminal::Rat, TokenType::Rational) => Some(ElemType::Rat),
+            (Terminal::Chr, TokenType::Char) => Some(ElemType::Chr),
+            (Terminal::Str, TokenType::String) => Some(ElemType::Str),
+            (Terminal::Id, TokenType::Ident) => Some(ElemType::Id),
+            _ => None,
+          } {
+            return Some((QueryResult::Token(ety, str), Rc::new(Regex::Eps)));
           }
-        }
-        _ => {}
-      },
-      Regex::Nat => match q {
-        Query::Token(TokenType::Natural, str) => {
-          return Some((QueryResult::Token(ElemType::Nat, str), Rc::new(Regex::Eps)))
-        }
-        _ => {}
-      },
-      Regex::Rat => match q {
-        Query::Token(TokenType::Rational, str) => {
-          return Some((QueryResult::Token(ElemType::Rat, str), Rc::new(Regex::Eps)))
-        }
-        _ => {}
-      },
-      Regex::Chr => match q {
-        Query::Token(TokenType::Char, str) => {
-          return Some((QueryResult::Token(ElemType::Chr, str), Rc::new(Regex::Eps)))
-        }
-        _ => {}
-      },
-      Regex::Str => match q {
-        Query::Token(TokenType::String, str) => {
-          return Some((QueryResult::Token(ElemType::Str, str), Rc::new(Regex::Eps)))
-        }
-        _ => {}
-      },
-      Regex::Id => match q {
-        Query::Token(TokenType::Ident, str) => {
-          return Some((QueryResult::Token(ElemType::Id, str), Rc::new(Regex::Eps)))
         }
         _ => {}
       },
@@ -586,7 +562,7 @@ pub mod deriv {
   pub fn next_tokens(regex: &Regex) -> HashSet<String> {
     fn collect(regex: &Regex, set: &mut HashSet<String>) {
       match regex {
-        Regex::Token(s) => {
+        Regex::Terminal(Terminal::Token(s)) => {
           set.insert(s.clone());
         }
         Regex::Seq(left, right) => {
