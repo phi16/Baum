@@ -49,10 +49,11 @@ pub enum DeclF<S, I, Ds, E, Md> {
 }
 
 #[derive(Debug, Clone)]
-pub enum ExprF<I, X, Xe> {
+pub enum ExprF<I, Ds, E, X, Xe> {
   Hole,
   Var(I),
   Mod(Vec<I>),
   Ext(Vec<I>, I),
+  Let(Ds, E),
   Syntax(X, Vec<I>, Vec<Xe>),
 }

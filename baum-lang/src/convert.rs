@@ -51,12 +51,7 @@ impl<'a> Builder<'a> {
       SyntaxElem::Rat(s) => CoreElem::Rat(s),
       SyntaxElem::Chr(s) => CoreElem::Chr(s),
       SyntaxElem::Str(s) => CoreElem::Str(s),
-      SyntaxElem::Def(def) => {
-        let (name, e) = self.def(def);
-        CoreElem::Def(name, e)
-      }
       SyntaxElem::Expr(e) => CoreElem::Expr(self.e(e)),
-      SyntaxElem::Decls(ds) => CoreElem::Decls(self.ds(ds)),
     }
   }
 
@@ -70,6 +65,11 @@ impl<'a> Builder<'a> {
         panic!()
       }
       ExprF::Ext(ids, i) => core::Expr::Ext(ids.iter().map(|i| self.id(i)).collect(), self.id(&i)),
+      ExprF::Let(ds, e) => {
+        let ds = self.ds(ds);
+        let e = Rc::new(self.e(e));
+        core::Expr::Let(ds, e)
+      }
       ExprF::Syntax(x, mod_name, es) => {
         let es = es.iter().map(|e| self.syntax_elem(e)).collect();
         (x.t)(es, mod_name, self)

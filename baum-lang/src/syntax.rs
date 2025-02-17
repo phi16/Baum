@@ -25,12 +25,6 @@ macro_rules! regex_elem {
   (e) => {
     Regex::e()
   };
-  (def) => {
-    Regex::def()
-  };
-  (decls) => {
-    Regex::decls()
-  };
   ($i:tt) => {
     $i.clone()
   };
@@ -82,9 +76,7 @@ fn match_elem(e: &CoreElem, ty: ElemType) -> bool {
     (CoreElem::Rat(_), ElemType::Rat) => true,
     (CoreElem::Chr(_), ElemType::Chr) => true,
     (CoreElem::Str(_), ElemType::Str) => true,
-    (CoreElem::Def(_, _), ElemType::Def) => true,
     (CoreElem::Expr(_), ElemType::Expr) => true,
-    (CoreElem::Decls(_), ElemType::Decls) => true,
     _ => false,
   }
 }
@@ -128,21 +120,31 @@ impl<'a> MiniParser<'a> {
 pub fn default_syntax_table<'a>() -> SyntaxTable<SyntaxInterpreter<'a>> {
   let mut syntax: SyntaxTable<SyntaxInterpreter> = SyntaxTable::new();
 
-  let id = Regex::id();
-  let e = Regex::e();
-  let ids = Regex::rep1(&id);
-  let colon = Regex::token(":");
+  let id = &Regex::id();
+  let e = &Regex::e();
+  let ids = &Regex::rep1(&id);
+  let colon = &Regex::token(":");
 
   // (id+ | id+: e)%0,
-  let fun_args = Regex::sep0_(&Regex::seq(&ids, &Regex::may(&Regex::seq(&colon, &e))), ",");
+  let fun_args = &Regex::sep0_(&Regex::seq(ids, &Regex::may(&Regex::seq(colon, e))), ",");
   // (e | id+: e)%0,
-  let types = Regex::sep0_(&Regex::seq(&Regex::may(&Regex::seq(&ids, &colon)), &e), ",");
+  let types = &Regex::sep0_(&Regex::seq(&Regex::may(&Regex::seq(ids, colon)), e), ",");
   // e%0,
-  let vals = Regex::sep0_(&e, ",");
+  let vals = &Regex::sep0_(e, ",");
   // (id+: e)%0,
-  let props = Regex::sep0_(&Regex::seqs(vec![&ids, &colon, &e]), ",");
+  let props = &Regex::sep0_(&Regex::seqs(vec![ids, colon, e]), ",");
   // def%0,
-  let defs = Regex::sep0_(&Regex::def(), ","); // comma or...
+  let may_type = &Regex::may(&Regex::seq(colon, e));
+  let arg = &Regex::or(
+    &Regex::or(
+      &Regex::seqs(vec![&Regex::token("("), ids, may_type, &Regex::token(")")]),
+      &Regex::seqs(vec![&Regex::token("{"), ids, may_type, &Regex::token("}")]),
+    ),
+    &id,
+  );
+  let args = &Regex::rep0(arg);
+  let def = &Regex::seqs(vec![id, args, may_type, &Regex::token("="), &e]);
+  let defs = &Regex::sep0_(def, ","); // comma or...
 
   let t: SyntaxInterpreter<'a> = Rc::new(move |elems, _, _| {
     eprintln!("Interpreting: {:?}", elems);
@@ -165,12 +167,6 @@ pub fn default_syntax_table<'a>() -> SyntaxTable<SyntaxInterpreter<'a>> {
   // Base
   syntax.def("", regex_elems!["prim", s], t.clone());
   syntax.def("", regex_elems!["_"], Rc::new(|_, _, _| core::Expr::Hole));
-  syntax.def("0", regex_elems!["let", decls, "in", e], Rc::new(|elems, _, _| match elems.as_slice() {
-    [CoreElem::Token("let"), CoreElem::Decls(decls), CoreElem::Token("in"), CoreElem::Expr(e)] => {
-      core::Expr::Let(decls.clone(), Rc::new(e.clone()))
-    },
-    _ => panic!(),
-  }),);
   // Universe
   syntax.def("", regex_elems!["U"], Rc::new(|_, _, _| core::Expr::Uni));
   // Function

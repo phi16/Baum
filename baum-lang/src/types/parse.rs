@@ -26,9 +26,7 @@ pub enum SyntaxElem<'a> {
   Rat(&'a str),
   Chr(&'a str),
   Str(&'a str),
-  Def(Box<Def<'a>>),
   Expr(Box<Expr<'a>>),
-  Decls(Vec<Decl<'a>>),
 }
 
 #[derive(Debug, Clone)]
@@ -39,9 +37,7 @@ pub enum CoreElem<'a> {
   Rat(&'a str),
   Chr(&'a str),
   Str(&'a str),
-  Def(core::Id, core::Expr),
   Expr(core::Expr),
-  Decls(Vec<core::Decl>),
 }
 
 pub trait SyntaxHandler<'a> {
@@ -74,7 +70,10 @@ pub struct Decl<'a>(
 );
 
 #[derive(Debug, Clone)]
-pub struct Expr<'a>(pub ExprF<Id<'a>, Syntax<'a>, SyntaxElem<'a>>, pub TokenPos);
+pub struct Expr<'a>(
+  pub ExprF<Id<'a>, Vec<Decl<'a>>, Box<Expr<'a>>, Syntax<'a>, SyntaxElem<'a>>,
+  pub TokenPos,
+);
 
 pub type Def<'a> = DefF<Id<'a>, Box<Expr<'a>>>;
 pub type Arg<'a> = ArgF<Id<'a>, Box<Expr<'a>>>;
@@ -170,15 +169,12 @@ pub fn fv<'a>(e: &Expr<'a>) -> Option<Vec<(Id<'a>, Role)>> {
             SyntaxElem::Expr(ref e) => {
               fv_internal(e, v, invalid);
             }
-            SyntaxElem::Def(_) => {
-              *invalid = true;
-            }
-            SyntaxElem::Decls(_) => {
-              *invalid = true;
-            }
             _ => {}
           }
         }
+      }
+      ExprF::Let(_, _) => {
+        *invalid = true;
       }
       _ => {}
     }

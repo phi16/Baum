@@ -178,13 +178,6 @@ fn prec_parse_test() {
   assert!(Precedence::parse("-10.42.2048>>").is_none());
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum NonTerm {
-  Def,
-  Expr,
-  Decls,
-}
-
 #[derive(Clone, PartialEq, Eq)]
 pub enum Regex {
   Token(String),
@@ -193,7 +186,7 @@ pub enum Regex {
   Chr,
   Str,
   Id,
-  NonTerm(NonTerm),
+  Expr,
   Fail,
   Eps,
   Seq(Rc<Regex>, Rc<Regex>),
@@ -206,13 +199,7 @@ impl Regex {
     Rc::new(Regex::Id)
   }
   pub fn e() -> Rc<Self> {
-    Rc::new(Regex::NonTerm(NonTerm::Expr))
-  }
-  pub fn def() -> Rc<Self> {
-    Rc::new(Regex::NonTerm(NonTerm::Def))
-  }
-  pub fn decls() -> Rc<Self> {
-    Rc::new(Regex::NonTerm(NonTerm::Decls))
+    Rc::new(Regex::Expr)
   }
   pub fn token(s: &str) -> Rc<Self> {
     Rc::new(Regex::Token(s.to_string()))
@@ -231,6 +218,12 @@ impl Regex {
       r = Self::seq(r2, &r);
     }
     r
+  }
+  pub fn or(r1: &Rc<Regex>, r2: &Rc<Regex>) -> Rc<Self> {
+    Rc::new(Regex::Or(r1.clone(), r2.clone()))
+  }
+  pub fn rep0(r: &Rc<Regex>) -> Rc<Self> {
+    Rc::new(Regex::Rep(r.clone()))
   }
   pub fn rep1(r: &Rc<Regex>) -> Rc<Self> {
     Rc::new(Regex::Seq(r.clone(), Rc::new(Regex::Rep(r.clone()))))
@@ -272,7 +265,7 @@ impl std::fmt::Debug for Regex {
         | Regex::Fail
         | Regex::Eps
         | Regex::Rep(_)
-        | Regex::NonTerm(_) => true,
+        | Regex::Expr => true,
         Regex::Or(r1, _) => **r1 == Regex::Eps,
         _ => false,
       }
@@ -321,7 +314,7 @@ impl std::fmt::Debug for Regex {
           fmt_sub(&r, f)?;
           write!(f, "*")
         }
-        Regex::NonTerm(nt) => write!(f, "{:?}", nt),
+        Regex::Expr => write!(f, "Expr"),
       }
     }
     write!(f, "/")?;
@@ -397,9 +390,9 @@ impl<T> SyntaxTable<T> {
       Regex::Token(ref s) => self.pres.entry(s.to_string()).or_insert(Vec::new()),
       Regex::Seq(first, cont) => match **first {
         Regex::Token(ref s) => self.pres.entry(s.to_string()).or_insert(Vec::new()),
-        Regex::NonTerm(NonTerm::Expr) => match **cont {
+        Regex::Expr => match **cont {
           Regex::Token(ref s) => self.opes.entry(s.to_string()).or_insert(Vec::new()),
-          Regex::NonTerm(NonTerm::Expr) => &mut self.apps,
+          Regex::Expr => &mut self.apps,
           Regex::Seq(ref second, _) => match **second {
             Regex::Token(ref s) => self.opes.entry(s.to_string()).or_insert(Vec::new()),
             _ => panic!(),
@@ -470,7 +463,7 @@ pub mod deriv {
 
   pub enum Query<'a> {
     Token(TokenType, &'a str),
-    NonTerm(NonTerm),
+    Expr,
   }
 
   #[derive(PartialEq, Eq)]
@@ -485,8 +478,8 @@ pub mod deriv {
 
   #[derive(PartialEq, Eq)]
   pub enum QueryResult<'a> {
-    Token(ElemType, &'a str), // TODO: Add module
-    NonTerm,
+    Token(ElemType, &'a str),
+    Expr,
   }
 
   pub fn d<'a>(regex: &Rc<Regex>, q: &Query<'a>) -> Option<(QueryResult<'a>, Rc<Regex>)> {
@@ -532,8 +525,8 @@ pub mod deriv {
         }
         _ => {}
       },
-      Regex::NonTerm(ref n) => match q {
-        Query::NonTerm(qn) if n == qn => return Some((QueryResult::NonTerm, Rc::new(Regex::Eps))),
+      Regex::Expr => match q {
+        Query::Expr => return Some((QueryResult::Expr, Rc::new(Regex::Eps))),
         _ => {}
       },
       Regex::Fail => {}
@@ -586,7 +579,7 @@ pub mod deriv {
       Regex::Seq(left, right) => has_eps(left) && has_eps(right),
       Regex::Or(left, right) => has_eps(left) || has_eps(right),
       Regex::Rep(_) => true,
-      _ => false, // Note: NonTerm::Decls may produce empty, but it doesn't matter here
+      _ => false,
     }
   }
 
@@ -615,48 +608,27 @@ pub mod deriv {
     set
   }
 
-  pub fn next_nonterm(regex: &Regex) -> Option<NonTerm> {
-    type NonTermBits = u8;
-
-    const DEF_BITS: NonTermBits = 0b001;
-    const EXPR_BITS: NonTermBits = 0b010;
-    const DECLS_BITS: NonTermBits = 0b100;
-
-    fn rec(regex: &Regex) -> NonTermBits {
-      match regex {
-        Regex::Eps => 0,
-        Regex::Seq(left, right) => {
-          let ln = rec(left);
-          let rn = if has_eps(left) { rec(right) } else { 0 };
-          ln | rn
-        }
-        Regex::Or(left, right) => {
-          let ln = rec(left);
-          let rn = rec(right);
-          ln | rn
-        }
-        Regex::Rep(r) => rec(r),
-        Regex::NonTerm(NonTerm::Def) => DEF_BITS,
-        Regex::NonTerm(NonTerm::Expr) => EXPR_BITS,
-        Regex::NonTerm(NonTerm::Decls) => DECLS_BITS,
-        _ => 0,
+  pub fn next_expr(regex: &Regex) -> bool {
+    match regex {
+      Regex::Eps => false,
+      Regex::Seq(left, right) => {
+        let ln = next_expr(left);
+        let rn = if has_eps(left) {
+          next_expr(right)
+        } else {
+          false
+        };
+        ln | rn
       }
+      Regex::Or(left, right) => {
+        let ln = next_expr(left);
+        let rn = next_expr(right);
+        ln | rn
+      }
+      Regex::Rep(r) => next_expr(r),
+      Regex::Expr => true,
+      _ => false,
     }
-
-    let bits = rec(regex);
-    if bits == 0 {
-      return None;
-    }
-    if bits == DEF_BITS {
-      return Some(NonTerm::Def);
-    }
-    if bits == EXPR_BITS {
-      return Some(NonTerm::Expr);
-    }
-    if bits == DECLS_BITS {
-      return Some(NonTerm::Decls);
-    }
-    panic!("Not allowed to have multiple non-terminals in a syntax");
   }
 
   pub fn skip_e(regex: &Rc<Regex>, skip: usize) -> Rc<Regex> {
@@ -664,7 +636,7 @@ pub mod deriv {
     for _ in 0..skip {
       match *r {
         Regex::Seq(ref left, ref right) => match **left {
-          Regex::NonTerm(NonTerm::Expr) => {
+          Regex::Expr => {
             r = right.clone();
           }
           _ => panic!(),

@@ -155,7 +155,9 @@ impl Pretty {
     match &e.0 {
       ExprF::Hole => self.s("_"),
       ExprF::Var(i) => self.i(i),
+      ExprF::Mod(m) => self.s("module ").is(m, "."),
       ExprF::Ext(m, i) => self.is(m, ".").s(".").i(i),
+      ExprF::Let(ds, e) => self.s("let").open().ds(ds).close().s("in ").e(e),
       ExprF::Syntax(_, _, se) => {
         self.s("[");
         for e in se.into_iter() {
@@ -167,15 +169,12 @@ impl Pretty {
             SyntaxElem::Rat(s) => self.s(s),
             SyntaxElem::Chr(s) => self.s("'").s(s).s("'"),
             SyntaxElem::Str(s) => self.s("\"").s(s).s("\""),
-            SyntaxElem::Def(def) => self.def(def),
             SyntaxElem::Expr(e) => self.e(e),
-            SyntaxElem::Decls(ds) => self.open().ds(ds).close(),
           };
         }
         self.s(" ]");
         self
       }
-      ExprF::Mod(m) => self.s("module ").is(m, "."),
     }
   }
 }

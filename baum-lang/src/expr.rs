@@ -1,5 +1,5 @@
 use crate::decl::DeclParser;
-use crate::types::mixfix::{deriv, NonTerm, Precedence, Regex};
+use crate::types::mixfix::{deriv, Precedence, Regex};
 use crate::types::parse::*;
 use std::collections::HashSet;
 use std::rc::Rc;
@@ -14,7 +14,7 @@ macro_rules! log {
 enum AdvanceResult {
   Remain(Rc<Regex>),
   Pass(),
-  Await(NonTerm, Rc<Regex>),
+  Await(Rc<Regex>),
 }
 
 #[derive(Debug, Clone)]
@@ -55,7 +55,7 @@ struct SyntaxCont<'a, 'b> {
 #[derive(Debug, Clone)]
 enum ReadStatus<'a, 'b> {
   Pass(&'b Syntax<'a>),
-  Await(NonTerm, Vec<SyntaxCont<'a, 'b>>),
+  Await(Vec<SyntaxCont<'a, 'b>>),
 }
 
 pub struct ExprParser<'a, 'b> {
@@ -117,9 +117,9 @@ impl<'a, 'b> ExprParser<'a, 'b> {
     if deriv::has_eps(&cont) {
       res.push(AdvanceResult::Pass());
     }
-    if let Some(nt) = deriv::next_nonterm(&cont) {
-      let (_, cont) = deriv::d(&cont, &deriv::Query::NonTerm(nt)).unwrap();
-      res.push(AdvanceResult::Await(nt, cont));
+    if deriv::next_expr(&cont) {
+      let (_, cont) = deriv::d(&cont, &deriv::Query::Expr).unwrap();
+      res.push(AdvanceResult::Await(cont));
     }
     Some((e, res))
   }
@@ -130,12 +130,12 @@ impl<'a, 'b> ExprParser<'a, 'b> {
   ) -> Result<(Vec<SyntaxElem<'a>>, ReadStatus<'a, 'b>), ()> {
     let mut ss = ss;
     for (_, r) in &ss {
-      assert!(deriv::next_nonterm(r).is_none());
+      assert!(!deriv::next_expr(r));
     }
     let pos = self.tracker.pos();
     let mut last_tracker_state = None;
     let mut passed_ss: Vec<SyntaxState> = Vec::new();
-    let mut awaiting_ss: Vec<(SyntaxState, NonTerm, Rc<Regex>)> = Vec::new();
+    let mut awaiting_ss: Vec<(SyntaxState, Rc<Regex>)> = Vec::new();
 
     // longest match
     loop {
@@ -167,14 +167,14 @@ impl<'a, 'b> ExprParser<'a, 'b> {
                 }
                 passed_ss.push(ns)
               }
-              AdvanceResult::Await(nt, r) => {
+              AdvanceResult::Await(r) => {
                 if first {
                   first = false;
                   passed_ss.clear();
                   awaiting_ss.clear();
                   last_tracker_state = Some(self.tracker.save_state());
                 }
-                awaiting_ss.push((ns, nt, r))
+                awaiting_ss.push((ns, r))
               }
             }
           }
@@ -222,33 +222,19 @@ impl<'a, 'b> ExprParser<'a, 'b> {
     } else {
       // await
       assert!(passes == 0);
-      let mut fail = false;
-      let nt = awaiting_ss[0].1;
-      for s in &awaiting_ss {
-        if s.1 != nt {
-          fail = true;
-          break;
-        }
-      }
-      if fail {
-        self.add_error(pos, "ambiguous parse (await/await)");
-        return Err(());
-      }
-
       let last_awaits = awaiting_ss.last().unwrap();
       let elems = last_awaits.0.elems.clone();
       let read = last_awaits.0.read;
-      let nt = last_awaits.1;
 
       let awaits = awaiting_ss
         .into_iter()
-        .filter(|(s, _, _)| s.read == read)
-        .map(|(s, _, k)| SyntaxCont {
+        .filter(|(s, _)| s.read == read)
+        .map(|(s, k)| SyntaxCont {
           syntax: s.syntax,
           cont: k,
         })
         .collect();
-      Ok((elems, ReadStatus::Await(nt, awaits)))
+      Ok((elems, ReadStatus::Await(awaits)))
     }
   }
 
@@ -273,7 +259,7 @@ impl<'a, 'b> ExprParser<'a, 'b> {
       elems.extend(es);
       match status {
         ReadStatus::Pass(s) => return Some((s, elems)),
-        ReadStatus::Await(nt, conts) => {
+        ReadStatus::Await(conts) => {
           // Rule: the last non-term can be predicted by the syntax, to use precedence correctly
           let last_count = conts.iter().filter(|sc| deriv::has_eps(&sc.cont)).count();
           if last_count >= 2 {
@@ -292,53 +278,21 @@ impl<'a, 'b> ExprParser<'a, 'b> {
             log!("adding to known ops: {:?}", nexts);
             self.known_ops.extend(nexts);
           }
-          log!("Execute Await: {:?}", nt);
-          let e = if nt == NonTerm::Expr {
-            let p = if is_last {
-              &conts[0].syntax.right
-            } else {
-              &Precedence::Initial
-            };
-            let pos = self.tracker.pos();
-            let e = match self.expr_p(p) {
-              Some(e) => e,
-              None => {
-                self.add_error(pos, "missing expr");
-                Expr(ExprF::Hole, pos)
-              }
-            };
-            SyntaxElem::Expr(Box::new(e))
+          log!("Execute Await");
+          let p = if is_last {
+            &conts[0].syntax.right
           } else {
-            let tracker = std::mem::take(&mut self.tracker);
-            let known_ops = std::mem::take(&mut self.known_ops);
-            let errors = std::mem::take(&mut self.errors);
-            let mut d = DeclParser::new(tracker, self.env.clone(), known_ops, errors);
-            let e = match nt {
-              NonTerm::Def => {
-                let def = match d.def() {
-                  Some(def) => def,
-                  None => {
-                    let (tracker, _, errors) = d.into_inner();
-                    self.tracker = tracker;
-                    self.errors = errors;
-                    return None;
-                  }
-                };
-                SyntaxElem::Def(Box::new(def))
-              }
-              NonTerm::Decls => {
-                let mut empty_env = Env::new();
-                let ds = d.decls(&mut empty_env);
-                log!("Decls: {:?}", ds);
-                SyntaxElem::Decls(ds)
-              }
-              _ => unreachable!(),
-            };
-            let (tracker, _, errors) = d.into_inner();
-            self.tracker = tracker;
-            self.errors = errors;
-            e
+            &Precedence::Initial
           };
+          let pos = self.tracker.pos();
+          let e = match self.expr_p(p) {
+            Some(e) => e,
+            None => {
+              self.add_error(pos, "missing expr");
+              Expr(ExprF::Hole, pos)
+            }
+          };
+          let e = SyntaxElem::Expr(Box::new(e));
           log!("Execute Await: completed ({:?})", e);
           elems.push(e);
           self.known_ops = last_known_ops;
@@ -550,6 +504,47 @@ impl<'a, 'b> ExprParser<'a, 'b> {
   }
 
   fn expr_p(&mut self, base_p: &Precedence) -> Option<Expr<'a>> {
+    match self.tracker.peek() {
+      Some(t) if t.ty == TokenType::Ident && t.str == "let" => {
+        let let_pos = t.pos;
+        self.tracker.next();
+
+        let tracker = std::mem::take(&mut self.tracker);
+        let mut in_ops = HashSet::new();
+        in_ops.insert("in".to_string());
+        let errors = std::mem::take(&mut self.errors);
+        let mut d = DeclParser::new(tracker, self.env.clone(), in_ops, errors);
+
+        let mut empty_env = Env::new();
+        let ds = d.decls(&mut empty_env);
+        log!("Decls: {:?}", ds);
+
+        let (tracker, _, errors) = d.into_inner();
+        self.tracker = tracker;
+        self.errors = errors;
+
+        let in_pos = self.tracker.pos();
+        let e = match self.tracker.peek() {
+          Some(t) if t.ty == TokenType::Ident && t.str == "in" => {
+            self.tracker.next();
+            let e_pos = self.tracker.pos();
+            match self.expr() {
+              Some(e) => e,
+              None => {
+                self.add_error(e_pos, "missing expr");
+                Expr(ExprF::Hole, e_pos)
+              }
+            }
+          }
+          _ => {
+            self.add_error(in_pos, "missing 'in'");
+            Expr(ExprF::Hole, self.tracker.pos())
+          }
+        };
+        return Some(Expr(ExprF::Let(ds, Box::new(e)), let_pos));
+      }
+      _ => {}
+    }
     log!("- EXPR_P: {:?}", base_p);
     let mut e = self.expr_leading(base_p)?;
     loop {
