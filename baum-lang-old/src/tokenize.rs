@@ -1,4 +1,4 @@
-use crate::types::token::{Indent, Token, TokenPos, TokenType};
+use crate::types::token::*;
 use core::iter::Peekable;
 
 #[derive(Debug, Clone, PartialEq, Eq)]

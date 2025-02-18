@@ -1,44 +1,19 @@
+use crate::types::literal::Literal;
+use baum_core::types as core;
 use std::collections::HashMap;
 use std::rc::Rc;
 
-#[derive(Debug, Clone)]
-pub struct Nat(pub u32); // TODO: BigUint
-#[derive(Debug, Clone)]
-pub struct Rat {
-  // TODO: BigRational
-  pub denom: u32,
-  pub base: u8,
-  pub exponent: i32,
-}
-#[derive(Debug, Clone)]
-pub enum Literal {
-  Nat(Nat),
-  Rat(Rat),
-  Chr(char),
-  Str(String),
-}
-
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
-pub struct Id(pub u32);
-
-impl std::fmt::Debug for Id {
-  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    write!(f, "#{}", self.0)
-  }
-}
-
-type I = Id;
-type E = Rc<Expr>;
+pub type Id = core::tree::Id;
 
 #[derive(Debug, Clone)]
-pub enum Expr {
+pub enum ExprF<I, E> {
   Hole,
   Var(I),
-  Ext(Vec<I>, I),
-  Let(Vec<Decl>, E),
-
   Ann(E, E),
   Uni,
+
+  Ext(Vec<I>, I),
+  Let(Vec<Decl>, E),
   Lit(Literal),
 
   PiE(I, E, E),
@@ -56,38 +31,45 @@ pub enum Expr {
   ObjTy(Vec<(I, E)>),
   Obj(Vec<(I, E)>),
   Prop(I, E),
-
-  Mu(I, E, Vec<(I, E)>),
-
-  Nu(I, E, Vec<(I, E)>),
 }
+
+#[derive(Debug, Clone)]
+pub struct Expr(pub ExprF<Id, Rc<Expr>>);
+
+type I = Id;
+type E = Expr;
 
 #[derive(Debug, Clone)]
 pub enum Vis {
   Explicit,
   Implicit,
 }
+
 #[derive(Debug, Clone)]
 pub enum ModRef {
   Import(String),
   App(Vec<I>, Vec<(Vis, E)>),
 }
+
 #[derive(Debug, Clone)]
-pub enum ModDef {
-  Decls(Vec<Decl>),
-  Ref(ModRef),
-}
-#[derive(Debug, Clone)]
-pub struct ModDecl {
+pub struct ModDef {
   pub name: I,
   pub params: Vec<(Vis, I, E)>,
 }
+
+#[derive(Debug, Clone)]
+pub enum ModBody {
+  Decls(Vec<Decl>),
+  Ref(ModRef),
+}
+
 #[derive(Debug, Clone)]
 pub enum Decl {
-  ModDef(ModDecl, ModDef),
+  Mod(ModDef, ModBody),
   Open(ModRef),
   Def(I, E),
 }
+
 #[derive(Debug, Clone)]
 pub struct Program {
   pub decls: Vec<Decl>,

@@ -1,63 +1,61 @@
-use crate::types::token::{Indent, Token, TokenPos, TokenType};
+use crate::types::token::*;
 
-#[derive(Clone)]
-pub struct TrackerState {
+pub struct Tracker<'a> {
+  token_list: Vec<Token<'a>>,
   current_pos: usize,
   indent: Indent,
   last_eol: TokenPos,
 }
 
-pub struct Tracker<'a> {
-  token_list: Vec<Token<'a>>,
-  state: TrackerState,
+impl<'a> Default for Tracker<'a> {
+  fn default() -> Self {
+    Tracker {
+      token_list: Vec::new(),
+      current_pos: 0,
+      indent: Indent::Base,
+      last_eol: TokenPos::EoF,
+    }
+  }
 }
+
+pub type TrackerState = (usize, Indent, TokenPos);
 
 impl<'a> Tracker<'a> {
   pub fn new(tokens: Vec<Token<'a>>) -> Self {
     Tracker {
       token_list: tokens,
-      state: TrackerState {
-        current_pos: 0,
-        indent: Indent::Base,
-        last_eol: TokenPos::EoL(0),
-      },
+      current_pos: 0,
+      indent: Indent::Base,
+      last_eol: TokenPos::EoL(0),
     }
   }
 
   pub fn set_indent(&mut self, indent: Indent) {
-    self.state.indent = match indent {
+    self.indent = match indent {
       Indent::Base => unreachable!(),
       Indent::Head(i) => Indent::Head(i),
       Indent::Cont(i) => Indent::Head(i),
     };
   }
 
-  fn peek_raw(&self) -> Option<&Token<'a>> {
-    self.token_list.get(self.state.current_pos)
+  pub fn peek_raw(&self) -> Option<&Token<'a>> {
+    self.token_list.get(self.current_pos)
   }
 
   pub fn peek(&self) -> Option<&Token<'a>> {
-    let i = self.state.indent;
+    let i = self.indent;
     self.peek_raw().filter(|t| i < t.indent)
   }
 
-  pub fn peek_ty(&self) -> Option<&TokenType> {
-    self.peek().map(|t| &t.ty)
-  }
-
-  pub fn peek_str(&self) -> Option<&'a str> {
-    self.peek().map(|t| t.str)
-  }
-
   pub fn next(&mut self) -> Option<&Token<'a>> {
-    self.state.last_eol = match self.peek_raw() {
+    self.last_eol = match self.peek_raw() {
       Some(t) => match t.pos {
         TokenPos::Pos(l, _) => TokenPos::EoL(l),
         _ => unreachable!(),
       },
       _ => TokenPos::EoF,
     };
-    self.state.current_pos += 1;
+    self.current_pos += 1;
     self.peek_raw()
   }
 
@@ -71,7 +69,7 @@ impl<'a> Tracker<'a> {
   }
 
   pub fn end_of_line(&self) -> TokenPos {
-    self.state.last_eol
+    self.last_eol
   }
 
   pub fn pos(&self) -> TokenPos {
@@ -80,22 +78,20 @@ impl<'a> Tracker<'a> {
   }
 
   pub fn save_indent(&self) -> Indent {
-    self.state.indent
+    self.indent
   }
 
   pub fn restore_indent(&mut self, indent: Indent) {
-    self.state.indent = indent;
+    self.indent = indent;
   }
 
   pub fn save_state(&self) -> TrackerState {
-    self.state.clone()
+    (self.current_pos, self.indent, self.last_eol)
   }
 
   pub fn restore_state(&mut self, state: TrackerState) {
-    self.state = state;
-  }
-
-  pub fn is_done(&self) -> bool {
-    self.peek_raw().is_none()
+    self.current_pos = state.0;
+    self.indent = state.1;
+    self.last_eol = state.2;
   }
 }

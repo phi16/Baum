@@ -1,12 +1,19 @@
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TokenType {
-  Ident,      // a, xs, +, p0', _
+  Ident,      // a, xs, +, p0', if_then_else_
   Natural,    // 0, 0x1F, 0xcc
   Rational,   // 3.14, 1e-2, 0x1.23ap32
   Char,       // 'a', '\n', '\x1F', '\u3082'
   String,     // "Hello, World!", "a\nb"
   Precedence, // 1.-2.3<
   Reserved,   // :, =, [, }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Copy)]
+pub enum Indent {
+  Base,
+  Head(u16),
+  Cont(u16),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -24,13 +31,6 @@ impl TokenPos {
       TokenPos::EoF => "End of file".to_string(),
     }
   }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Copy)]
-pub enum Indent {
-  Base,
-  Head(u16),
-  Cont(u16),
 }
 
 #[derive(Debug, Clone)]
