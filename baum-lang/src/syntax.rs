@@ -198,7 +198,7 @@ pub fn default_syntax_table<'a>() -> SyntaxTable<SyntaxInterpreter<'a>> {
     "",
     regex_elems!["(", vals, ")"],
     Rc::new(|elems, _, _| match elems.as_slice() {
-      [CoreElem::Token("("), CoreElem::Token(")")] => core::Expr::TupelCon(Vec::new()),
+      [CoreElem::Token("("), CoreElem::Token(")")] => core::Expr::TupleCon(Vec::new()),
       [CoreElem::Token("("), CoreElem::Expr(e), CoreElem::Token(")")] => e.clone(),
       _ => panic!(),
     }),
