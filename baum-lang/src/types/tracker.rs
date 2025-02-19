@@ -49,6 +49,10 @@ impl<'a> Tracker<'a> {
     self.peek().map(|t| t.str)
   }
 
+  pub fn peek_ty_str(&self) -> Option<(&TokenType, &'a str)> {
+    self.peek().map(|t| (&t.ty, t.str))
+  }
+
   pub fn next(&mut self) -> Option<&Token<'a>> {
     self.state.last_eol = match self.peek_raw() {
       Some(t) => match t.pos {

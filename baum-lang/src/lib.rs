@@ -1,4 +1,7 @@
-pub mod decl;
+mod decl;
+mod expr;
 pub mod parse;
-pub mod tokenize;
+mod pretty;
+mod syntax;
+mod tokenize;
 pub mod types;

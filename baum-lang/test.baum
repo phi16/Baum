@@ -1,5 +1,5 @@
 module A = {
-  x = 1
+  x: 1 = 1
 }
 u = A.x
 module X (x: 1) (y: 2) = {
@@ -16,7 +16,7 @@ module C (x: A.u) {y: B} = {
     y = 2
   }
   module E = A x y z (a b) {x} {y z} A.p X.q
-  local module D {r: s t} (x: a) = {
+  local module D {q r: s t} (x: a) = {
     local open A
   }
 }
@@ -61,7 +61,7 @@ x = (x) + () + (x,y) + (x,y,z)
 y = {}
 z = x {y}
 z = {y = 2}
-z = x {y = 2} -- hmm...
+z = x {y = 2}
 y = {y = 1} + 2
 y = {y} + 1 -- fail
 u = 1 + 5
@@ -71,6 +71,7 @@ syntax 4> a → b = Π(a) b
 syntax 5> (a: e) → b = Π(a: e) b
 syntax 0> |a| b = λ(a) b
 k = |a| |b| a
+k' = |a |b| b| a
 j: (a: Nat) → b = |a| 0
 module A = {
   syntax 0> & a & = a

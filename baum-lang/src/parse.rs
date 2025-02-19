@@ -1,4 +1,6 @@
 use crate::decl::DeclParser;
+use crate::pretty::pretty;
+use crate::syntax::default_syntax_table;
 use crate::tokenize::tokenize;
 use crate::types::env::Env;
 use crate::types::tracker::Tracker;
@@ -10,24 +12,34 @@ pub fn parse<'a>(code: &'a str) -> Result<(), Vec<String>> {
     Err(e) => return Err(e),
   };
   let tracker = Tracker::new(tokens);
-  let env = Env::new(); // Env::from_syntax(default_syntax_table());
-  let mut parser = DeclParser::new(tracker, env, HashSet::new(), Vec::new());
+  let env = Env::from_syntax(default_syntax_table());
+  let mut parser = DeclParser::new(tracker, env, 0, HashSet::new(), Vec::new());
   let ds = parser.program();
-  let (_, _, errors) = parser.into_inner();
+  let (_, _, _, errors) = parser.into_inner();
   if errors.is_empty() {
+    eprintln!("{:?}", ds);
     // let core = convert(ds.clone());
     // eprintln!("{:?}", core);
     // Ok(ds)
+    Ok(())
   } else {
-    // eprintln!("{}", pretty(&ds));
-    eprintln!("{:?}", errors);
-    // Err(errors)
+    eprintln!("{}", pretty(&ds));
+    for e in &errors {
+      eprintln!("{}", e);
+    }
+    Err(errors)
   }
-  Ok(())
 }
 
 #[cfg(test)]
 #[test]
 fn test() {
   assert!(parse("x = 1").is_ok());
+  assert!(parse("syntax 1< a + b = add a b\nx = 1 + 2 + 3").is_ok());
+  // assert!(parse("syntax 1 a + b = add a b\nx = 1 + 2 + 3").is_err());
+  // assert!(parse(include_str!("../test4.baum")).is_ok());
+  // assert!(parse(include_str!("../test2.baum")).is_ok());
+  // assert!(parse(include_str!("../test3.baum")).is_ok());
+  assert!(parse("x: 1 = 1").is_ok());
+  assert!(false);
 }
