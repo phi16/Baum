@@ -9,6 +9,13 @@ x = (x) + () + (x,y) + (x,y,z)
 
 module A = {
   syntax 0> & a & = a
+  syntax 0> # a @ = a
+  syntax 0> ! a = a
+  syntax 0> a ! = a
   syntax 4 a / b = add a b
 }
+pa = A.! 0
+pa = 0 A.!
 pa = A.& 0 &
+pb = A.# 0 @
+pc = 1 A./ 2

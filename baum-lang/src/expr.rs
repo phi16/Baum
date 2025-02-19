@@ -396,7 +396,9 @@ impl<'a, 'b> ExprParser<'a, 'b> {
           }
         }
       }
-      Some((TokenType::Ident, s)) if !self.env.is_leading_opname(s) => {
+      Some((TokenType::Ident, s))
+        if !self.env.is_leading_opname(s) && !self.known_ops.contains(s) =>
+      {
         // identifier
         let id = Id::new(s);
         self.tracker.next();
@@ -462,7 +464,7 @@ impl<'a, 'b> ExprParser<'a, 'b> {
           Some(opes) => self.filter_p(opes, base_p),
         };
         match self.parse_by_regex(opes, 1) {
-          None => Trailing::Applicand(e),
+          None => Trailing::Done(e), // umm... looks ad-hoc solution
           Some((sid, elems_tail)) => {
             let begin = e.1.begin;
             let mut elems = vec![SyntaxElem::Expr(Box::new(e))];

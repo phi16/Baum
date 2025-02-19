@@ -18,22 +18,22 @@ module P = {
 x = _
 y = _
 p = x P./ y
--- p' = P.Q.u * (x + P.Q.v + P.Q.R.w) + y
+p' = P.Q.u * (x + P.Q.v + P.Q.R.w) + y
 
--- module F = {
---   local {
---     y = 1
---   }
---   syntax f[ x ] = x + y
--- }
--- module G = {
---   local {
---     y = 2
---   }
---   syntax g[ x ] = x + y
--- }
--- 
--- open F
--- open G
--- a = f[ 1 ]
--- b = g[ 1 ]
+module F = {
+  local {
+    y = 1
+  }
+  syntax f[ x ] = x + y
+}
+module G = {
+  local {
+    y = 2
+  }
+  syntax g[ x ] = x + y
+}
+
+open F
+open G
+a = f[ 1 ]
+b = g[ 1 ]
