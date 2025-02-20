@@ -81,30 +81,35 @@ pub fn default_syntax_table<'a>() -> SyntaxTable {
   let def = &Regex::seqs(vec![id, args, may_type, &Regex::token("="), &e]);
   let defs = &Regex::sep0_(def, comma); // comma or...
 
-  let t = SyntaxId::Sys(0);
-
-  syntax.def("", regex_elems![n], t.clone());
-  syntax.def("", regex_elems![r], t.clone());
-  syntax.def("", regex_elems![c], t.clone());
-  syntax.def("", regex_elems![s], t.clone());
+  syntax.def("", regex_elems![n], SyntaxId::Nat);
+  syntax.def("", regex_elems![r], SyntaxId::Rat);
+  syntax.def("", regex_elems![c], SyntaxId::Chr);
+  syntax.def("", regex_elems![s], SyntaxId::Str);
   // Base
-  syntax.def("", regex_elems!["_"], t.clone());
-  // Universe
-  syntax.def("", regex_elems!["U"], t.clone());
+  syntax.def("", regex_elems!["_"], SyntaxId::Hole);
+  syntax.def("", regex_elems!["U"], SyntaxId::Uni);
   // Function
-  syntax.def("0", regex_elems!["λ", "(", fun_args, ")", e], t.clone());
-  syntax.def("0", regex_elems!["λ", "{", fun_args, "}", e], t.clone());
-  syntax.def("0", regex_elems!["Π", "(", types, ")", e], t.clone());
-  syntax.def("0", regex_elems!["Π", "{", types, "}", e], t.clone());
-  syntax.def("4<", regex_elems![e, e], t.clone());
-  syntax.def("4<", regex_elems![e, "{", e, "}"], t.clone());
+  syntax.def(
+    "0",
+    regex_elems!["λ", "(", fun_args, ")", e],
+    SyntaxId::LamE,
+  );
+  syntax.def(
+    "0",
+    regex_elems!["λ", "{", fun_args, "}", e],
+    SyntaxId::LamI,
+  );
+  syntax.def("0", regex_elems!["Π", "(", types, ")", e], SyntaxId::PiE);
+  syntax.def("0", regex_elems!["Π", "{", types, "}", e], SyntaxId::PiI);
+  syntax.def("4<", regex_elems![e, e], SyntaxId::AppE);
+  syntax.def("4<", regex_elems![e, "{", e, "}"], SyntaxId::AppI);
   // Tuple/Object
-  syntax.def("", regex_elems!["(", vals, ")"], t.clone());
-  syntax.def("", regex_elems!["{", defs, "}"], t.clone());
-  syntax.def("", regex_elems!["Σ", "(", types, ")"], t.clone());
-  syntax.def("", regex_elems!["Σ", "{", props, "}"], t.clone());
-  syntax.def("0", regex_elems!["π", "(", n, ")", e], t.clone());
-  syntax.def("0", regex_elems!["π", "{", id, "}", e], t.clone());
+  syntax.def("", regex_elems!["(", vals, ")"], SyntaxId::Tuple);
+  syntax.def("", regex_elems!["{", defs, "}"], SyntaxId::Obj);
+  syntax.def("", regex_elems!["Σ", "(", types, ")"], SyntaxId::TupleTy);
+  syntax.def("", regex_elems!["Σ", "{", props, "}"], SyntaxId::ObjTy);
+  syntax.def("0", regex_elems!["π", "(", n, ")", e], SyntaxId::Proj);
+  syntax.def("0", regex_elems!["π", "{", id, "}", e], SyntaxId::Proj);
 
   syntax
 }

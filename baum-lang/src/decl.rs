@@ -341,18 +341,26 @@ impl<'a> DeclParser<'a> {
           let params = rev_params.into_iter().rev().collect();
           return Ok((name, params));
         }
-        ExprF::Syntax(_, id, args) => {
-          // TODO: use id to check syntax
-          if let [SyntaxElem::Expr(e0), SyntaxElem::Expr(e1)] = args.as_slice() {
+        ExprF::Syntax(_, SyntaxId::AppE, args) => {
+          use SyntaxElemF::*;
+          // e0 e1
+          if let [Expr(e0), Expr(e1)] = args.as_slice() {
             rev_params.push((Vis::Explicit, e1.clone()));
             e = *e0.clone();
             continue;
-          } else if let [SyntaxElem::Expr(e0), SyntaxElem::Token("{"), SyntaxElem::Expr(e1), SyntaxElem::Token("}")] =
-            args.as_slice()
-          {
+          } else {
+            panic!();
+          }
+        }
+        ExprF::Syntax(_, SyntaxId::AppI, args) => {
+          use SyntaxElemF::*;
+          // e0 { e1 }
+          if let [Expr(e0), Token("{"), Expr(e1), Token("}")] = args.as_slice() {
             rev_params.push((Vis::Implicit, e1.clone()));
             e = *e0.clone();
             continue;
+          } else {
+            panic!();
           }
         }
         _ => {}

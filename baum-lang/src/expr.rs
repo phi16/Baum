@@ -155,7 +155,6 @@ impl<'a, 'b> ExprParser<'a, 'b> {
     for (_, r) in &ss {
       assert!(!deriv::next_expr(r));
     }
-    let pos = self.tracker.pos();
     let mut last_tracker_state = None;
     let mut passed_ss: Vec<SyntaxState> = Vec::new();
     let mut awaiting_ss: Vec<(SyntaxState, Rc<Regex>)> = Vec::new();

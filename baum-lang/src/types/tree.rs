@@ -21,8 +21,25 @@ pub struct TokenRange {
 
 #[derive(Debug, Clone)]
 pub enum SyntaxId {
-  Sys(u8),
   User(u16),
+  Nat,
+  Rat,
+  Chr,
+  Str,
+  Hole,
+  Uni,
+  LamE,
+  PiE,
+  AppE,
+  LamI,
+  PiI,
+  AppI,
+  TupleTy,
+  Tuple,
+  Proj,
+  ObjTy,
+  Obj,
+  Prop,
 }
 
 pub type Arg<'a> = ArgF<Id<'a>, Box<Expr<'a>>>;

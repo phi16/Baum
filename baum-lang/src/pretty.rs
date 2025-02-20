@@ -123,7 +123,7 @@ impl Pretty {
       DeclF::Open(mr) => self.s("open ").mr(mr),
       DeclF::Use(mr) => self.s("use ").mr(mr),
       DeclF::Def(def) => self.def(def).ln(),
-      DeclF::Syntax(sid, prec_str, defs, e) => {
+      DeclF::Syntax(_, prec_str, defs, e) => {
         self.s("syntax ");
         if let Some(prec_str) = prec_str {
           self.s(prec_str).s(" ");
