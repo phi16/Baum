@@ -155,12 +155,20 @@ impl Pretty {
       ExprF::Mod(m) => self.s("module ").is(m, "."),
       ExprF::Ext(m, i) => self.is(m, ".").s(".").i(i),
       ExprF::Let(ds, e) => self.s("let").open().ds(ds).close().s("in ").e(e),
-      ExprF::Syntax(_, _, se) => {
+      ExprF::Syntax(mod_name, _, se) => {
+        let mut qualified = !mod_name.is_empty();
         self.s("[");
         for e in se.into_iter() {
           self.s(" ");
           match e {
-            SyntaxElem::Token(s) => self.s(s),
+            SyntaxElem::Token(s) => {
+              if qualified {
+                qualified = false;
+                self.is(mod_name, ".").s(".").s(s)
+              } else {
+                self.s(s)
+              }
+            }
             SyntaxElem::Ident(i) => self.i(i),
             SyntaxElem::Nat(s) => self.s(s),
             SyntaxElem::Rat(s) => self.s(s),

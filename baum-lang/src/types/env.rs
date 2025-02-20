@@ -60,6 +60,9 @@ impl<'a> Env<'a> {
   pub fn is_modname(&self, id: &'a str) -> bool {
     self.modules.contains_key(&Id::new(id))
   }
+  pub fn is_opname(&self, id: &'a str) -> bool {
+    self.is_leading_opname(id) || self.is_trailing_opname(id)
+  }
   pub fn is_leading_opname(&self, id: &'a str) -> bool {
     self.syntax.is_pre_head(id)
   }

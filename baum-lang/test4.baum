@@ -2,20 +2,8 @@ syntax 2.1< a + b = add a b
 syntax 2.2< a * b = mul a b
 x = 1 + 2 * 3
 y = 1 * 2 + 3
-
-k = let x = 1; y = 2 in t
-
-x = (x) + () + (x,y) + (x,y,z)
-
-module A = {
-  syntax 0> & a & = a
-  syntax 0> # a @ = a
-  syntax 0> ! a = a
-  syntax 0> a ! = a
-  syntax 4 a / b = add a b
-}
-pa = A.! 0
-pa = 0 A.!
-pa = A.& 0 &
-pb = A.# 0 @
-pc = 1 A./ 2
+syntax 2.3> + a = a
+y = 1 * 2 + + + 3
+z = {y = z}
+z = x {y = z}
+z = x {y}

@@ -376,7 +376,7 @@ impl<'a, 'b> ExprParser<'a, 'b> {
           }
           ModQualifier::Qualified(mod_name, env) => {
             match self.tracker.peek_ty_str() {
-              Some((TokenType::Ident, s)) if !env.is_leading_opname(s) => {
+              Some((TokenType::Ident, s)) if !env.is_opname(s) => {
                 // module qualified identifier
                 let id = Id::new(s);
                 self.tracker.next();
@@ -396,9 +396,7 @@ impl<'a, 'b> ExprParser<'a, 'b> {
           }
         }
       }
-      Some((TokenType::Ident, s))
-        if !self.env.is_leading_opname(s) && !self.known_ops.contains(s) =>
-      {
+      Some((TokenType::Ident, s)) if !self.env.is_opname(s) => {
         // identifier
         let id = Id::new(s);
         self.tracker.next();
@@ -464,7 +462,7 @@ impl<'a, 'b> ExprParser<'a, 'b> {
           Some(opes) => self.filter_p(opes, base_p),
         };
         match self.parse_by_regex(opes, 1) {
-          None => Trailing::Done(e), // umm... looks ad-hoc solution
+          None => Trailing::Applicand(e),
           Some((sid, elems_tail)) => {
             let begin = e.1.begin;
             let mut elems = vec![SyntaxElem::Expr(Box::new(e))];
@@ -479,6 +477,7 @@ impl<'a, 'b> ExprParser<'a, 'b> {
 
   fn expr_p(&mut self, base_p: &Precedence) -> Option<Expr<'a>> {
     match self.tracker.peek_str() {
+      Some(s) if self.known_ops.contains(s) => return None,
       Some("let") => {
         let let_pos = self.tracker.pos();
         self.tracker.next();
@@ -553,7 +552,6 @@ impl<'a, 'b> ExprParser<'a, 'b> {
 
   pub fn expr(&mut self) -> Option<Expr<'a>> {
     let e = self.expr_p(&Precedence::Initial);
-    eprintln!("expr: {:?}", e);
     e
   }
 }

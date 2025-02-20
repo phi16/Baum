@@ -528,7 +528,6 @@ impl<'a> DeclParser<'a> {
   fn decl(&mut self, cur_mod: &mut Env<'a>) -> Result<Decl<'a>> {
     let begin = self.tracker.pos();
     let res = self.decl_internal(cur_mod)?;
-    eprintln!("decl: {:?}", res);
     let end = self.tracker.pos();
     self.allow_semicolon();
     Ok(Decl(res, TokenRange { begin, end }))
