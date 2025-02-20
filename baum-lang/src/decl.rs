@@ -522,6 +522,7 @@ impl<'a> DeclParser<'a> {
         Ok(d)
       }
       Some(_) => {
+        // definition
         let def_indent = self.tracker.peek().unwrap().indent;
         let outer_indent = self.tracker.save_indent();
         let id = self.expect_id()?;

@@ -1,0 +1,26 @@
+local {
+  n = 1
+  r = 1.23
+  r = 1.2e5
+  c = 'a' 
+  s = "mochi"
+}
+local y = 1
+module A = {
+  syntax 2.2< a * b = mul a b
+  syntax 2.4> ! a = bang a
+}
+module B {X Y: U} (n: X) = {
+}
+module C {N: U} (n: N) = B {N} n
+open C 1
+use A
+syntax 2.1< a + b = add a b
+z = A.! a A.* b
+w = A.p A.q A.r
+syntax 1> |a| b = λ(a) b
+syntax [ a ] = a
+f = |x| x
+z {x: Nat} (y: Nat) z {u v}: Nat = let a = x; b = y in a + b
+syntax [ a | b ] = or a b
+z = [ 1 ] + [ 1 | 2 ]
