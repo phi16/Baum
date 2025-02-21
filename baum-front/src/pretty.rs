@@ -110,7 +110,10 @@ impl<'a> Pretty<'a> {
       ExprF::Uni => self.s("𝒰"),
       ExprF::Ext(m, i) => self.is(m, ".").s(".").i(i),
       ExprF::Let(ds, e) => self.s("let").open().ds(ds).close().s("in ").e(e),
-      ExprF::Lit(l) => self.s(&format!("{:?}", l)),
+      ExprF::Lit(Literal::Nat(Nat(n))) => self.s(&format!("{}", n)),
+      ExprF::Lit(Literal::Rat(r)) => self.s(&format!("{:?}", r)),
+      ExprF::Lit(Literal::Chr(c)) => self.s(&format!("{:?}", c)),
+      ExprF::Lit(Literal::Str(s)) => self.s(&format!("{:?}", s)),
 
       ExprF::PiE(i, t, e) => self.s("Π(").i(i).s(": ").e(t).s(") ").e(e),
       ExprF::LamE(i, t, e) => self.s("λ(").i(i).s(": ").e(t).s(") ").e(e),
@@ -119,6 +122,42 @@ impl<'a> Pretty<'a> {
       ExprF::PiI(i, t, e) => self.s("Π{").i(i).s(": ").e(t).s("} ").e(e),
       ExprF::LamI(i, t, e) => self.s("λ{").i(i).s(": ").e(t).s("} ").e(e),
       ExprF::AppI(e1, e2) => self.e(e1).s(" {").e(e2).s("}"),
+
+      ExprF::TupleTy(ts) => {
+        self.s("Σ(");
+        for (i, t) in ts {
+          match i {
+            Some(i) => self.i(i).s(": "),
+            None => self,
+          };
+          self.e(t).s(", ");
+        }
+        self.s(")")
+      }
+      ExprF::TupleCon(es) => {
+        self.s("(");
+        for e in es {
+          self.e(e).s(", ");
+        }
+        self.s(")")
+      }
+      ExprF::Proj(i, e) => self.s("π(").s(&format!("{}", i)).s(") ").e(e),
+
+      ExprF::ObjTy(es) => {
+        self.s("Σ{");
+        for (i, t) in es {
+          self.i(i).s(": ").e(t).s(", ");
+        }
+        self.s("}")
+      }
+      ExprF::ObjCon(es) => {
+        self.s("{");
+        for (i, e) in es {
+          self.i(i).s(": ").e(e).s(", ");
+        }
+        self.s("}")
+      }
+      ExprF::Prop(i, e) => self.s("π{").i(i).s("} ").e(e),
       _ => self.s("TODO"),
     }
   }

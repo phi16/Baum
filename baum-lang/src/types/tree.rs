@@ -19,7 +19,7 @@ pub struct TokenRange {
   pub end: TokenPos,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum SyntaxId {
   User(u16),
   Nat,
@@ -35,10 +35,10 @@ pub enum SyntaxId {
   PiI,
   AppI,
   TupleTy,
-  Tuple,
+  TupleCon,
   Proj,
   ObjTy,
-  Obj,
+  ObjCon,
   Prop,
 }
 

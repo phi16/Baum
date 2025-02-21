@@ -10,10 +10,10 @@ pub mod types;
 #[cfg(test)]
 #[test]
 fn test() {
-  let code = include_str!("../test6.baum");
+  let code = include_str!("../test7.baum");
   let tree = parse::parse(code).unwrap();
   eprintln!("--------");
-  let core = convert::convert(&tree);
+  let core = convert::convert(&tree, syntax::default_syntax_handlers());
   eprintln!("--------");
   eprintln!("{}", baum_front::pretty::pretty(&core));
   assert!(false);

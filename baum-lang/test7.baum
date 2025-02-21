@@ -1,0 +1,5 @@
+add = _
+u = U
+x = (1, 2, 3)
+syntax 2.1< a + b = add a b
+x = 1 + 2 + 3

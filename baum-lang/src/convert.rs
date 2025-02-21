@@ -1,6 +1,6 @@
+use crate::types::syntax::{FrontElem, SyntaxHandler};
 use crate::types::tree::*;
 use crate::types::tree_base::*;
-use baum_front::types::literal as lit;
 use baum_front::types::tree as front;
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -30,15 +30,17 @@ struct Builder<'a> {
   mod_name: Vec<Id<'a>>,
   envs: Vec<Env<'a>>,
   next_id: u32,
+  syntax: HashMap<SyntaxId, SyntaxHandler<'a>>,
   symbols: HashMap<front::Id, String>,
 }
 
 impl<'a> Builder<'a> {
-  fn new() -> Self {
+  fn new(syntax: HashMap<SyntaxId, SyntaxHandler<'a>>) -> Self {
     Self {
       mod_name: Vec::new(),
       envs: vec![Env::new()],
       next_id: 0,
+      syntax,
       symbols: HashMap::new(),
     }
   }
@@ -85,20 +87,18 @@ impl<'a> Builder<'a> {
     }
   }
 
-  fn sys_syntax(&mut self, sid: &SyntaxId, elems: &Vec<SyntaxElem<'a>>) -> Result<front::Expr> {
-    match sid {
-      SyntaxId::Nat => {
-        if let [SyntaxElem::Nat(s)] = elems.as_slice() {
-          let n = s.parse().unwrap();
-          let nat = lit::Literal::Nat(lit::Nat(n));
-          Ok(front::Expr(front::ExprF::Lit(nat)))
-        } else {
-          unreachable!();
-        }
+  fn syntax_elem(&mut self, se: &SyntaxElem<'a>) -> FrontElem<'a> {
+    match se {
+      SyntaxElem::Token(s) => FrontElem::Token(s),
+      SyntaxElem::Ident(i) => {
+        let i = self.new_id(i);
+        FrontElem::Ident(i)
       }
-      _ => {
-        panic!("{:?}", sid);
-      }
+      SyntaxElem::Nat(s) => FrontElem::Nat(s),
+      SyntaxElem::Rat(s) => FrontElem::Rat(s),
+      SyntaxElem::Chr(s) => FrontElem::Chr(s),
+      SyntaxElem::Str(s) => FrontElem::Str(s),
+      SyntaxElem::Expr(e) => FrontElem::Expr(self.e(e)), // TODO: Fix
     }
   }
 
@@ -131,13 +131,14 @@ impl<'a> Builder<'a> {
         self.envs.pop();
         Ok(front::Expr(front::ExprF::Let(decls, e)))
       }
-      ExprF::Syntax(mod_name, sid, elems) => match sid {
-        SyntaxId::User(_) => {
-          eprintln!("{:?} {:?} {:?}", mod_name, sid, elems);
-          unimplemented!();
-        }
-        _ => self.sys_syntax(sid, elems),
-      },
+      ExprF::Syntax(mod_name, sid, elems) => {
+        let es = elems.iter().map(|e| self.syntax_elem(e)).collect();
+        let handler = self
+          .syntax
+          .get(sid)
+          .ok_or(format!("syntax handler not found: {:?}", sid))?;
+        handler(es)
+      }
     }
   }
 
@@ -293,7 +294,11 @@ impl<'a> Builder<'a> {
       }
       DeclF::Syntax(sid, _, syndefs, e) => {
         eprintln!("{:?} {:?} {:?}", sid, syndefs, e);
-        unimplemented!();
+        let handler = |elems| {
+          eprintln!("{:?}", elems);
+          unimplemented!();
+        };
+        self.syntax.insert(sid.clone(), Box::new(handler));
       }
     }
   }
@@ -305,8 +310,11 @@ impl<'a> Builder<'a> {
   }
 }
 
-pub fn convert(ds: &Vec<Decl>) -> front::Program {
-  let mut b = Builder::new();
+pub fn convert<'a>(
+  ds: &Vec<Decl<'a>>,
+  syntax_handlers: HashMap<SyntaxId, SyntaxHandler<'a>>,
+) -> front::Program {
+  let mut b = Builder::new(syntax_handlers);
   let mut cur_mod = Env::new();
   let mut decls = Vec::new();
   b.ds(ds, &mut cur_mod, &mut decls);

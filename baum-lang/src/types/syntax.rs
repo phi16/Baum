@@ -144,3 +144,18 @@ impl<T> SyntaxTable<T> {
     self.apps.extend(other.apps);
   }
 }
+
+use baum_front::types::tree as front;
+
+#[derive(Debug, Clone)]
+pub enum FrontElem<'a> {
+  Token(&'a str),
+  Ident(front::Id),
+  Nat(&'a str),
+  Rat(&'a str),
+  Chr(&'a str),
+  Str(&'a str),
+  Expr(front::Expr),
+}
+
+pub type SyntaxHandler<'a> = Box<dyn Fn(Vec<FrontElem<'a>>) -> Result<front::Expr, String>>;

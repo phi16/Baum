@@ -31,11 +31,11 @@ pub enum ExprF<I, E> {
   AppI(E, E),
 
   TupleTy(Vec<(Option<I>, E)>),
-  TupelCon(Vec<E>),
+  TupleCon(Vec<E>),
   Proj(u8, E),
 
   ObjTy(Vec<(I, E)>),
-  Obj(Vec<(I, E)>),
+  ObjCon(Vec<(I, E)>),
   Prop(I, E),
 }
 

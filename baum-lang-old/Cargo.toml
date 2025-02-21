@@ -1,8 +1,0 @@
-[package]
-name = "baum-lang"
-version = "0.1.0"
-edition = "2021"
-
-[dependencies]
-baum-front = { path = "../baum-front" }
-baum-core = { path = "../baum-core" }
