@@ -1,12 +1,14 @@
+use crate::convert::convert;
 use crate::decl::DeclParser;
 use crate::pretty::pretty;
 use crate::syntax::default_syntax_table;
 use crate::tokenize::tokenize;
 use crate::types::env::Env;
 use crate::types::tracker::Tracker;
+use crate::types::tree::Decl;
 use std::collections::HashSet;
 
-pub fn parse<'a>(code: &'a str) -> Result<(), Vec<String>> {
+pub fn parse<'a>(code: &'a str) -> Result<Vec<Decl<'a>>, Vec<String>> {
   let tokens = match tokenize(code) {
     Ok(tokens) => tokens,
     Err(e) => return Err(e),
@@ -18,7 +20,7 @@ pub fn parse<'a>(code: &'a str) -> Result<(), Vec<String>> {
   let (_, _, _, errors) = parser.into_inner();
   if errors.is_empty() {
     eprintln!("{}", pretty(&ds));
-    Ok(())
+    Ok(ds)
   } else {
     eprintln!("{}", pretty(&ds));
     for e in &errors {

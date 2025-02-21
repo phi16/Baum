@@ -1,0 +1,20 @@
+x = 0
+y = 1
+module A = {
+  local {
+    z = 2
+  }
+  y = z
+  module B = {
+    z = 1
+  }
+  w = B.z
+  module C f = {
+    g = f
+  }
+  open C 2
+  a = g
+}
+u = A.y
+v = A.B.z
+w (x: a) y = 1

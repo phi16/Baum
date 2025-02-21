@@ -1,0 +1,15 @@
+w = 0
+module A = {
+  x = 1
+  module B u = {
+    y = u
+    module C v = {
+      z = v
+    }
+    module C' = C u
+    syntax f = (w, x, y, C'.z)
+  }
+  module B' = B 2
+}
+a = A.B'.f
+-- a = (w, A.x, A.B'.y, A.B'.C'.z)

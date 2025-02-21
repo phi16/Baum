@@ -434,12 +434,12 @@ impl<'a> DeclParser<'a> {
         let name = self.expect_id()?;
         let mut params: Vec<Arg<'a>> = Vec::new();
         loop {
-          match self.tracker.peek_str() {
-            Some("=") => {
+          match self.tracker.peek_ty_str() {
+            Some((_, "=")) => {
               self.tracker.next();
               break;
             }
-            Some("(") | Some("{") => {
+            Some((_, "(")) | Some((_, "{")) => {
               let vis = if self.tracker.peek().unwrap().str == "(" {
                 Vis::Explicit
               } else {
@@ -447,14 +447,24 @@ impl<'a> DeclParser<'a> {
               };
               self.tracker.next();
               let ids = self.ids();
-              self.expect_str(":")?;
               let match_cl = match vis {
                 Vis::Explicit => ")",
                 Vis::Implicit => "}",
               };
-              let e = self.expr_or_hole(Some(match_cl));
+              let ty = match self.tracker.peek_str() {
+                Some(":") => {
+                  self.tracker.next();
+                  let e = self.expr_or_hole(Some(match_cl));
+                  Some(Box::new(e))
+                }
+                _ => None,
+              };
               self.expect_str(match_cl)?;
-              params.push((vis, ids, Some(Box::new(e))));
+              params.push((vis, ids, ty));
+            }
+            Some((TokenType::Ident, _)) => {
+              // explicit argument with no type: rejected in the later pass.
+              params.push((Vis::Explicit, vec![self.expect_id().unwrap()], None));
             }
             _ => return Err("expected module parameters or body".to_string()),
           }
@@ -498,11 +508,9 @@ impl<'a> DeclParser<'a> {
           None => return Err("module not found".to_string()),
         };
         if is_open {
-          let _ = self.env.merge(e.clone());
+          self.env.merge(e.clone());
         }
-        if cur_mod.merge(e).is_err() {
-          self.add_error(self.tracker.pos(), "module name conflict");
-        }
+        cur_mod.merge(e);
         Ok(if is_open {
           DeclF::Open(mr)
         } else {

@@ -1,0 +1,131 @@
+use crate::types::literal::*;
+use crate::types::tree::*;
+use std::collections::HashMap;
+
+struct Pretty<'a> {
+  symbols: &'a HashMap<Id, String>,
+  indent: u32,
+  str: Vec<String>,
+  line: Vec<String>,
+}
+
+impl<'a> Pretty<'a> {
+  fn new(symbols: &'a HashMap<Id, String>) -> Self {
+    Pretty {
+      symbols,
+      indent: 0,
+      str: Vec::new(),
+      line: Vec::new(),
+    }
+  }
+
+  fn id_to_str(&self, i: &Id) -> String {
+    match self.symbols.get(i) {
+      Some(s) => s.clone(),
+      None => format!("{:?}", i),
+    }
+  }
+
+  fn i(&mut self, i: &Id) -> &mut Self {
+    self.line.push(self.id_to_str(i));
+    self
+  }
+
+  fn is(&mut self, i: &Vec<Id>, sep: &str) -> &mut Self {
+    let mid: Vec<String> = i.iter().map(|i| self.id_to_str(i)).collect();
+    self.line.push(mid.join(sep));
+    self
+  }
+
+  fn s(&mut self, s: &str) -> &mut Self {
+    self.line.push(s.to_string());
+    self
+  }
+
+  fn ln(&mut self) -> &mut Self {
+    let pad = " ".repeat(self.indent as usize);
+    let str = self.line.join("");
+    self.str.push(pad + &str);
+    self.line.clear();
+    self
+  }
+
+  fn open(&mut self) -> &mut Self {
+    self.ln();
+    self.indent += 2;
+    self
+  }
+
+  fn close(&mut self) -> &mut Self {
+    self.indent -= 2;
+    self
+  }
+
+  fn mb(&mut self, m: &ModBody) -> &mut Self {
+    match &m {
+      ModBody::Decls(ds) => self.s("{").open().ds(ds).close().s("}").ln(),
+      ModBody::Import(path) => self.s("import ").s(path).ln(),
+      ModBody::App(mod_name, args) => {
+        self.is(mod_name, ".");
+        for (vis, e) in args {
+          self.s(" ");
+          match vis {
+            Vis::Explicit => self.s("(").e(e).s(")"),
+            Vis::Implicit => self.s("{").e(e).s("}"),
+          };
+        }
+        self.ln()
+      }
+    }
+  }
+
+  fn d(&mut self, d: &Decl) -> &mut Self {
+    match d {
+      Decl::Mod(name, params, body) => {
+        self.s("module ").i(&name);
+        for (vis, id, ty) in params {
+          match vis {
+            Vis::Explicit => self.s(" (").i(id).s(": ").e(ty).s(")"),
+            Vis::Implicit => self.s(" {").i(id).s(": ").e(ty).s("}"),
+          };
+        }
+        self.s(" = ").mb(body)
+      }
+      Decl::Def(i, e) => self.i(i).s(" = ").e(e).ln(),
+    }
+  }
+
+  fn ds(&mut self, ds: &Vec<Decl>) -> &mut Self {
+    for d in ds {
+      self.d(d);
+    }
+    self
+  }
+
+  fn e(&mut self, e: &Expr) -> &mut Self {
+    match &e.0 {
+      ExprF::Hole => self.s("_"),
+      ExprF::Var(i) => self.i(i),
+      ExprF::Ann(v, t) => self.e(v).s(" of ").e(t),
+      ExprF::Uni => self.s("𝒰"),
+      ExprF::Ext(m, i) => self.is(m, ".").s(".").i(i),
+      ExprF::Let(ds, e) => self.s("let").open().ds(ds).close().s("in ").e(e),
+      ExprF::Lit(l) => self.s(&format!("{:?}", l)),
+
+      ExprF::PiE(i, t, e) => self.s("Π(").i(i).s(": ").e(t).s(") ").e(e),
+      ExprF::LamE(i, t, e) => self.s("λ(").i(i).s(": ").e(t).s(") ").e(e),
+      ExprF::AppE(e1, e2) => self.e(e1).s(" ").e(e2),
+
+      ExprF::PiI(i, t, e) => self.s("Π{").i(i).s(": ").e(t).s("} ").e(e),
+      ExprF::LamI(i, t, e) => self.s("λ{").i(i).s(": ").e(t).s("} ").e(e),
+      ExprF::AppI(e1, e2) => self.e(e1).s(" {").e(e2).s("}"),
+      _ => self.s("TODO"),
+    }
+  }
+}
+
+pub fn pretty(program: &Program) -> String {
+  let mut p = Pretty::new(&program.symbols);
+  p.ds(&program.decls);
+  p.str.join("\n")
+}

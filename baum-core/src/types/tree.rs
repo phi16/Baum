@@ -10,17 +10,8 @@ impl std::fmt::Debug for Id {
   }
 }
 
-type I = Id;
-type E = Rc<Expr>;
-
 #[derive(Debug, Clone)]
-pub enum Vis {
-  Implicit,
-  Explicit,
-}
-
-#[derive(Debug, Clone)]
-pub enum Expr {
+pub enum ExprF<I, E> {
   Hole,
   Var(I),
   Ann(E, E),
@@ -36,7 +27,10 @@ pub enum Expr {
 }
 
 #[derive(Debug, Clone)]
+pub struct Expr(pub ExprF<Id, Rc<Expr>>);
+
+#[derive(Debug, Clone)]
 pub struct Program {
-  pub decls: Vec<(I, E)>,
-  pub symbols: HashMap<I, String>,
+  pub decls: Vec<(Id, Expr)>,
+  pub symbols: HashMap<Id, String>,
 }

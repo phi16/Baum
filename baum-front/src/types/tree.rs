@@ -1,9 +1,15 @@
 use crate::types::literal::Literal;
-use baum_core::types as core;
 use std::collections::HashMap;
 use std::rc::Rc;
 
-pub type Id = core::tree::Id;
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+pub struct Id(pub u32);
+
+impl std::fmt::Debug for Id {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    write!(f, "#{}", self.0)
+  }
+}
 
 #[derive(Debug, Clone)]
 pub enum ExprF<I, E> {
@@ -46,27 +52,15 @@ pub enum Vis {
 }
 
 #[derive(Debug, Clone)]
-pub enum ModRef {
+pub enum ModBody {
+  Decls(Vec<Decl>),
   Import(String),
   App(Vec<I>, Vec<(Vis, E)>),
 }
 
 #[derive(Debug, Clone)]
-pub struct ModDef {
-  pub name: I,
-  pub params: Vec<(Vis, I, E)>,
-}
-
-#[derive(Debug, Clone)]
-pub enum ModBody {
-  Decls(Vec<Decl>),
-  Ref(ModRef),
-}
-
-#[derive(Debug, Clone)]
 pub enum Decl {
-  Mod(ModDef, ModBody),
-  Open(ModRef),
+  Mod(I, Vec<(Vis, I, Rc<E>)>, ModBody),
   Def(I, E),
 }
 

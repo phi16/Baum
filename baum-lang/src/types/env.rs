@@ -42,19 +42,9 @@ impl<'a> Env<'a> {
     }
     Some(env)
   }
-  pub fn merge(&mut self, other: Rc<Env<'a>>) -> Result<(), Vec<Id<'a>>> {
-    let mut conflicts = Vec::new();
-    self.modules.keys().for_each(|id| {
-      if other.modules.contains_key(id) {
-        conflicts.push(id.clone());
-      }
-    });
-    if !conflicts.is_empty() {
-      return Err(conflicts);
-    }
+  pub fn merge(&mut self, other: Rc<Env<'a>>) {
     self.modules.extend(other.modules.clone());
     self.syntax.merge(other.syntax.clone());
-    Ok(())
   }
 
   pub fn is_modname(&self, id: &'a str) -> bool {
