@@ -90,7 +90,6 @@ impl<T> SyntaxTable<T> {
       },
       _ => &mut self.lits,
     };
-    eprintln!("Adding {:?} to {:?}", syn, v);
     v.push(syn);
   }
 
@@ -172,5 +171,125 @@ pub enum LookupId {
 #[derive(Debug, Clone)]
 pub struct SyntaxExpr(pub front::ExprF<LookupId, Rc<SyntaxExpr>>);
 
+fn dependency_from(e: &SyntaxExpr) -> HashMap<ElemId, Vec<ElemId>> {
+  fn add(id: &LookupId, env: &mut Vec<ElemId>) {
+    if let LookupId::InSyntax(eid) = id {
+      env.push(eid.clone());
+    }
+  }
+
+  fn rec(e: &SyntaxExpr, env: &Vec<ElemId>, map: &mut HashMap<ElemId, Vec<ElemId>>) {
+    use front::ExprF::*;
+    match &e.0 {
+      Hole => {}
+      Var(LookupId::General(_)) => {}
+      Var(LookupId::InSyntax(eid)) => {
+        map.insert(eid.clone(), env.clone());
+      }
+      Ann(e1, e2) => {
+        rec(&e1, env, map);
+        rec(&e2, env, map);
+      }
+      Uni => {}
+
+      Ext(_, _) => {}
+      Let(_, _) => {}
+      Lit(_) => {}
+
+      PiE(i, e1, e2) => {
+        let mut env = env.clone();
+        rec(&e1, &env, map);
+        add(i, &mut env);
+        rec(&e2, &env, map);
+      }
+      LamE(i, e1, e2) => {
+        let mut env = env.clone();
+        rec(&e1, &env, map);
+        add(i, &mut env);
+        rec(&e2, &env, map);
+      }
+      AppE(e1, e2) => {
+        rec(&e1, env, map);
+        rec(&e2, env, map);
+      }
+
+      PiI(i, e1, e2) => {
+        let mut env = env.clone();
+        rec(&e1, &env, map);
+        add(i, &mut env);
+        rec(&e2, &env, map);
+      }
+      LamI(i, e1, e2) => {
+        let mut env = env.clone();
+        rec(&e1, &env, map);
+        add(i, &mut env);
+        rec(&e2, &env, map);
+      }
+      AppI(e1, e2) => {
+        rec(&e1, env, map);
+        rec(&e2, env, map);
+      }
+
+      TupleTy(tys) => {
+        let mut env = env.clone();
+        for (i, e) in tys {
+          rec(&e, &env, map);
+          if let Some(i) = i {
+            add(i, &mut env);
+          }
+        }
+      }
+      TupleCon(es) => {
+        for e in es {
+          rec(&e, env, map);
+        }
+      }
+      Proj(_, e) => {
+        rec(&e, env, map);
+      }
+
+      ObjTy(es) => {
+        let mut env = env.clone();
+        for (i, e) in es {
+          rec(&e, &env, map);
+          add(i, &mut env);
+        }
+      }
+      ObjCon(es) => {
+        let mut env = env.clone();
+        for (i, e) in es {
+          rec(&e, &env, map);
+          add(i, &mut env); // ?
+        }
+      }
+      Prop(_, e) => {
+        rec(&e, env, map);
+      }
+    }
+  }
+  let env = Vec::new();
+  let mut map = HashMap::new();
+  rec(e, &env, &mut map);
+  map
+}
+
+#[derive(Debug, Clone)]
+pub struct SyntaxInterpret {
+  tokens: Vec<ElemToken>,
+  e: SyntaxExpr,
+  deps: HashMap<ElemId, Vec<ElemId>>,
+}
+
+impl SyntaxInterpret {
+  pub fn new(tokens: Vec<ElemToken>, e: SyntaxExpr) -> Self {
+    let deps = dependency_from(&e);
+    SyntaxInterpret { tokens, e, deps }
+  }
+
+  pub fn into_inner(self) -> (Vec<ElemToken>, SyntaxExpr, HashMap<ElemId, Vec<ElemId>>) {
+    (self.tokens, self.e, self.deps)
+  }
+}
+
 pub type SyntaxHandler<'a> =
-  Rc<dyn for<'b> Fn(&'b Vec<SyntaxElem<'a>>) -> Result<(Vec<ElemToken>, SyntaxExpr), String>>;
+  Rc<dyn for<'b> Fn(&'b Vec<SyntaxElem<'a>>) -> Result<SyntaxInterpret, String>>;

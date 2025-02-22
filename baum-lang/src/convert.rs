@@ -1,4 +1,6 @@
-use crate::types::syntax::{ElemId, ElemToken, LookupId, SyntaxExpr, SyntaxHandler};
+use crate::types::syntax::{
+  ElemId, ElemToken, LookupId, SyntaxExpr, SyntaxHandler, SyntaxInterpret,
+};
 use crate::types::tree::*;
 use crate::types::tree_base::*;
 use baum_front::types::tree as front;
@@ -122,58 +124,46 @@ impl<'a> Builder<'a> {
           .get(sid)
           .ok_or(format!("syntax handler not found: {:?}", sid))?
           .clone();
-        let (tokens, e) = handler(elems)?;
-
-        // dependency analysis
-        // TODO!
+        let (tokens, e, deps) = handler(elems)?.into_inner();
 
         let mut i_map = HashMap::new();
-        let mut e_map = HashMap::new();
-        let mut dependency = Vec::new();
-        for (elem, t) in elems.iter().zip(tokens.into_iter()) {
-          match t {
-            ElemToken::Ident(eid) => match elem {
-              SyntaxElem::Ident(i) => {
-                let id = self.new_id(i);
-                i_map.insert(eid, id);
-                dependency.push((i.clone(), id));
-              }
-              _ => unimplemented!(),
-            },
-            ElemToken::Expr(eid) => match elem {
-              SyntaxElem::Expr(e) => {
-                self.envs.push(Env::new());
-                // add dependencies
-                // TODO: minimize
-                for (i, id) in &dependency {
-                  self.here().insert(i.clone(), Entity::Def(id.clone()));
-                }
-                let e = self.e(e);
-                self.envs.pop();
-                e_map.insert(eid, e);
-              }
-              _ => return Err("expected expression".to_string()),
-            },
+        for (elem, t) in elems.iter().zip(tokens.iter()) {
+          match (elem, t) {
+            (SyntaxElem::Ident(i), ElemToken::Ident(eid)) => {
+              let id = self.new_id(i);
+              i_map.insert(eid.clone(), (i.clone(), id));
+            }
             _ => {}
           }
         }
-        eprintln!();
-        eprintln!("elems = {:?}", elems);
-        eprintln!("dependency = {:?}", dependency);
-        eprintln!("e_map = {:?}", e_map);
-        eprintln!("i_map = {:?}", i_map);
-        eprintln!("e = {:?}", e);
-        eprintln!();
 
-        struct E {
-          i_map: HashMap<ElemId, front::Id>,
+        let mut e_map = HashMap::new();
+        for (elem, t) in elems.iter().zip(tokens.into_iter()) {
+          match (elem, t) {
+            (SyntaxElem::Expr(e), ElemToken::Expr(eid)) => {
+              self.envs.push(Env::new());
+              // add dependencies
+              for i_eid in deps.get(&eid).unwrap() {
+                let (i, id) = i_map.get(i_eid).unwrap();
+                self.here().insert(i.clone(), Entity::Def(id.clone()));
+              }
+              let e = self.e(e);
+              self.envs.pop();
+              e_map.insert(eid, e);
+            }
+            _ => {}
+          }
+        }
+
+        struct E<'a> {
+          i_map: HashMap<ElemId, (Id<'a>, front::Id)>,
           e_map: HashMap<ElemId, front::Expr>,
         }
         let env = E { i_map, e_map };
 
         fn replace_id(id: &LookupId, env: &E) -> front::Id {
           match id {
-            LookupId::InSyntax(i) => *env.i_map.get(i).unwrap(),
+            LookupId::InSyntax(i) => env.i_map.get(i).unwrap().1,
             LookupId::General(i) => *i,
           }
         }
@@ -244,7 +234,6 @@ impl<'a> Builder<'a> {
           })
         }
         let e = replace(&e, &env);
-        eprintln!("REPLACED => e = {:?}", e);
         Ok(e)
       }
     }
@@ -544,7 +533,8 @@ impl<'a> Builder<'a> {
         let e = replace(&e, &env);
         self.symbols = env.symbols;
 
-        let handler: SyntaxHandler<'a> = Rc::new(move |_| Ok((tokens.clone(), e.clone())));
+        let interpret = SyntaxInterpret::new(tokens, e);
+        let handler: SyntaxHandler<'a> = Rc::new(move |_| Ok(interpret.clone()));
         self.syntax.insert(sid.clone(), handler);
       }
     }

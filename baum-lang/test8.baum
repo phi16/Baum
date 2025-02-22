@@ -7,7 +7,15 @@ g = |x: x| x
 syntax b ←| a = λ(a) b
 k = (x, x) ←| x
 
-h1 = Σ(A: A)
+h1 = Σ(A: A)        -- invalid
 h2 = Σ(A: U, a: A)
 h3 = Σ(b: A, A: U)  -- invalid
 h4 = Σ(A: A, a: A)  -- invalid
+
+syntax P[ a, b, c, d ] = λ(a) (b, λ(c) d)
+z = let
+    a = 1
+    b = 2
+    c = 3
+    d = 4
+  in P[ a, (a,b,c,d), c, (a,b,c,d) ]

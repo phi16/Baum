@@ -1,4 +1,4 @@
-use crate::types::env::SyntaxTable;
+use crate::types::env::{Syntax, SyntaxTable};
 use crate::types::regex::{Regex, Terminal};
 use crate::types::tree::SyntaxId;
 use std::collections::HashMap;
@@ -115,7 +115,9 @@ pub fn default_syntax_table<'a>() -> SyntaxTable {
   syntax
 }
 
-use crate::types::syntax::{ElemId, ElemToken, LookupId, SyntaxExpr, SyntaxHandler};
+use crate::types::syntax::{
+  ElemId, ElemToken, LookupId, SyntaxExpr, SyntaxHandler, SyntaxInterpret,
+};
 use crate::types::tree::SyntaxElem;
 use baum_front::types::literal as lit;
 use baum_front::types::tree as front;
@@ -243,7 +245,7 @@ pub fn default_syntax_handlers<'a>() -> HashMap<SyntaxId, SyntaxHandler<'a>> {
       let mut p = MiniParser::new(elems);
       let e = f(&mut p)?;
       let tokens = p.done().unwrap();
-      Ok((tokens, e))
+      Ok(SyntaxInterpret::new(tokens, e))
     })
   }
 
