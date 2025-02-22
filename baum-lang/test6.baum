@@ -11,10 +11,12 @@ module A = {
   w = B.z
   module C f = {
     g = f
+    syntax h = f
   }
   open C 2
   a = g
+  b = h
 }
 u = A.y
 v = A.B.z
-w (x: a) y = 1
+w (x: U) y = 1

@@ -1,9 +1,12 @@
+add = _
+mul = _
+z = _
 syntax 2.1< a + b = add a b
 syntax 2.2< a * b = mul a b
 x = 1 + 2 * 3
 y = 1 * 2 + 3
 syntax 2.3> + a = a
 y = 1 * 2 + + + 3
-z = {y = z}
+z = {y = z y}
 z = x {y = z}
 z = x {y}

@@ -31,3 +31,9 @@ syntax dup4 a b x = λ(a) (λ(b) x, x)
 y = let a = 1; b = 2 in dup2 a b (a, b)
 z = let a = 1; b = 2 in dup3 a b (a, b)
 w = let a = 1; b = 2 in dup4 a b (a, b)
+
+syntax 4.1< e.i = π(i) e
+z = (1, 2).0.1
+
+syntax 4.1< e.i = π{i} e
+z = {a = 1, b = 2}.po.pi

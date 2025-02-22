@@ -201,11 +201,12 @@ impl<'a> DeclParser<'a> {
   }
 
   fn expr(&mut self, in_syntax: bool) -> Result<Expr<'a>> {
+    let pos = self.tracker.pos();
+
     let mut tracker = Tracker::new(Vec::new());
     std::mem::swap(&mut self.tracker, &mut tracker);
     let known_ops = std::mem::take(&mut self.known_ops);
     let errors = std::mem::take(&mut self.errors);
-    let pos = self.tracker.pos();
 
     let mut e = ExprParser::new(
       tracker,

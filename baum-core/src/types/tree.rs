@@ -31,6 +31,6 @@ pub struct Expr(pub ExprF<Id, Rc<Expr>>);
 
 #[derive(Debug, Clone)]
 pub struct Program {
-  pub decls: Vec<(Id, Expr)>,
+  pub decls: Vec<(Id, Rc<Expr>)>,
   pub symbols: HashMap<Id, String>,
 }

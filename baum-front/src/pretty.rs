@@ -127,7 +127,9 @@ impl<'a> Pretty<'a> {
         | ExprF::Ext(_, _)
         | ExprF::Lit(_)
         | ExprF::TupleTy(_)
-        | ExprF::ObjTy(_) => self.e(e1).s(" ").e(e2),
+        | ExprF::TupleCon(_)
+        | ExprF::ObjTy(_)
+        | ExprF::ObjCon(_) => self.e(e1).s(" ").e(e2),
         _ => self.e(e1).s(" (").e(e2).s(")"),
       },
 
