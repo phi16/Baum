@@ -1,4 +1,4 @@
-use crate::types::syntax::{FrontElem, SyntaxHandler};
+use crate::types::syntax::{ElemId, ElemToken, LookupId, SyntaxExpr, SyntaxHandler};
 use crate::types::tree::*;
 use crate::types::tree_base::*;
 use baum_front::types::tree as front;
@@ -87,21 +87,6 @@ impl<'a> Builder<'a> {
     }
   }
 
-  fn syntax_elem(&mut self, se: &SyntaxElem<'a>) -> FrontElem<'a> {
-    match se {
-      SyntaxElem::Token(s) => FrontElem::Token(s),
-      SyntaxElem::Ident(i) => {
-        let i = self.new_id(i);
-        FrontElem::Ident(i)
-      }
-      SyntaxElem::Nat(s) => FrontElem::Nat(s),
-      SyntaxElem::Rat(s) => FrontElem::Rat(s),
-      SyntaxElem::Chr(s) => FrontElem::Chr(s),
-      SyntaxElem::Str(s) => FrontElem::Str(s),
-      SyntaxElem::Expr(e) => FrontElem::Expr(self.e(e)), // TODO: Fix
-    }
-  }
-
   fn e_internal(&mut self, e: &Expr<'a>) -> Result<front::Expr> {
     match &e.0 {
       ExprF::Hole => Ok(front::Expr(front::ExprF::Hole)),
@@ -132,12 +117,135 @@ impl<'a> Builder<'a> {
         Ok(front::Expr(front::ExprF::Let(decls, e)))
       }
       ExprF::Syntax(mod_name, sid, elems) => {
-        let es = elems.iter().map(|e| self.syntax_elem(e)).collect();
         let handler = self
           .syntax
           .get(sid)
-          .ok_or(format!("syntax handler not found: {:?}", sid))?;
-        handler(es)
+          .ok_or(format!("syntax handler not found: {:?}", sid))?
+          .clone();
+        let (tokens, e) = handler(elems)?;
+
+        // dependency analysis
+        // TODO!
+
+        let mut i_map = HashMap::new();
+        let mut e_map = HashMap::new();
+        let mut dependency = Vec::new();
+        for (elem, t) in elems.iter().zip(tokens.into_iter()) {
+          match t {
+            ElemToken::Ident(eid) => match elem {
+              SyntaxElem::Ident(i) => {
+                let id = self.new_id(i);
+                i_map.insert(eid, id);
+                dependency.push((i.clone(), id));
+              }
+              _ => unimplemented!(),
+            },
+            ElemToken::Expr(eid) => match elem {
+              SyntaxElem::Expr(e) => {
+                self.envs.push(Env::new());
+                // add dependencies
+                // TODO: minimize
+                for (i, id) in &dependency {
+                  self.here().insert(i.clone(), Entity::Def(id.clone()));
+                }
+                let e = self.e(e);
+                self.envs.pop();
+                e_map.insert(eid, e);
+              }
+              _ => return Err("expected expression".to_string()),
+            },
+            _ => {}
+          }
+        }
+        eprintln!();
+        eprintln!("elems = {:?}", elems);
+        eprintln!("dependency = {:?}", dependency);
+        eprintln!("e_map = {:?}", e_map);
+        eprintln!("i_map = {:?}", i_map);
+        eprintln!("e = {:?}", e);
+        eprintln!();
+
+        struct E {
+          i_map: HashMap<ElemId, front::Id>,
+          e_map: HashMap<ElemId, front::Expr>,
+        }
+        let env = E { i_map, e_map };
+
+        fn replace_id(id: &LookupId, env: &E) -> front::Id {
+          match id {
+            LookupId::InSyntax(i) => *env.i_map.get(i).unwrap(),
+            LookupId::General(i) => *i,
+          }
+        }
+
+        fn replace(e: &SyntaxExpr, env: &E) -> front::Expr {
+          use front::ExprF::*;
+          front::Expr(match &e.0 {
+            Hole => Hole,
+            Var(LookupId::General(i)) => Var(*i),
+            Var(LookupId::InSyntax(i)) => env.e_map.get(i).unwrap().0.clone(), // expr
+            Ann(e1, e2) => Ann(Rc::new(replace(&e1, env)), Rc::new(replace(&e2, env))),
+            Uni => Uni,
+            Ext(mod_name, i) => Ext(
+              mod_name.into_iter().map(|i| replace_id(i, env)).collect(),
+              replace_id(i, env),
+            ),
+            Let(_, _) => unreachable!(),
+            Lit(lit) => Lit(lit.clone()),
+
+            PiE(i, e1, e2) => PiE(
+              replace_id(i, env),
+              Rc::new(replace(&e1, env)),
+              Rc::new(replace(&e2, env)),
+            ),
+            LamE(i, e1, e2) => LamE(
+              replace_id(i, env),
+              Rc::new(replace(&e1, env)),
+              Rc::new(replace(&e2, env)),
+            ),
+            AppE(e1, e2) => AppE(Rc::new(replace(&e1, env)), Rc::new(replace(&e2, env))),
+            PiI(i, e1, e2) => PiI(
+              replace_id(i, env),
+              Rc::new(replace(&e1, env)),
+              Rc::new(replace(&e2, env)),
+            ),
+            LamI(i, e1, e2) => LamI(
+              replace_id(i, env),
+              Rc::new(replace(&e1, env)),
+              Rc::new(replace(&e2, env)),
+            ),
+            AppI(e1, e2) => AppI(Rc::new(replace(&e1, env)), Rc::new(replace(&e2, env))),
+
+            TupleTy(tys) => TupleTy(
+              tys
+                .into_iter()
+                .map(|(i, e)| {
+                  (
+                    i.clone().map(|i| replace_id(&i, env)),
+                    Rc::new(replace(&e, env)),
+                  )
+                })
+                .collect(),
+            ),
+            TupleCon(es) => TupleCon(es.into_iter().map(|e| Rc::new(replace(&e, env))).collect()),
+            Proj(i, e) => Proj(*i, Rc::new(replace(&e, env))),
+
+            ObjTy(es) => ObjTy(
+              es.into_iter()
+                .map(|(i, e)| (replace_id(i, env), Rc::new(replace(&e, env))))
+                .collect(),
+            ),
+            ObjCon(es) => ObjCon(
+              es.into_iter()
+                .map(|(i, e)| (replace_id(i, env), Rc::new(replace(&e, env))))
+                .collect(),
+            ),
+            Prop(i, e) => Prop(replace_id(i, env), Rc::new(replace(&e, env))),
+          })
+        }
+        let e = replace(&e, &env);
+        eprintln!("REPLACED => e = {:?}", e);
+        Ok(e)
       }
     }
   }
@@ -293,12 +401,151 @@ impl<'a> Builder<'a> {
         cur_mod.lookup.insert(def.name.clone(), Entity::Def(i));
       }
       DeclF::Syntax(sid, _, syndefs, e) => {
-        eprintln!("{:?} {:?} {:?}", sid, syndefs, e);
-        let handler = |elems| {
-          eprintln!("{:?}", elems);
-          unimplemented!();
+        let mut next_elem_id = 0;
+        let mut i_env = HashMap::new();
+        let mut tokens = Vec::new();
+        for s in syndefs {
+          match s {
+            SynDef::Token(_) => tokens.push(ElemToken::Token),
+            SynDef::Ident(i) => {
+              let eid = ElemId(next_elem_id);
+              next_elem_id += 1;
+              tokens.push(ElemToken::Ident(eid));
+              i_env.insert(i.clone(), eid.clone());
+            }
+            SynDef::Expr(_) => {
+              let eid = ElemId(next_elem_id);
+              next_elem_id += 1;
+              tokens.push(ElemToken::Expr(eid));
+            }
+          }
+        }
+        self.envs.push(Env::new());
+        let mut exprs = HashMap::new();
+        for (s, t) in syndefs.iter().zip(tokens.iter()) {
+          match s {
+            SynDef::Token(_) => {}
+            SynDef::Ident(_) => {}
+            SynDef::Expr(i) => {
+              let id = self.new_id(i);
+              self.here().insert(i.clone(), Entity::Def(id));
+              let eid = match t {
+                ElemToken::Expr(eid) => eid.clone(),
+                _ => panic!(),
+              };
+              exprs.insert(id, eid);
+            }
+          }
+        }
+        let id_since = self.next_id;
+        let e = match self.e_internal(e) {
+          Ok(e) => e,
+          Err(msg) => {
+            eprintln!("syntax definition failed: {:?}", msg);
+            return;
+          }
         };
-        self.syntax.insert(sid.clone(), Box::new(handler));
+        self.envs.pop().unwrap();
+
+        struct E<'a> {
+          id_since: u32,
+          symbols: HashMap<front::Id, String>,
+          i_env: HashMap<Id<'a>, ElemId>,
+          exprs: HashMap<front::Id, ElemId>,
+        };
+        let symbols = std::mem::take(&mut self.symbols);
+        let env = E {
+          id_since,
+          symbols,
+          i_env,
+          exprs,
+        };
+
+        fn replace_id(id: &front::Id, env: &E) -> LookupId {
+          fn replace_id_internal(id: &front::Id, env: &E) -> Option<ElemId> {
+            if id.0 < env.id_since {
+              return None;
+            }
+            let name = env.symbols.get(id).unwrap();
+            let eid = env.i_env.get(&Id::new(name))?;
+            Some(eid.clone())
+          }
+          match replace_id_internal(id, env) {
+            Some(eid) => LookupId::InSyntax(eid),
+            None => LookupId::General(id.clone()),
+          }
+        }
+
+        fn replace(e: &front::Expr, env: &E) -> SyntaxExpr {
+          use front::ExprF::*;
+          SyntaxExpr(match &e.0 {
+            Hole => Hole,
+            Var(i) => match env.exprs.get(i) {
+              Some(eid) => Var(LookupId::InSyntax(*eid)),
+              None => Var(LookupId::General(*i)),
+            },
+            Ann(e1, e2) => Ann(Rc::new(replace(&e1, env)), Rc::new(replace(&e2, env))),
+            Uni => Uni,
+
+            Ext(mod_name, i) => Ext(
+              mod_name.iter().map(|i| LookupId::General(*i)).collect(),
+              LookupId::General(*i),
+            ),
+            Let(_, _) => unreachable!(),
+            Lit(lit) => Lit(lit.clone()),
+
+            PiE(i, e1, e2) => PiE(
+              replace_id(i, env),
+              Rc::new(replace(&e1, env)),
+              Rc::new(replace(&e2, env)),
+            ),
+            LamE(i, e1, e2) => LamE(
+              replace_id(i, env),
+              Rc::new(replace(&e1, env)),
+              Rc::new(replace(&e2, env)),
+            ),
+            AppE(e1, e2) => AppE(Rc::new(replace(&e1, env)), Rc::new(replace(&e2, env))),
+
+            PiI(i, e1, e2) => PiI(
+              replace_id(i, env),
+              Rc::new(replace(&e1, env)),
+              Rc::new(replace(&e2, env)),
+            ),
+            LamI(i, e1, e2) => LamI(
+              replace_id(i, env),
+              Rc::new(replace(&e1, env)),
+              Rc::new(replace(&e2, env)),
+            ),
+            AppI(e1, e2) => AppI(Rc::new(replace(&e1, env)), Rc::new(replace(&e2, env))),
+
+            TupleTy(tys) => TupleTy(
+              tys
+                .into_iter()
+                .map(|(i, e)| (i.map(|i| replace_id(&i, env)), Rc::new(replace(&e, env))))
+                .collect(),
+            ),
+            TupleCon(es) => TupleCon(es.into_iter().map(|e| Rc::new(replace(&e, env))).collect()),
+            Proj(i, e) => Proj(*i, Rc::new(replace(&e, env))),
+
+            ObjTy(es) => ObjTy(
+              es.into_iter()
+                .map(|(i, e)| (replace_id(i, env), Rc::new(replace(&e, env))))
+                .collect(),
+            ),
+            ObjCon(es) => ObjCon(
+              es.into_iter()
+                .map(|(i, e)| (replace_id(i, env), Rc::new(replace(&e, env))))
+                .collect(),
+            ),
+            Prop(i, e) => Prop(replace_id(i, env), Rc::new(replace(&e, env))),
+          })
+        }
+
+        let e = replace(&e, &env);
+        self.symbols = env.symbols;
+
+        let handler: SyntaxHandler<'a> = Rc::new(move |_| Ok((tokens.clone(), e.clone())));
+        self.syntax.insert(sid.clone(), handler);
       }
     }
   }

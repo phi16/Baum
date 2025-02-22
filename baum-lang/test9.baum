@@ -1,0 +1,11 @@
+-- identifier-starting operator is not working now
+
+syntax a |→ b = λ(a) b
+g1 = x |→ (x, x)
+syntax a → b = λ(a) b
+g2 = x → (x, x)
+syntax a => b = λ(a) b
+g3 = x => (x, x)
+
+syntax b ←| a = λ(a) b
+g4 = (x, x) ←| x

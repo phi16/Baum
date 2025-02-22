@@ -1,5 +1,44 @@
 add = _
 u = U
 x = (1, 2, 3)
+
+id = λ(x) x
+
+syntax 3 |x| y = λ(x) y
+z = |a| a
+
+module A = {
+  a = 1
+  b = a
+  syntax P = a
+  syntax F a = (P, a)
+  syntax G a = λ(a) P
+}
+
 syntax 2.1< a + b = add a b
-x = 1 + 2 + 3
+v = 1 + 2 + 3
+
+-- syntax 3> double a = add a a  -- invalid!
+-- syntax v a b = (λ(a) 1, λ(a) b) -- invalid
+-- syntax v a = λ(a) a -- invalid
+
+module B = {
+  a = 1
+  b = 1
+  syntax * a x = λ(a) (x, b)
+  c = * a a  -- λ(a') (a', b)
+  d = * a b  -- λ(a') (b, b)
+  e = * b a  -- λ(b') (a, b)
+  f = * b b  -- λ(b') (b', b)
+}
+
+syntax 3 [a,b,c,d] = (λ(a) b, λ(c) d)
+h c = [a,c,c,c]  -- h c = (λ(a) c, λ(c') c')
+
+-- syntax f x = Σ{x: x}
+-- syntax g x = {x = x}
+-- syntax j w x y z = {w (x: y) = z}
+-- z = let a = 1 in j a a a a  -- {a (a: a) = a} = {a (a': 1) = a'}
+
+syntax j w x y | z = {w (x: y) = z}
+z = let a = 1 in j a a a | a  -- {a (a: a) = a} = {a (a': 1) = a'}

@@ -115,13 +115,18 @@ pub fn default_syntax_table<'a>() -> SyntaxTable {
   syntax
 }
 
-use crate::types::syntax::{FrontElem, SyntaxHandler};
+use crate::types::syntax::{ElemId, ElemToken, LookupId, SyntaxExpr, SyntaxHandler};
+use crate::types::tree::SyntaxElem;
 use baum_front::types::literal as lit;
 use baum_front::types::tree as front;
+use std::char::ParseCharError;
+use std::num::ParseIntError;
 
-struct MiniParser<'a> {
-  input: Vec<FrontElem<'a>>,
+struct MiniParser<'a, 'b> {
+  input: &'b Vec<SyntaxElem<'a>>,
   index: usize,
+  next_elem_id: u16,
+  tokens: Vec<ElemToken>,
 }
 
 enum ElemType {
@@ -134,174 +139,263 @@ enum ElemType {
   Expr,
 }
 
-fn match_elem(e: &FrontElem, ty: ElemType) -> bool {
+fn match_elem(e: &SyntaxElem, ty: ElemType) -> bool {
   match (e, ty) {
-    (FrontElem::Token(_), ElemType::Token) => true,
-    (FrontElem::Ident(_), ElemType::Ident) => true,
-    (FrontElem::Nat(_), ElemType::Nat) => true,
-    (FrontElem::Rat(_), ElemType::Rat) => true,
-    (FrontElem::Chr(_), ElemType::Chr) => true,
-    (FrontElem::Str(_), ElemType::Str) => true,
-    (FrontElem::Expr(_), ElemType::Expr) => true,
+    (SyntaxElem::Token(_), ElemType::Token) => true,
+    (SyntaxElem::Ident(_), ElemType::Ident) => true,
+    (SyntaxElem::Nat(_), ElemType::Nat) => true,
+    (SyntaxElem::Rat(_), ElemType::Rat) => true,
+    (SyntaxElem::Chr(_), ElemType::Chr) => true,
+    (SyntaxElem::Str(_), ElemType::Str) => true,
+    (SyntaxElem::Expr(_), ElemType::Expr) => true,
     _ => false,
   }
 }
 
-impl<'a> MiniParser<'a> {
-  fn new(input: Vec<FrontElem<'a>>) -> Self {
-    Self { input, index: 0 }
+impl<'a, 'b> MiniParser<'a, 'b> {
+  fn new(input: &'b Vec<SyntaxElem<'a>>) -> Self {
+    Self {
+      input,
+      index: 0,
+      next_elem_id: 0,
+      tokens: Vec::new(),
+    }
   }
 
-  fn peek_if(&self, ty: ElemType) -> Option<&FrontElem<'a>> {
-    let e = self.input.get(self.index)?;
-    if match_elem(e, ty) {
-      Some(e)
+  fn done(self) -> Option<Vec<ElemToken>> {
+    if self.input.len() == self.index {
+      Some(self.tokens)
     } else {
       None
     }
   }
 
-  fn take_if(&mut self, ty: ElemType) -> Option<&FrontElem<'a>> {
+  fn take_token(&mut self, s: &'a str) -> Option<()> {
     let e = self.input.get(self.index)?;
-    if match_elem(e, ty) {
-      self.index += 1;
-      Some(e)
-    } else {
-      None
-    }
-  }
-
-  fn take_token(&mut self, s: &'a str) -> Option<&FrontElem<'a>> {
-    let e = self.input.get(self.index)?;
-    if let FrontElem::Token(t) = e {
+    if let SyntaxElem::Token(t) = e {
       if *t == s {
         self.index += 1;
-        return Some(e);
+        self.tokens.push(ElemToken::Token);
+        return Some(());
       }
+    }
+    None
+  }
+
+  fn peek_id(&self) -> Option<()> {
+    let e = self.input.get(self.index)?;
+    if let SyntaxElem::Ident(_) = e {
+      Some(())
+    } else {
+      None
+    }
+  }
+
+  fn take_id(&mut self) -> Option<LookupId> {
+    self.peek_id()?;
+    self.index += 1;
+    let id = ElemId(self.next_elem_id);
+    self.next_elem_id += 1;
+    self.tokens.push(ElemToken::Ident(id));
+    Some(LookupId::InSyntax(id))
+  }
+
+  fn take_lit(&mut self, ty: ElemType) -> Option<&'a str> {
+    let e = self.input.get(self.index)?;
+    if !match_elem(e, ty) {
+      return None;
+    }
+    let (s, token) = match self.input.get(self.index).unwrap() {
+      SyntaxElem::Token(_) => panic!(),
+      SyntaxElem::Ident(_) => panic!(),
+      SyntaxElem::Nat(s) => (s, ElemToken::Nat),
+      SyntaxElem::Rat(s) => (s, ElemToken::Rat),
+      SyntaxElem::Chr(s) => (s, ElemToken::Chr),
+      SyntaxElem::Str(s) => (s, ElemToken::Str),
+      SyntaxElem::Expr(_) => panic!(),
+    };
+    self.index += 1;
+    self.tokens.push(token);
+    Some(s)
+  }
+
+  fn take_expr(&mut self) -> Option<SyntaxExpr> {
+    let e = self.input.get(self.index)?;
+    if let SyntaxElem::Expr(_) = e {
+      self.index += 1;
+      let id = ElemId(self.next_elem_id);
+      self.next_elem_id += 1;
+      self.tokens.push(ElemToken::Expr(id));
+      return Some(SyntaxExpr(front::ExprF::Var(LookupId::InSyntax(id))));
     }
     None
   }
 }
 
 pub fn default_syntax_handlers<'a>() -> HashMap<SyntaxId, SyntaxHandler<'a>> {
+  use ElemType::*;
   let mut handlers: HashMap<SyntaxId, SyntaxHandler> = HashMap::new();
+
+  fn make_handler<'a>(
+    f: impl for<'b> Fn(&mut MiniParser<'a, 'b>) -> Result<SyntaxExpr, String> + 'static,
+  ) -> SyntaxHandler<'a> {
+    Rc::new(move |elems: &Vec<SyntaxElem<'a>>| {
+      let mut p = MiniParser::new(elems);
+      let e = f(&mut p)?;
+      let tokens = p.done().unwrap();
+      Ok((tokens, e))
+    })
+  }
 
   handlers.insert(
     SyntaxId::Nat,
-    Box::new(|elems| match elems[..] {
-      [FrontElem::Nat(s)] => {
-        let n = s.parse().unwrap();
-        let n = lit::Literal::Nat(lit::Nat(n));
-        Ok(front::Expr(front::ExprF::Lit(n)))
-      }
-      _ => unreachable!(),
+    make_handler(|p| {
+      let s = p.take_lit(Nat).unwrap();
+      let n = s.parse().map_err(|e: ParseIntError| e.to_string())?;
+      let n = lit::Literal::Nat(lit::Nat(n));
+      Ok(SyntaxExpr(front::ExprF::Lit(n)))
     }),
   );
   handlers.insert(
     SyntaxId::Rat,
-    Box::new(|elems| match elems[..] {
-      [FrontElem::Rat(s)] => {
-        unimplemented!()
-      }
-      _ => unreachable!(),
+    make_handler(|p| {
+      let s = p.take_lit(ElemType::Rat).unwrap();
+      let r = unimplemented!();
+      Ok(SyntaxExpr(front::ExprF::Lit(r)))
     }),
   );
   handlers.insert(
     SyntaxId::Chr,
-    Box::new(|elems| match elems[..] {
-      [FrontElem::Chr(s)] => {
-        let c = s.parse().unwrap();
-        let c = lit::Literal::Chr(c);
-        Ok(front::Expr(front::ExprF::Lit(c)))
-      }
-      _ => unreachable!(),
+    make_handler(|p| {
+      let s = p.take_lit(ElemType::Chr).unwrap();
+      let c = s.parse().map_err(|e: ParseCharError| e.to_string())?;
+      let c = lit::Literal::Chr(c);
+      Ok(SyntaxExpr(front::ExprF::Lit(c)))
     }),
   );
   handlers.insert(
     SyntaxId::Str,
-    Box::new(|elems| match elems[..] {
-      [FrontElem::Str(s)] => {
-        let s = lit::Literal::Str(s.to_string());
-        Ok(front::Expr(front::ExprF::Lit(s)))
-      }
-      _ => unreachable!(),
+    make_handler(|p| {
+      let s = p.take_lit(ElemType::Chr).unwrap();
+      // TODO: process escape
+      let s = lit::Literal::Str(s.to_string());
+      Ok(SyntaxExpr(front::ExprF::Lit(s)))
     }),
   );
+
   handlers.insert(
     SyntaxId::Hole,
-    Box::new(|elems| match elems[..] {
-      [FrontElem::Token("_")] => Ok(front::Expr(front::ExprF::Hole)),
-      _ => unreachable!(),
+    make_handler(|p| {
+      p.take_token("_").unwrap();
+      Ok(SyntaxExpr(front::ExprF::Hole))
     }),
   );
   handlers.insert(
     SyntaxId::Uni,
-    Box::new(|elems| match elems[..] {
-      [FrontElem::Token("U")] => Ok(front::Expr(front::ExprF::Uni)),
-      _ => unreachable!(),
+    make_handler(|p| {
+      p.take_token("U").unwrap();
+      Ok(SyntaxExpr(front::ExprF::Uni))
+    }),
+  );
+
+  handlers.insert(
+    SyntaxId::LamE,
+    make_handler(|p| {
+      p.take_token("λ").unwrap();
+      p.take_token("(").unwrap();
+      let mut args = Vec::new();
+      loop {
+        if let Some(_) = p.take_token(")") {
+          break;
+        }
+        let mut ids = Vec::new();
+        while let Some(id) = p.take_id() {
+          ids.push(id.clone());
+        }
+        let ty = if let Some(_) = p.take_token(":") {
+          p.take_expr().unwrap()
+        } else {
+          SyntaxExpr(front::ExprF::Hole)
+        };
+        let ty = Rc::new(ty);
+        for id in ids {
+          args.push((id, ty.clone()));
+        }
+        p.take_token(",");
+      }
+      let body = p.take_expr().unwrap();
+      let mut e = body;
+      for (id, ty) in args.into_iter().rev() {
+        e = SyntaxExpr(front::ExprF::LamE(id, ty, Rc::new(e)));
+      }
+      Ok(e)
     }),
   );
   handlers.insert(
+    SyntaxId::AppE,
+    make_handler(|p| {
+      let e1 = p.take_expr().unwrap();
+      let e2 = p.take_expr().unwrap();
+      Ok(SyntaxExpr(front::ExprF::AppE(Rc::new(e1), Rc::new(e2))))
+    }),
+  );
+  handlers.insert(
+    SyntaxId::AppI,
+    make_handler(|p| {
+      let e1 = p.take_expr().unwrap();
+      p.take_token("{").unwrap();
+      let e2 = p.take_expr().unwrap();
+      p.take_token("}").unwrap();
+      Ok(SyntaxExpr(front::ExprF::AppE(Rc::new(e1), Rc::new(e2))))
+    }),
+  );
+
+  handlers.insert(
     SyntaxId::TupleTy,
-    Box::new(|elems| {
+    make_handler(|p| {
       let mut v = Vec::new();
-      let mut p = MiniParser::new(elems);
       p.take_token("Σ").unwrap();
       p.take_token("(").unwrap();
       loop {
         if let Some(_) = p.take_token(")") {
           break;
         }
-        if let Some(_) = p.peek_if(ElemType::Ident) {
+        if let Some(_) = p.peek_id() {
           let mut ids = Vec::new();
           loop {
             if let Some(_) = p.take_token(":") {
               break;
             }
-            let id = p.take_if(ElemType::Ident).unwrap();
-            if let FrontElem::Ident(id) = id {
-              ids.push(id.clone());
-            } else {
-              unreachable!();
-            }
+            let id = p.take_id().unwrap();
+            ids.push(id.clone());
           }
-          if let FrontElem::Expr(e) = p.take_if(ElemType::Expr).unwrap() {
-            for id in ids {
-              v.push((Some(id.clone()), Rc::new(e.clone())));
-            }
-          } else {
-            unreachable!();
+          let e = p.take_expr().unwrap();
+          for id in ids {
+            v.push((Some(id.clone()), Rc::new(e.clone())));
           }
-        } else if let Some(e) = p.take_if(ElemType::Expr) {
-          if let FrontElem::Expr(e) = e {
-            v.push((None, Rc::new(e.clone())));
-          } else {
-            unreachable!();
-          }
+        } else {
+          let e = p.take_expr().unwrap();
+          v.push((None, Rc::new(e.clone())));
         }
         p.take_token(",");
       }
-      Ok(front::Expr(front::ExprF::TupleTy(v)))
+      Ok(SyntaxExpr(front::ExprF::TupleTy(v)))
     }),
   );
   handlers.insert(
     SyntaxId::TupleCon,
-    Box::new(|elems| {
+    make_handler(|p| {
       let mut v = Vec::new();
-      let mut p = MiniParser::new(elems);
       p.take_token("(").unwrap();
       loop {
         if let Some(_) = p.take_token(")") {
           break;
         }
-        if let FrontElem::Expr(e) = p.take_if(ElemType::Expr).unwrap() {
-          v.push(Rc::new(e.clone()));
-        } else {
-          unreachable!();
-        }
+        let e = p.take_expr().unwrap();
+        v.push(Rc::new(e.clone()));
         p.take_token(",");
       }
-      Ok(front::Expr(front::ExprF::TupleCon(v)))
+      Ok(SyntaxExpr(front::ExprF::TupleCon(v)))
     }),
   );
 

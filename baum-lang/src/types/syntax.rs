@@ -90,6 +90,7 @@ impl<T> SyntaxTable<T> {
       },
       _ => &mut self.lits,
     };
+    eprintln!("Adding {:?} to {:?}", syn, v);
     v.push(syn);
   }
 
@@ -145,17 +146,31 @@ impl<T> SyntaxTable<T> {
   }
 }
 
+use crate::types::tree::SyntaxElem;
 use baum_front::types::tree as front;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct ElemId(pub u16);
+
 #[derive(Debug, Clone)]
-pub enum FrontElem<'a> {
-  Token(&'a str),
-  Ident(front::Id),
-  Nat(&'a str),
-  Rat(&'a str),
-  Chr(&'a str),
-  Str(&'a str),
-  Expr(front::Expr),
+pub enum ElemToken {
+  Token,
+  Ident(ElemId),
+  Nat,
+  Rat,
+  Chr,
+  Str,
+  Expr(ElemId),
 }
 
-pub type SyntaxHandler<'a> = Box<dyn Fn(Vec<FrontElem<'a>>) -> Result<front::Expr, String>>;
+#[derive(Debug, Clone)]
+pub enum LookupId {
+  InSyntax(ElemId),
+  General(front::Id),
+}
+
+#[derive(Debug, Clone)]
+pub struct SyntaxExpr(pub front::ExprF<LookupId, Rc<SyntaxExpr>>);
+
+pub type SyntaxHandler<'a> =
+  Rc<dyn for<'b> Fn(&'b Vec<SyntaxElem<'a>>) -> Result<(Vec<ElemToken>, SyntaxExpr), String>>;

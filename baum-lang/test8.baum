@@ -1,0 +1,13 @@
+-- dependency check
+
+h = λ(x: x) x
+syntax |a: b| c = λ(a: b) c
+g = |x: x| x
+
+syntax b ←| a = λ(a) b
+k = (x, x) ←| x
+
+h1 = Σ(A: A)
+h2 = Σ(A: U, a: A)
+h3 = Σ(b: A, A: U)  -- invalid
+h4 = Σ(A: A, a: A)  -- invalid

@@ -21,7 +21,7 @@ impl<'a> Pretty<'a> {
 
   fn id_to_str(&self, i: &Id) -> String {
     match self.symbols.get(i) {
-      Some(s) => s.clone(),
+      Some(s) => format!("{}{:?}", s, i),
       None => format!("{:?}", i),
     }
   }
@@ -117,7 +117,16 @@ impl<'a> Pretty<'a> {
 
       ExprF::PiE(i, t, e) => self.s("Π(").i(i).s(": ").e(t).s(") ").e(e),
       ExprF::LamE(i, t, e) => self.s("λ(").i(i).s(": ").e(t).s(") ").e(e),
-      ExprF::AppE(e1, e2) => self.e(e1).s(" ").e(e2),
+      ExprF::AppE(e1, e2) => match e2.0 {
+        ExprF::Hole
+        | ExprF::Var(_)
+        | ExprF::Uni
+        | ExprF::Ext(_, _)
+        | ExprF::Lit(_)
+        | ExprF::TupleTy(_)
+        | ExprF::ObjTy(_) => self.e(e1).s(" ").e(e2),
+        _ => self.e(e1).s(" (").e(e2).s(")"),
+      },
 
       ExprF::PiI(i, t, e) => self.s("Π{").i(i).s(": ").e(t).s("} ").e(e),
       ExprF::LamI(i, t, e) => self.s("λ{").i(i).s(": ").e(t).s("} ").e(e),

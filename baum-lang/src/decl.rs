@@ -9,9 +9,9 @@ use crate::types::tree_base::*;
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
-type Result<T> = std::result::Result<T, String>;
+type Result<T> = std::result::Result<T, (TokenPos, String)>;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Role {
   Expr,
   Ident,
@@ -91,13 +91,17 @@ impl<'a> DeclParser<'a> {
     self.errors.push(s);
   }
 
+  fn err_here<T>(&mut self, msg: &str) -> Result<T> {
+    Err((self.tracker.pos(), msg.to_string()))
+  }
+
   fn expect_str(&mut self, s: &str) -> Result<()> {
     match self.tracker.peek_str() {
       Some(t) if t == s => {
         self.tracker.next();
         Ok(())
       }
-      _ => Err(format!("expected '{}'", s)),
+      _ => self.err_here(&format!("expected '{}'", s)),
     }
   }
 
@@ -107,7 +111,7 @@ impl<'a> DeclParser<'a> {
         self.tracker.next();
         Ok(Id::new(s))
       }
-      _ => Err("expected identifier".to_string()),
+      _ => self.err_here("expected identifier"),
     }
   }
 
@@ -141,7 +145,7 @@ impl<'a> DeclParser<'a> {
     let mut args = Vec::new();
     loop {
       match self.tracker.peek_str() {
-        None => return Err("expected definition".to_string()),
+        None => return self.err_here("expected definition"),
         Some(":") | Some("=") => break,
         Some("(") | Some("{") => {
           let vis = if self.tracker.peek().unwrap().str == "(" {
@@ -195,6 +199,7 @@ impl<'a> DeclParser<'a> {
     std::mem::swap(&mut self.tracker, &mut tracker);
     let known_ops = std::mem::take(&mut self.known_ops);
     let errors = std::mem::take(&mut self.errors);
+    let pos = self.tracker.pos();
 
     let mut e = ExprParser::new(
       tracker,
@@ -211,7 +216,7 @@ impl<'a> DeclParser<'a> {
     self.next_syntax_id = next_syntax_id;
     self.known_ops = known_ops;
     self.errors = errors;
-    res.ok_or("expected expression".to_string())
+    res.ok_or((pos, "expected expression".to_string()))
   }
 
   fn end_of_expr(&mut self) -> bool {
@@ -224,10 +229,9 @@ impl<'a> DeclParser<'a> {
   }
 
   fn expr_or_hole(&mut self, wait_next: Option<&str>) -> Expr<'a> {
-    let pos = self.tracker.pos();
     let e = match self.expr(false) {
       Ok(e) => e,
-      Err(msg) => {
+      Err((pos, msg)) => {
         self.add_error(pos, &msg);
         Expr(
           ExprF::Hole,
@@ -266,7 +270,7 @@ impl<'a> DeclParser<'a> {
     // syntax (w/o "syntax")
     let (precs, prec_str) = match self.tracker.peek_ty_str() {
       Some((TokenType::Precedence, prec_str)) => match Precedence::parse(prec_str) {
-        None => return Err("failed to parse precedence".to_string()),
+        None => return self.err_here("failed to parse precedence"),
         Some(precs) => {
           self.tracker.next();
           (precs, Some(prec_str))
@@ -278,7 +282,7 @@ impl<'a> DeclParser<'a> {
     let mut tokens = Vec::new();
     loop {
       match self.tracker.peek_str() {
-        None => return Err("expected body of syntax definition".to_string()),
+        None => return self.err_here("expected body of syntax definition"),
         Some("=") => {
           self.tracker.next();
           break;
@@ -290,15 +294,34 @@ impl<'a> DeclParser<'a> {
         }
       }
     }
+    let pos = self.tracker.pos();
     let e = self.expr_in_syntax()?;
     let fvs = match fv(&e) {
-      None => return Err("let expression cannot be used in syntax declaration".to_string()),
-      Some(fvs) => fvs,
+      None => {
+        return Err((
+          pos,
+          "let expression cannot be used in syntax declaration".to_string(),
+        ))
+      }
+      Some(fvs_v) => {
+        let mut fvs = HashMap::new();
+        for (id, role) in fvs_v {
+          if fvs.contains_key(&id) {
+            return Err((
+              pos,
+              "duplicated identifier in syntax declaration".to_string(),
+            ));
+          }
+          fvs.insert(id, role);
+        }
+        fvs
+      }
     };
-    let fvs: HashMap<Id, Role> = fvs.into_iter().collect(); // TODO: duplicate check?
     let mut rs = Vec::new();
     let mut defs = Vec::new();
+    let mut last_is_expr = false;
     for t in tokens {
+      let mut is_expr = false;
       match t.ty {
         TokenType::Reserved => {
           rs.push(Regex::token(t.str));
@@ -307,10 +330,14 @@ impl<'a> DeclParser<'a> {
         TokenType::Ident => {
           let id = Id::new(t.str);
           if let Some(role) = fvs.get(&id) {
+            if last_is_expr {
+              return Err((t.pos, "placeholders must not be consecutive".to_string()));
+            }
             match role {
               Role::Expr => {
                 rs.push(Regex::e());
                 defs.push(SynDefF::Expr(id));
+                is_expr = true;
               }
               Role::Ident => {
                 rs.push(Regex::id());
@@ -322,8 +349,9 @@ impl<'a> DeclParser<'a> {
             defs.push(SynDefF::Token(t.str));
           }
         }
-        _ => return Err("expected identifier or symbols".to_string()),
+        _ => return Err((t.pos, "expected identifier or symbols".to_string())),
       }
+      last_is_expr = is_expr;
     }
     let regex = Regex::seqs(rs.iter().collect());
     let sid = SyntaxId::User(self.next_syntax_id);
@@ -332,7 +360,11 @@ impl<'a> DeclParser<'a> {
     Ok((syntax, DeclF::Syntax(sid, prec_str, defs, Box::new(e))))
   }
 
-  fn extract_modref(&mut self, e: Expr<'a>) -> Result<(Vec<Id<'a>>, Vec<(Vis, Box<Expr<'a>>)>)> {
+  fn extract_modref(
+    &mut self,
+    pos: TokenPos,
+    e: Expr<'a>,
+  ) -> Result<(Vec<Id<'a>>, Vec<(Vis, Box<Expr<'a>>)>)> {
     let mut rev_params = Vec::new();
     let mut e = e;
     loop {
@@ -365,13 +397,13 @@ impl<'a> DeclParser<'a> {
         }
         _ => {}
       }
-      return Err("expected module application".to_string());
+      return Err((pos, "expected module application".to_string()));
     }
   }
 
   fn modref_internal(&mut self) -> Result<ModRef<'a>> {
     match self.tracker.peek_str() {
-      None => return Err("expected module reference".to_string()),
+      None => return Err((self.tracker.pos(), "expected module reference".to_string())),
       Some("import") => {
         self.tracker.next();
         let s = match self.tracker.peek_ty_str() {
@@ -379,13 +411,14 @@ impl<'a> DeclParser<'a> {
             self.tracker.next();
             s
           }
-          _ => return Err("expected string literal".to_string()),
+          _ => return Err((self.tracker.pos(), "expected string literal".to_string())),
         };
         Ok(ModRefF::Import(s))
       }
       Some(_) => {
+        let pos = self.tracker.pos();
         let e = self.expr_or_hole(None);
-        let (name, params) = self.extract_modref(e)?;
+        let (name, params) = self.extract_modref(pos, e)?;
         Ok(ModRefF::App(name, params))
       }
     }
@@ -410,12 +443,17 @@ impl<'a> DeclParser<'a> {
 
   fn decl_internal(&mut self, cur_mod: &mut Env<'a>) -> Result<DeclInternal<'a>> {
     match self.tracker.peek_str() {
-      None => return Err("expected declaration".to_string()),
+      None => return Err((self.tracker.pos(), "expected declaration".to_string())),
       Some("local") => {
         let mut empty_env = Env::new();
         self.tracker.next();
         match self.tracker.peek_str() {
-          None => return Err("expected declaration or block".to_string()),
+          None => {
+            return Err((
+              self.tracker.pos(),
+              "expected declaration or block".to_string(),
+            ))
+          }
           Some("{") => {
             self.tracker.next();
             let ds = self.decls(&mut empty_env);
@@ -466,12 +504,12 @@ impl<'a> DeclParser<'a> {
               // explicit argument with no type: rejected in the later pass.
               params.push((Vis::Explicit, vec![self.expect_id().unwrap()], None));
             }
-            _ => return Err("expected module parameters or body".to_string()),
+            _ => return self.err_here("expected module parameters or body"),
           }
         }
         let md = ModDefF { name, params };
         let (mb, env) = match self.tracker.peek_str() {
-          None => return Err("expected module body".to_string()),
+          None => return self.err_here("expected module body"),
           Some("{") => {
             // declarations
             self.tracker.next();
@@ -484,10 +522,11 @@ impl<'a> DeclParser<'a> {
           }
           Some(_) => {
             // module reference
+            let pos = self.tracker.pos();
             let mr = self.modref(mod_indent)?;
             let e = match self.resolve_modref(&mr) {
               Some(e) => e.clone(),
-              None => return Err("module not found".to_string()),
+              None => return Err((pos, "module not found".to_string())),
             };
             (ModBody::Ref(mr), e)
           }
@@ -502,10 +541,11 @@ impl<'a> DeclParser<'a> {
         let is_open = self.tracker.peek().unwrap().str == "open";
         let mod_indent = self.tracker.peek().unwrap().indent;
         self.tracker.next();
+        let pos = self.tracker.pos();
         let mr = self.modref(mod_indent)?;
         let e = match self.resolve_modref(&mr) {
           Some(e) => e.clone(),
-          None => return Err("module not found".to_string()),
+          None => return Err((pos, "module not found".to_string())),
         };
         if is_open {
           self.env.merge(e.clone());
@@ -564,8 +604,8 @@ impl<'a> DeclParser<'a> {
       let orig_pos = self.tracker.pos();
       match self.decl(cur_mod) {
         Ok(d) => ds.push(d),
-        Err(e) => {
-          self.add_error(self.tracker.pos(), &e);
+        Err((pos, msg)) => {
+          self.add_error(pos, &msg);
           self.tracker.skip_to_next_head();
         }
       }
