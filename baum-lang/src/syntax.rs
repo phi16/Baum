@@ -1,4 +1,4 @@
-use crate::types::env::{Syntax, SyntaxTable};
+use crate::types::env::SyntaxTable;
 use crate::types::regex::{Regex, Terminal};
 use crate::types::tree::SyntaxId;
 use std::collections::HashMap;

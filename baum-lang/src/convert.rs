@@ -7,7 +7,17 @@ use baum_front::types::tree as front;
 use std::collections::HashMap;
 use std::rc::Rc;
 
-type Result<T> = std::result::Result<T, String>;
+type Result<T> = std::result::Result<T, (TokenPos, String)>;
+
+fn ext_name(mod_name: &Vec<Id>, i: &Id) -> String {
+  let mut s = String::new();
+  for name in mod_name {
+    s.push_str(name.as_str());
+    s.push_str(".");
+  }
+  s.push_str(i.as_str());
+  s
+}
 
 #[derive(Debug, Clone)]
 enum Entity<'a> {
@@ -34,6 +44,7 @@ struct Builder<'a> {
   next_id: u32,
   syntax: HashMap<SyntaxId, SyntaxHandler<'a>>,
   symbols: HashMap<front::Id, String>,
+  errors: Vec<String>,
 }
 
 impl<'a> Builder<'a> {
@@ -44,7 +55,13 @@ impl<'a> Builder<'a> {
       next_id: 0,
       syntax,
       symbols: HashMap::new(),
+      errors: Vec::new(),
     }
+  }
+
+  fn add_error(&mut self, pos: TokenPos, msg: &str) {
+    let s = format!("{}: {}", pos.to_string(), msg);
+    self.errors.push(s);
   }
 
   fn here(&mut self) -> &mut HashMap<Id<'a>, Entity<'a>> {
@@ -98,16 +115,21 @@ impl<'a> Builder<'a> {
             return Ok(front::Expr(front::ExprF::Var(*i)));
           }
         }
-        Err(format!("symbol not found: {:?}", i))
+        Err((e.1.begin, format!("symbol not found: {}", i.as_str())))
       }
-      ExprF::Mod(_) => Err("module reference is not allowed in expression".to_string()),
+      ExprF::Mod(_) => Err((
+        e.1.begin,
+        "module reference is not allowed in expression".to_string(),
+      )),
       ExprF::Ext(mod_name, i) => {
-        let (m, env) = self
-          .lookup_mod(mod_name)
-          .ok_or(format!("module not found: {:?}.{:?}", mod_name, i))?;
-        let i = self
-          .lookup_id(i, &env)
-          .ok_or(format!("symbol not found: {:?}.{:?}", mod_name, i))?;
+        let (m, env) = self.lookup_mod(mod_name).ok_or((
+          e.1.begin,
+          format!("module not found: {}", ext_name(mod_name, i)),
+        ))?;
+        let i = self.lookup_id(i, &env).ok_or((
+          e.1.begin,
+          format!("symbol not found: {}", ext_name(mod_name, i)),
+        ))?;
         Ok(front::Expr(front::ExprF::Ext(m, i.clone())))
       }
       ExprF::Let(ds, e) => {
@@ -122,9 +144,10 @@ impl<'a> Builder<'a> {
         let handler = self
           .syntax
           .get(sid)
-          .ok_or(format!("syntax handler not found: {:?}", sid))?
+          .ok_or(format!("unimplemented syntax handler: {:?}", sid))
+          .unwrap()
           .clone();
-        let (tokens, e, deps) = handler(elems)?.into_inner();
+        let (tokens, e, deps) = handler(elems).map_err(|err| (e.1.begin, err))?.into_inner();
 
         let mut i_map = HashMap::new();
         for (elem, t) in elems.iter().zip(tokens.iter()) {
@@ -242,8 +265,8 @@ impl<'a> Builder<'a> {
   fn e(&mut self, e: &Expr<'a>) -> front::Expr {
     match self.e_internal(e) {
       Ok(e) => e,
-      Err(msg) => {
-        eprintln!("{}", msg);
+      Err((pos, msg)) => {
+        self.add_error(pos, &msg);
         front::Expr(front::ExprF::Hole)
       }
     }
@@ -290,17 +313,13 @@ impl<'a> Builder<'a> {
         front::ModBody::Decls(mod_decls)
       }
       ModBodyF::Ref(ModRefF::App(m, m_args)) => {
-        if let Some((m, env)) = self.lookup_mod(&m) {
-          mod_env = env.clone();
-          let mut args = Vec::new();
-          for (vis, e) in m_args {
-            args.push((vis.clone(), self.e(e)));
-          }
-          front::ModBody::App(m, args)
-        } else {
-          eprintln!("module not found: {:?}", m);
-          front::ModBody::Decls(Vec::new())
+        let (m, env) = self.lookup_mod(&m).unwrap();
+        mod_env = env.clone();
+        let mut args = Vec::new();
+        for (vis, e) in m_args {
+          args.push((vis.clone(), self.e(e)));
         }
+        front::ModBody::App(m, args)
       }
       ModBodyF::Ref(ModRefF::Import(_)) => unimplemented!(),
     };
@@ -429,8 +448,8 @@ impl<'a> Builder<'a> {
         let id_since = self.next_id;
         let e = match self.e_internal(e) {
           Ok(e) => e,
-          Err(msg) => {
-            eprintln!("syntax definition failed: {:?}", msg);
+          Err((pos, msg)) => {
+            self.add_error(pos, &msg);
             return;
           }
         };
@@ -441,7 +460,7 @@ impl<'a> Builder<'a> {
           symbols: HashMap<front::Id, String>,
           i_env: HashMap<Id<'a>, ElemId>,
           exprs: HashMap<front::Id, ElemId>,
-        };
+        }
         let symbols = std::mem::take(&mut self.symbols);
         let env = E {
           id_since,
@@ -550,11 +569,15 @@ impl<'a> Builder<'a> {
 pub fn convert<'a>(
   ds: &Vec<Decl<'a>>,
   syntax_handlers: HashMap<SyntaxId, SyntaxHandler<'a>>,
-) -> front::Program {
+) -> std::result::Result<front::Program, Vec<String>> {
   let mut b = Builder::new(syntax_handlers);
   let mut cur_mod = Env::new();
   let mut decls = Vec::new();
   b.ds(ds, &mut cur_mod, &mut decls);
-  let symbols = b.symbols;
-  front::Program { decls, symbols }
+  if b.errors.is_empty() {
+    let symbols = b.symbols;
+    Ok(front::Program { decls, symbols })
+  } else {
+    Err(b.errors)
+  }
 }

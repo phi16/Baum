@@ -124,7 +124,7 @@ impl<'a> DeclParser<'a> {
     }
   }
 
-  fn ids(&mut self) -> Vec<Id<'a>> {
+  fn ids(&mut self) -> Option<Vec<Id<'a>>> {
     let mut ids = Vec::new();
     loop {
       match self.tracker.peek_ty_str() {
@@ -137,8 +137,10 @@ impl<'a> DeclParser<'a> {
     }
     if ids.is_empty() {
       self.add_error(self.tracker.pos(), "expected identifier list");
+      None
+    } else {
+      Some(ids)
     }
-    ids
   }
 
   fn def_rest(&mut self, name: Id<'a>) -> Result<Def<'a>> {
@@ -154,7 +156,9 @@ impl<'a> DeclParser<'a> {
             Vis::Implicit
           };
           self.tracker.next();
-          let ids = self.ids();
+          let ids = self
+            .ids()
+            .ok_or((self.tracker.pos(), "expected identifier list".to_string()))?;
           let match_cl = match vis {
             Vis::Explicit => ")",
             Vis::Implicit => "}",
@@ -171,7 +175,9 @@ impl<'a> DeclParser<'a> {
           args.push(arg);
         }
         Some(_) => {
-          let ids = self.ids();
+          let ids = self
+            .ids()
+            .ok_or((self.tracker.pos(), "expected identifier list".to_string()))?;
           args.push((Vis::Explicit, ids, None));
         }
       }
@@ -360,11 +366,7 @@ impl<'a> DeclParser<'a> {
     Ok((syntax, DeclF::Syntax(sid, prec_str, defs, Box::new(e))))
   }
 
-  fn extract_modref(
-    &mut self,
-    pos: TokenPos,
-    e: Expr<'a>,
-  ) -> Result<(Vec<Id<'a>>, Vec<(Vis, Box<Expr<'a>>)>)> {
+  fn extract_modref(&mut self, e: Expr<'a>) -> Result<(Vec<Id<'a>>, Vec<(Vis, Box<Expr<'a>>)>)> {
     let mut rev_params = Vec::new();
     let mut e = e;
     loop {
@@ -397,7 +399,7 @@ impl<'a> DeclParser<'a> {
         }
         _ => {}
       }
-      return Err((pos, "expected module application".to_string()));
+      return Err((e.1.begin, "expected module application".to_string()));
     }
   }
 
@@ -416,9 +418,8 @@ impl<'a> DeclParser<'a> {
         Ok(ModRefF::Import(s))
       }
       Some(_) => {
-        let pos = self.tracker.pos();
         let e = self.expr_or_hole(None);
-        let (name, params) = self.extract_modref(pos, e)?;
+        let (name, params) = self.extract_modref(e)?;
         Ok(ModRefF::App(name, params))
       }
     }
@@ -484,7 +485,9 @@ impl<'a> DeclParser<'a> {
                 Vis::Implicit
               };
               self.tracker.next();
-              let ids = self.ids();
+              let ids = self
+                .ids()
+                .ok_or((self.tracker.pos(), "expected identifier list".to_string()))?;
               let match_cl = match vis {
                 Vis::Explicit => ")",
                 Vis::Implicit => "}",

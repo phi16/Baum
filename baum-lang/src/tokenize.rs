@@ -25,7 +25,8 @@ fn get_char_type(c: char) -> CharType {
 struct Loc<'a> {
   str: &'a str,
   ln: u32,
-  col: u16,
+  col_chars: u16,
+  col_bytes: u16,
   indent: u16,
 }
 
@@ -57,8 +58,8 @@ impl<'a, I: Iterator<Item = CharLoc<'a>>> Tokenizer<'a, I> {
     Token {
       str,
       ty,
-      pos: TokenPos::Pos(loc.ln, loc.col + loc.indent),
-      indent: if loc.col == 0 {
+      pos: TokenPos::Pos(loc.ln, loc.col_chars + loc.indent),
+      indent: if loc.col_chars == 0 {
         Indent::Head(loc.indent)
       } else {
         Indent::Cont(loc.indent)
@@ -70,14 +71,14 @@ impl<'a, I: Iterator<Item = CharLoc<'a>>> Tokenizer<'a, I> {
     let (l1, c1) = self.iter.next().unwrap();
     self.make_token_internal(
       l0,
-      &l0.str[l0.col as usize..l1.col as usize + c1.len_utf8()],
+      &l0.str[l0.col_bytes as usize..l1.col_bytes as usize + c1.len_utf8()],
       ty,
     )
   }
 
   fn make_token_addr(&mut self, addr: usize, l0: &Loc<'a>, ty: TokenType) -> Token<'a> {
     let str = match self.iter.peek() {
-      Some((l1, _)) if l0.ln == l1.ln => &l0.str[addr..l1.col as usize],
+      Some((l1, _)) if l0.ln == l1.ln => &l0.str[addr..l1.col_bytes as usize],
       _ => &l0.str[addr..],
     };
     self.make_token_internal(l0, str, ty)
@@ -85,12 +86,11 @@ impl<'a, I: Iterator<Item = CharLoc<'a>>> Tokenizer<'a, I> {
 
   fn add_error(&mut self, pos: TokenPos, msg: &str) {
     let s = format!("{}: {}", pos.to_string(), msg);
-    eprintln!("{}", s);
     self.errors.push(s);
   }
 
   fn add_error_loc(&mut self, l: &Loc<'a>, msg: &str) {
-    self.add_error(TokenPos::Pos(l.ln, l.col), msg);
+    self.add_error(TokenPos::Pos(l.ln, l.col_chars), msg);
   }
 
   fn skip_space(&mut self) {
@@ -129,7 +129,7 @@ impl<'a, I: Iterator<Item = CharLoc<'a>>> Tokenizer<'a, I> {
     } else {
       TokenType::String
     };
-    let l = l0.col as usize + c0.len_utf8();
+    let l = l0.col_bytes as usize + c0.len_utf8();
     while let Some((l1, c1)) = self.iter.peek() {
       if l0.ln != l1.ln {
         self.add_error(
@@ -245,7 +245,7 @@ impl<'a, I: Iterator<Item = CharLoc<'a>>> Tokenizer<'a, I> {
       State::Zero | State::Nat => TokenType::Natural,
       _ => TokenType::Rational,
     };
-    return self.make_token_addr(l0.col as usize, &l0, ty);
+    return self.make_token_addr(l0.col_bytes as usize, &l0, ty);
   }
 }
 
@@ -262,7 +262,7 @@ impl<'a, I: Iterator<Item = (Loc<'a>, char)>> Iterator for Tokenizer<'a, I> {
         match self.iter.peek() {
           Some((_, c1)) if c1.is_ascii_digit() => true,
           _ => {
-            return Some(self.make_token_addr(l0.col as usize, &l0, TokenType::Reserved));
+            return Some(self.make_token_addr(l0.col_bytes as usize, &l0, TokenType::Reserved));
           }
         }
       } else {
@@ -282,7 +282,7 @@ impl<'a, I: Iterator<Item = (Loc<'a>, char)>> Iterator for Tokenizer<'a, I> {
           }
           self.iter.next();
         }
-        return Some(self.make_token_addr(l0.col as usize, &l0, TokenType::Precedence));
+        return Some(self.make_token_addr(l0.col_bytes as usize, &l0, TokenType::Precedence));
       }
     }
     let ty = get_char_type(c0);
@@ -318,7 +318,7 @@ impl<'a, I: Iterator<Item = (Loc<'a>, char)>> Iterator for Tokenizer<'a, I> {
       self.iter.next();
     }
 
-    Some(self.make_token_addr(l0.col as usize, &l0, TokenType::Ident))
+    Some(self.make_token_addr(l0.col_bytes as usize, &l0, TokenType::Ident))
   }
 }
 
@@ -329,7 +329,7 @@ pub fn tokenize<'a>(code: &'a str) -> Result<Vec<Token<'a>>, Vec<String>> {
     .map(|(ln, line)| {
       let ln = ln as u32;
       let (spaces, rest) = line.split_at(line.chars().take_while(|c| *c == ' ').count());
-      let indent = spaces.len() as u16;
+      let indent = spaces.chars().count() as u16;
 
       // remove comments
       let rest = if rest.len() >= 2 && &rest[0..2] == "--" {
@@ -341,18 +341,23 @@ pub fn tokenize<'a>(code: &'a str) -> Result<Vec<Token<'a>>, Vec<String>> {
         }
       };
 
-      rest.char_indices().map(move |(col, c)| {
-        let col = col as u16;
-        (
-          Loc {
-            str: &rest,
-            ln,
-            col,
-            indent,
-          },
-          c,
-        )
-      })
+      rest
+        .char_indices()
+        .enumerate()
+        .map(move |(col_chars, (col_bytes, c))| {
+          let col_chars = col_chars as u16;
+          let col_bytes = col_bytes as u16;
+          (
+            Loc {
+              str: &rest,
+              ln,
+              col_chars,
+              col_bytes,
+              indent,
+            },
+            c,
+          )
+        })
     })
     .flatten();
   let mut tokenizer = Tokenizer::new(iter);
@@ -445,5 +450,9 @@ fn test() {
       ("-", TokenType::Reserved),
       ("x", TokenType::Ident),
     ]
+  );
+  assert_eq!(
+    splitter("k= 1"),
+    vec![("k=", TokenType::Ident), ("1", TokenType::Natural),]
   );
 }
