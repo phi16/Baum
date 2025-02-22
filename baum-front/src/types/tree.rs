@@ -22,11 +22,11 @@ pub enum ExprF<I, E> {
   Let(Vec<Decl>, E),
   Lit(Literal),
 
-  PiE(I, E, E),
+  PiE(Option<I>, E, E),
   LamE(I, E, E),
   AppE(E, E),
 
-  PiI(I, E, E),
+  PiI(Option<I>, E, E),
   LamI(I, E, E),
   AppI(E, E),
 

@@ -147,6 +147,7 @@ impl<'a> Builder<'a> {
           .ok_or(format!("unimplemented syntax handler: {:?}", sid))
           .unwrap()
           .clone();
+
         let (tokens, e, deps) = handler(elems).map_err(|err| (e.1.begin, err))?.into_inner();
 
         let mut i_map = HashMap::new();
@@ -207,7 +208,7 @@ impl<'a> Builder<'a> {
             Lit(lit) => Lit(lit.clone()),
 
             PiE(i, e1, e2) => PiE(
-              replace_id(i, env),
+              i.clone().map(|i| replace_id(&i, env)),
               Rc::new(replace(&e1, env)),
               Rc::new(replace(&e2, env)),
             ),
@@ -218,7 +219,7 @@ impl<'a> Builder<'a> {
             ),
             AppE(e1, e2) => AppE(Rc::new(replace(&e1, env)), Rc::new(replace(&e2, env))),
             PiI(i, e1, e2) => PiI(
-              replace_id(i, env),
+              i.clone().map(|i| replace_id(&i, env)),
               Rc::new(replace(&e1, env)),
               Rc::new(replace(&e2, env)),
             ),
@@ -503,7 +504,7 @@ impl<'a> Builder<'a> {
             Lit(lit) => Lit(lit.clone()),
 
             PiE(i, e1, e2) => PiE(
-              replace_id(i, env),
+              i.clone().map(|i| replace_id(&i, env)),
               Rc::new(replace(&e1, env)),
               Rc::new(replace(&e2, env)),
             ),
@@ -515,7 +516,7 @@ impl<'a> Builder<'a> {
             AppE(e1, e2) => AppE(Rc::new(replace(&e1, env)), Rc::new(replace(&e2, env))),
 
             PiI(i, e1, e2) => PiI(
-              replace_id(i, env),
+              i.clone().map(|i| replace_id(&i, env)),
               Rc::new(replace(&e1, env)),
               Rc::new(replace(&e2, env)),
             ),

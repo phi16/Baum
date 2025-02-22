@@ -17,7 +17,7 @@ pub enum ExprF<I, E> {
   Ann(E, E),
   Uni,
 
-  Pi(I, E, E),
+  Pi(Option<I>, E, E),
   Lam(I, E, E),
   App(E, E),
 

@@ -313,10 +313,12 @@ impl<'a> DeclParser<'a> {
         let mut fvs = HashMap::new();
         for (id, role) in fvs_v {
           if fvs.contains_key(&id) {
-            return Err((
-              pos,
-              "duplicated identifier in syntax declaration".to_string(),
-            ));
+            if fvs.get(&id) == Some(&Role::Ident) || role == Role::Ident {
+              return Err((
+                pos,
+                "duplicated identifier in syntax declaration".to_string(),
+              ));
+            }
           }
           fvs.insert(id, role);
         }

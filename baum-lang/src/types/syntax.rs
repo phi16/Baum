@@ -178,13 +178,29 @@ fn dependency_from(e: &SyntaxExpr) -> HashMap<ElemId, Vec<ElemId>> {
     }
   }
 
+  fn lcs(a: &Vec<ElemId>, b: &Vec<ElemId>) -> Vec<ElemId> {
+    let mut res = Vec::new();
+    for x in a {
+      if b.contains(x) {
+        res.push(x.clone());
+      }
+    }
+    res
+  }
+
   fn rec(e: &SyntaxExpr, env: &Vec<ElemId>, map: &mut HashMap<ElemId, Vec<ElemId>>) {
     use front::ExprF::*;
     match &e.0 {
       Hole => {}
       Var(LookupId::General(_)) => {}
       Var(LookupId::InSyntax(eid)) => {
-        map.insert(eid.clone(), env.clone());
+        if map.contains_key(eid) {
+          // take intersection
+          let map_env = map.get_mut(eid).unwrap();
+          *map_env = lcs(env, map_env);
+        } else {
+          map.insert(eid.clone(), env.clone());
+        }
       }
       Ann(e1, e2) => {
         rec(&e1, env, map);
@@ -199,7 +215,9 @@ fn dependency_from(e: &SyntaxExpr) -> HashMap<ElemId, Vec<ElemId>> {
       PiE(i, e1, e2) => {
         let mut env = env.clone();
         rec(&e1, &env, map);
-        add(i, &mut env);
+        if let Some(i) = i {
+          add(i, &mut env);
+        }
         rec(&e2, &env, map);
       }
       LamE(i, e1, e2) => {
@@ -216,7 +234,9 @@ fn dependency_from(e: &SyntaxExpr) -> HashMap<ElemId, Vec<ElemId>> {
       PiI(i, e1, e2) => {
         let mut env = env.clone();
         rec(&e1, &env, map);
-        add(i, &mut env);
+        if let Some(i) = i {
+          add(i, &mut env);
+        }
         rec(&e2, &env, map);
       }
       LamI(i, e1, e2) => {
@@ -256,10 +276,8 @@ fn dependency_from(e: &SyntaxExpr) -> HashMap<ElemId, Vec<ElemId>> {
         }
       }
       ObjCon(es) => {
-        let mut env = env.clone();
-        for (i, e) in es {
-          rec(&e, &env, map);
-          add(i, &mut env); // ?
+        for (_, e) in es {
+          rec(&e, env, map);
         }
       }
       Prop(_, e) => {

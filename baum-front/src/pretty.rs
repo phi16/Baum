@@ -115,7 +115,10 @@ impl<'a> Pretty<'a> {
       ExprF::Lit(Literal::Chr(c)) => self.s(&format!("{:?}", c)),
       ExprF::Lit(Literal::Str(s)) => self.s(&format!("{:?}", s)),
 
-      ExprF::PiE(i, t, e) => self.s("Π(").i(i).s(": ").e(t).s(") ").e(e),
+      ExprF::PiE(i, t, e) => match i {
+        Some(i) => self.s("Π(").i(i).s(": ").e(t).s(") ").e(e),
+        None => self.s("Π(").e(t).s(") ").e(e),
+      },
       ExprF::LamE(i, t, e) => self.s("λ(").i(i).s(": ").e(t).s(") ").e(e),
       ExprF::AppE(e1, e2) => match e2.0 {
         ExprF::Hole
@@ -128,7 +131,10 @@ impl<'a> Pretty<'a> {
         _ => self.e(e1).s(" (").e(e2).s(")"),
       },
 
-      ExprF::PiI(i, t, e) => self.s("Π{").i(i).s(": ").e(t).s("} ").e(e),
+      ExprF::PiI(i, t, e) => match i {
+        Some(i) => self.s("Π{").i(i).s(": ").e(t).s("} ").e(e),
+        None => self.s("Π{").e(t).s("} ").e(e),
+      },
       ExprF::LamI(i, t, e) => self.s("λ{").i(i).s(": ").e(t).s("} ").e(e),
       ExprF::AppI(e1, e2) => self.e(e1).s(" {").e(e2).s("}"),
 
@@ -162,12 +168,11 @@ impl<'a> Pretty<'a> {
       ExprF::ObjCon(es) => {
         self.s("{");
         for (i, e) in es {
-          self.i(i).s(": ").e(e).s(", ");
+          self.i(i).s(" = ").e(e).s(", ");
         }
         self.s("}")
       }
       ExprF::Prop(i, e) => self.s("π{").i(i).s("} ").e(e),
-      _ => self.s("TODO"),
     }
   }
 }

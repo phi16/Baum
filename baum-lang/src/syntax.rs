@@ -1,5 +1,5 @@
 use crate::types::env::SyntaxTable;
-use crate::types::regex::{Regex, Terminal};
+use crate::types::regex::{deriv, Regex, Terminal};
 use crate::types::tree::SyntaxId;
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -110,7 +110,7 @@ pub fn default_syntax_table<'a>() -> SyntaxTable {
   syntax.def("", regex_elems!["Σ", "(", types, ")"], SyntaxId::TupleTy);
   syntax.def("", regex_elems!["Σ", "{", props, "}"], SyntaxId::ObjTy);
   syntax.def("0", regex_elems!["π", "(", n, ")", e], SyntaxId::Proj);
-  syntax.def("0", regex_elems!["π", "{", id, "}", e], SyntaxId::Proj);
+  syntax.def("0", regex_elems!["π", "{", id, "}", e], SyntaxId::Prop);
 
   syntax
 }
@@ -123,6 +123,12 @@ use baum_front::types::literal as lit;
 use baum_front::types::tree as front;
 use std::char::ParseCharError;
 use std::num::ParseIntError;
+
+#[derive(Debug, Clone)]
+enum Vis {
+  Explicit,
+  Implicit,
+}
 
 struct MiniParser<'a, 'b> {
   input: &'b Vec<SyntaxElem<'a>>,
@@ -172,16 +178,21 @@ impl<'a, 'b> MiniParser<'a, 'b> {
     }
   }
 
-  fn take_token(&mut self, s: &'a str) -> Option<()> {
+  fn peek_token(&self, s: &'a str) -> Option<()> {
     let e = self.input.get(self.index)?;
     if let SyntaxElem::Token(t) = e {
       if *t == s {
-        self.index += 1;
-        self.tokens.push(ElemToken::Token);
         return Some(());
       }
     }
     None
+  }
+
+  fn take_token(&mut self, s: &'a str) -> Option<()> {
+    self.peek_token(s)?;
+    self.index += 1;
+    self.tokens.push(ElemToken::Token);
+    return Some(());
   }
 
   fn peek_id(&self) -> Option<()> {
@@ -278,7 +289,7 @@ pub fn default_syntax_handlers<'a>() -> HashMap<SyntaxId, SyntaxHandler<'a>> {
   handlers.insert(
     SyntaxId::Str,
     make_handler(|p| {
-      let s = p.take_lit(ElemType::Chr).unwrap();
+      let s = p.take_lit(ElemType::Str).unwrap();
       // TODO: process escape
       let s = lit::Literal::Str(s.to_string());
       Ok(SyntaxExpr(front::ExprF::Lit(s)))
@@ -334,11 +345,119 @@ pub fn default_syntax_handlers<'a>() -> HashMap<SyntaxId, SyntaxHandler<'a>> {
     }),
   );
   handlers.insert(
+    SyntaxId::PiE,
+    make_handler(|p| {
+      p.take_token("Π").unwrap();
+      p.take_token("(").unwrap();
+      let mut args = Vec::new();
+      loop {
+        if let Some(_) = p.take_token(")") {
+          break;
+        }
+        if let Some(_) = p.peek_id() {
+          let mut ids = Vec::new();
+          loop {
+            if let Some(_) = p.take_token(":") {
+              break;
+            }
+            let id = p.take_id().unwrap();
+            ids.push(id.clone());
+          }
+          let e = Rc::new(p.take_expr().unwrap());
+          for id in ids {
+            args.push((Some(id.clone()), e.clone()));
+          }
+        } else {
+          let e = p.take_expr().unwrap();
+          args.push((None, Rc::new(e.clone())));
+        }
+        p.take_token(",");
+      }
+      let body = p.take_expr().unwrap();
+      let mut e = body;
+      for (id, ty) in args.into_iter().rev() {
+        e = SyntaxExpr(front::ExprF::PiE(id, ty, Rc::new(e)));
+      }
+      Ok(e)
+    }),
+  );
+  handlers.insert(
     SyntaxId::AppE,
     make_handler(|p| {
       let e1 = p.take_expr().unwrap();
       let e2 = p.take_expr().unwrap();
       Ok(SyntaxExpr(front::ExprF::AppE(Rc::new(e1), Rc::new(e2))))
+    }),
+  );
+
+  handlers.insert(
+    SyntaxId::LamI,
+    make_handler(|p| {
+      p.take_token("λ").unwrap();
+      p.take_token("{").unwrap();
+      let mut args = Vec::new();
+      loop {
+        if let Some(_) = p.take_token("}") {
+          break;
+        }
+        let mut ids = Vec::new();
+        while let Some(id) = p.take_id() {
+          ids.push(id.clone());
+        }
+        let ty = if let Some(_) = p.take_token(":") {
+          p.take_expr().unwrap()
+        } else {
+          SyntaxExpr(front::ExprF::Hole)
+        };
+        let ty = Rc::new(ty);
+        for id in ids {
+          args.push((id, ty.clone()));
+        }
+        p.take_token(",");
+      }
+      let body = p.take_expr().unwrap();
+      let mut e = body;
+      for (id, ty) in args.into_iter().rev() {
+        e = SyntaxExpr(front::ExprF::LamI(id, ty, Rc::new(e)));
+      }
+      Ok(e)
+    }),
+  );
+  handlers.insert(
+    SyntaxId::PiI,
+    make_handler(|p| {
+      p.take_token("Π").unwrap();
+      p.take_token("{").unwrap();
+      let mut args = Vec::new();
+      loop {
+        if let Some(_) = p.take_token("}") {
+          break;
+        }
+        if let Some(_) = p.peek_id() {
+          let mut ids = Vec::new();
+          loop {
+            if let Some(_) = p.take_token(":") {
+              break;
+            }
+            let id = p.take_id().unwrap();
+            ids.push(id.clone());
+          }
+          let e = Rc::new(p.take_expr().unwrap());
+          for id in ids {
+            args.push((Some(id.clone()), e.clone()));
+          }
+        } else {
+          let e = p.take_expr().unwrap();
+          args.push((None, Rc::new(e.clone())));
+        }
+        p.take_token(",");
+      }
+      let body = p.take_expr().unwrap();
+      let mut e = body;
+      for (id, ty) in args.into_iter().rev() {
+        e = SyntaxExpr(front::ExprF::PiI(id, ty, Rc::new(e)));
+      }
+      Ok(e)
     }),
   );
   handlers.insert(
@@ -348,7 +467,7 @@ pub fn default_syntax_handlers<'a>() -> HashMap<SyntaxId, SyntaxHandler<'a>> {
       p.take_token("{").unwrap();
       let e2 = p.take_expr().unwrap();
       p.take_token("}").unwrap();
-      Ok(SyntaxExpr(front::ExprF::AppE(Rc::new(e1), Rc::new(e2))))
+      Ok(SyntaxExpr(front::ExprF::AppI(Rc::new(e1), Rc::new(e2))))
     }),
   );
 
@@ -371,9 +490,9 @@ pub fn default_syntax_handlers<'a>() -> HashMap<SyntaxId, SyntaxHandler<'a>> {
             let id = p.take_id().unwrap();
             ids.push(id.clone());
           }
-          let e = p.take_expr().unwrap();
+          let e = Rc::new(p.take_expr().unwrap());
           for id in ids {
-            v.push((Some(id.clone()), Rc::new(e.clone())));
+            v.push((Some(id.clone()), e.clone()));
           }
         } else {
           let e = p.take_expr().unwrap();
@@ -398,6 +517,126 @@ pub fn default_syntax_handlers<'a>() -> HashMap<SyntaxId, SyntaxHandler<'a>> {
         p.take_token(",");
       }
       Ok(SyntaxExpr(front::ExprF::TupleCon(v)))
+    }),
+  );
+  handlers.insert(
+    SyntaxId::Proj,
+    make_handler(|p| {
+      p.take_token("π").unwrap();
+      p.take_token("(").unwrap();
+      let s = p.take_lit(ElemType::Nat).unwrap();
+      let n = s.parse().map_err(|e: ParseIntError| e.to_string())?;
+      p.take_token(")").unwrap();
+      let e = p.take_expr().unwrap();
+      Ok(SyntaxExpr(front::ExprF::Proj(n, Rc::new(e))))
+    }),
+  );
+
+  handlers.insert(
+    SyntaxId::ObjTy,
+    make_handler(|p| {
+      let mut v = Vec::new();
+      p.take_token("Σ").unwrap();
+      p.take_token("{").unwrap();
+      loop {
+        if let Some(_) = p.take_token("}") {
+          break;
+        }
+        let mut ids = Vec::new();
+        while let Some(id) = p.take_id() {
+          ids.push(id.clone());
+        }
+        p.take_token(":").unwrap();
+        let e = Rc::new(p.take_expr().unwrap());
+        for id in ids {
+          v.push((id, e.clone()));
+        }
+        p.take_token(",");
+      }
+      Ok(SyntaxExpr(front::ExprF::ObjTy(v)))
+    }),
+  );
+  handlers.insert(
+    SyntaxId::ObjCon,
+    make_handler(|p| {
+      let mut v = Vec::new();
+      p.take_token("{").unwrap();
+      loop {
+        if let Some(_) = p.take_token("}") {
+          break;
+        }
+        let id = p.take_id().unwrap();
+        let mut args = Vec::new();
+        loop {
+          if p.peek_token(":").is_some() || p.peek_token("=").is_some() {
+            break;
+          }
+          if let Some(i) = p.take_id() {
+            args.push((Vis::Explicit, i, Rc::new(SyntaxExpr(front::ExprF::Hole))));
+          } else {
+            let explicit = p.peek_token("(").is_some();
+            let implicit = p.peek_token("{").is_some();
+            let vis = match (explicit, implicit) {
+              (true, false) => Vis::Explicit,
+              (false, true) => Vis::Implicit,
+              _ => unreachable!(),
+            };
+            p.take_token(match vis {
+              Vis::Explicit => "(",
+              Vis::Implicit => "{",
+            });
+            let mut ids = Vec::new();
+            while let Some(id) = p.take_id() {
+              ids.push(id.clone());
+            }
+            let ty = if let Some(_) = p.take_token(":") {
+              p.take_expr().unwrap()
+            } else {
+              SyntaxExpr(front::ExprF::Hole)
+            };
+            p.take_token(match vis {
+              Vis::Explicit => ")",
+              Vis::Implicit => "}",
+            });
+            let ty = Rc::new(ty);
+            for id in ids {
+              args.push((vis.clone(), id, ty.clone()));
+            }
+          }
+        }
+        let ty = if let Some(_) = p.take_token(":") {
+          Some(p.take_expr().unwrap())
+        } else {
+          None
+        };
+        p.take_token("=");
+        let e = p.take_expr().unwrap();
+        let e = match ty {
+          Some(ty) => SyntaxExpr(front::ExprF::Ann(Rc::new(e), Rc::new(ty))),
+          None => e,
+        };
+        let mut e = e;
+        for (vis, id, ty) in args.into_iter().rev() {
+          match vis {
+            Vis::Explicit => e = SyntaxExpr(front::ExprF::LamE(id, ty, Rc::new(e))),
+            Vis::Implicit => e = SyntaxExpr(front::ExprF::LamI(id, ty, Rc::new(e))),
+          }
+        }
+        v.push((id, Rc::new(e)));
+        p.take_token(",");
+      }
+      Ok(SyntaxExpr(front::ExprF::ObjCon(v)))
+    }),
+  );
+  handlers.insert(
+    SyntaxId::Prop,
+    make_handler(|p| {
+      p.take_token("π").unwrap();
+      p.take_token("{").unwrap();
+      let i = p.take_id().unwrap();
+      p.take_token("}").unwrap();
+      let e = p.take_expr().unwrap();
+      Ok(SyntaxExpr(front::ExprF::Prop(i, Rc::new(e))))
     }),
   );
 
