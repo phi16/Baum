@@ -77,9 +77,10 @@ impl<'a> DeclParser<'a> {
     }
   }
 
-  pub fn into_inner(self) -> (Tracker<'a>, u16, HashSet<String>, Vec<String>) {
+  pub fn into_inner(self) -> (Tracker<'a>, Env<'a>, u16, HashSet<String>, Vec<String>) {
     (
       self.tracker,
+      self.env,
       self.next_syntax_id,
       self.known_ops,
       self.errors,

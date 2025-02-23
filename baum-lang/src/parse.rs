@@ -15,7 +15,7 @@ pub fn parse<'a>(code: &'a str) -> Result<Vec<Decl<'a>>, Vec<String>> {
   let env = Env::from_syntax(default_syntax_table());
   let mut parser = DeclParser::new(tracker, env, 0, HashSet::new(), Vec::new());
   let ds = parser.program();
-  let (_, _, _, errors) = parser.into_inner();
+  let (_, _, _, _, errors) = parser.into_inner();
   if errors.is_empty() {
     Ok(ds)
   } else {

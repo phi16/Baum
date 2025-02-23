@@ -481,32 +481,60 @@ impl<'a, 'b> ExprParser<'a, 'b> {
         let let_pos = self.tracker.pos();
         self.tracker.next();
 
-        let mut tracker = Tracker::new(Vec::new());
-        std::mem::swap(&mut self.tracker, &mut tracker);
-        let mut in_ops = HashSet::new();
-        in_ops.insert("in".to_string());
-        let next_syntax_id = self.next_syntax_id;
-        let errors = std::mem::take(&mut self.errors);
-        let mut d = DeclParser::new(tracker, self.env.clone(), next_syntax_id, in_ops, errors);
+        let (ds, d_env) = {
+          let mut tracker = Tracker::new(Vec::new());
+          std::mem::swap(&mut self.tracker, &mut tracker);
+          let mut in_ops = HashSet::new();
+          in_ops.insert("in".to_string());
+          let next_syntax_id = self.next_syntax_id;
+          let errors = std::mem::take(&mut self.errors);
+          let mut d = DeclParser::new(tracker, self.env.clone(), next_syntax_id, in_ops, errors);
 
-        let mut empty_env = Env::new();
-        let ds = d.decls(&mut empty_env);
+          let mut empty_env = Env::new();
+          let ds = d.decls(&mut empty_env);
 
-        let (tracker, next_syntax_id, _, errors) = d.into_inner();
-        self.tracker = tracker;
-        self.next_syntax_id = next_syntax_id;
-        self.errors = errors;
+          let (tracker, d_env, next_syntax_id, _, errors) = d.into_inner();
+          self.tracker = tracker;
+          self.next_syntax_id = next_syntax_id;
+          self.errors = errors;
+          (ds, d_env)
+        };
 
-        let e = match self.tracker.peek_str() {
+        match self.tracker.peek_str() {
           Some("in") => {
             self.tracker.next();
-            self.expr()?
           }
           _ => {
             self.add_error(self.tracker.pos(), "expected 'in'");
             return None;
           }
         };
+
+        let e = {
+          let mut tracker = Tracker::new(Vec::new());
+          std::mem::swap(&mut self.tracker, &mut tracker);
+          let known_ops = std::mem::take(&mut self.known_ops);
+          let next_syntax_id = self.next_syntax_id;
+          let errors = std::mem::take(&mut self.errors);
+
+          let mut ep = ExprParser::new(
+            tracker,
+            &d_env,
+            next_syntax_id,
+            self.in_syntax,
+            known_ops,
+            errors,
+          );
+          let e = ep.expr();
+
+          let (tracker, next_syntax_id, known_ops, errors) = ep.into_inner();
+          self.tracker = tracker;
+          self.next_syntax_id = next_syntax_id;
+          self.known_ops = known_ops;
+          self.errors = errors;
+          e?
+        };
+
         return Some(Expr(
           ExprF::Let(ds, Box::new(e)),
           TokenRange {
