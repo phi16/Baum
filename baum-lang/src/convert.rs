@@ -263,17 +263,17 @@ impl<'a> Builder<'a> {
           }
         }
 
-        struct E<'a> {
+        struct E<'a, 'c> {
           i_map: HashMap<ElemId, (Id<'a>, front::Id)>,
           e_map: HashMap<ElemId, front::Expr>,
           resolver: Option<(Vec<front::Id>, Resolver)>,
-          here: Vec<front::Id>,
+          here: &'c Vec<front::Id>,
         }
         let env = E {
           i_map,
           e_map,
           resolver,
-          here: self.cur_mod_name.clone(), // TODO: borrow
+          here: &self.cur_mod_name,
         };
 
         fn replace_id(id: &LookupId, env: &E) -> front::Id {
@@ -307,7 +307,7 @@ impl<'a> Builder<'a> {
               let r = res[l].clone();
               // extract common prefix
               let mut common = 0;
-              for (a, b) in r.iter().zip(&env.here) {
+              for (a, b) in r.iter().zip(env.here) {
                 if a != b {
                   break;
                 }
@@ -448,6 +448,9 @@ impl<'a> Builder<'a> {
     let mut mod_decls = Vec::new();
     let mod_body = match m_body {
       ModBodyF::Decls(ds) => {
+        self.cur_depth += 1;
+        self.cur_mod_name.push(mod_id.clone());
+        self.envs.push((self.cur_depth, Env::new()));
         // overwrite the module parameter name references to actual definitions
         for ((_, i, _), name) in params.iter().zip(param_names.into_iter()) {
           let j = self.new_id(name);
@@ -455,10 +458,9 @@ impl<'a> Builder<'a> {
           mod_decls.push(front::Decl::Def(j, def_i));
           self.here().insert(name.clone(), Entity::Def(j));
         }
-        self.cur_depth += 1;
-        self.cur_mod_name.push(mod_id.clone());
         self.envs.push((self.cur_depth, Env::new()));
         self.ds(ds, &mut mod_env, &mut mod_decls);
+        self.envs.pop();
         self.envs.pop();
         self.cur_mod_name.pop();
         self.cur_depth -= 1;
@@ -742,8 +744,10 @@ impl<'a> Builder<'a> {
           })
         }
 
+        eprintln!("SYNTAX: {:?}", e);
         let e = replace(&e, &env);
         self.symbols = env.symbols;
+        eprintln!("SYNTAX: {:?}", e);
 
         let interpret = SyntaxInterpret::new(tokens, e);
         let handler: SyntaxHandler<'a> = Rc::new(move |_| Ok(interpret.clone()));

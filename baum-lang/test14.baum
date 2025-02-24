@@ -1,0 +1,18 @@
+module U x = {
+  syntax V a = (a, x)
+}
+open U 2
+u = V 3
+
+---
+
+module X = {
+  module M e = {
+    f = 1
+    syntax S x = λ(x) (e, f)
+  }
+  module N e = M e
+  module O = N 1
+  u x = O.S x
+}
+v x = X.O.S x
