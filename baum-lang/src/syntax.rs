@@ -239,7 +239,7 @@ impl<'a, 'b> MiniParser<'a, 'b> {
       let id = ElemId(self.next_elem_id);
       self.next_elem_id += 1;
       self.tokens.push(ElemToken::Expr(id));
-      return Some(SyntaxExpr(front::ExprF::Var(LookupId::InSyntax(id))));
+      return Some(SyntaxExpr(front::ExprF::Var(0, LookupId::InSyntax(id))));
     }
     None
   }

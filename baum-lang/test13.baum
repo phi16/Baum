@@ -1,0 +1,20 @@
+module X = {
+  w = 0
+  module A = {
+    x = 1
+    module B u = {
+      y = u
+      module C v = {
+        z = v
+      }
+      module C' = C u
+      syntax f = (w, x, y, C'.z)
+    }
+    module B' = B 2
+  }
+  module AA = {
+    module A' = A
+  }
+  open AA.A'.B'
+  a = f  -- a = (w, AA.A'.x, #.y, #.C'.z)
+}

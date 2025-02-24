@@ -11,14 +11,17 @@ impl std::fmt::Debug for Id {
   }
 }
 
+pub type ModDepth = u8;
+pub type ModLevel = i8;
+
 #[derive(Debug, Clone)]
 pub enum ExprF<I, E> {
   Hole,
-  Var(I),
+  Var(ModLevel, I),
   Ann(E, E),
   Uni,
 
-  Ext(Vec<I>, I),
+  Ext(ModLevel, Vec<I>, I),
   Let(Vec<Decl>, E),
   Lit(Literal),
 
@@ -55,7 +58,7 @@ pub enum Vis {
 pub enum ModBody {
   Decls(Vec<Decl>),
   Import(String),
-  App(Vec<I>, Vec<(Vis, E)>),
+  App(ModLevel, Vec<I>, Vec<(Vis, E)>),
 }
 
 #[derive(Debug, Clone)]

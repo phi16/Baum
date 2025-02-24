@@ -1,53 +1,38 @@
-w = 0
-module A = {
-  x = 1
-  module B u = {
-    y = u
-    module C v = {
-      z = v
-    }
-    module C' = C u
-    syntax f = (w, x, y, C'.z)
-  }
-  module B' = B 2
-}
-a = A.B'.f  -- a = (w, A.x, A.B'.y, A.B'.C'.z)
-
----
-
 module X = {
-  module Y f = {
-    syntax h = f
-  }
-  open Y 2
-  b = h
-}
-
----
-
-u a b = λ(c)
-  let
-    module A = {
-      v = b
+  w = 0
+  module A = {
+    x = 1
+    module B u = {
+      y = u
+      module C v = {
+        z = v
+      }
+      module C' = C u
+      syntax f = (w, x, y, C'.z)
+      a = f   -- a = (w, x, y, C'.z)
     }
-    syntax P x = (a, x, A.v, c)
-  in P 0
-
----
-
-module U x = {
-    syntax V a = (a, x)
+    module B' = B 2
+    a = B'.f  -- a = (w, x, B'.y, B'.C'.z)
+  }
+  a = A.B'.f  -- a = (w, A.x, A.B'.y, A.B'.C'.z)
+  module AA = {
+    a = A.B'.f  -- a = (w, A.x, A.B'.y, A.B'.C'.z)
+    module BB = A.B 3
+    a = BB.f    -- a = (w, A.x, BB.y, BB.C'.z)
+    module C = {
+      module A = {}
+      a = BB.f  -- a = (w, A.x, BB.y, BB.C'.z)
+    }
+    module A' = A
+    a = A'.B'.f  -- a = (w, A'.x, A'.B'.y, A'.B'.C'.z)
+  }
+  a = AA.BB.f    -- a = (w, A.x, AA.BB.y, AA.BB.C'.z)
+  a = AA.A'.B'.f -- a = (w, AA.A'.x, AA.A'.B'.y, AA.A'.B'.C'.z)
+  open AA.A'.B'
+  a = f          -- a = (w, AA.A'.x, #.y, #.C'.z)
+  open AA.A'
+  a = B'.f       -- a = (w, ##.x, ##.B'.y, ##.B'.C'.z)
+  open AA
+  a = A'.B'.f    -- a = (w, ###.A'.x, ###.A'.B'.y, ###.A'.B'.C'.z)
 }
-open U 2
-u = V 3
-
----
-
-module M e = {
-  syntax S x = λ(x) e
-}
-u x = M.S x
-
----
-
-z = let module G = { x = 1 } in G.x
+a = X.A.B'.f     -- a = (X.w, X.A.x, X.A.B'.y, X.A.B'.C'.z)

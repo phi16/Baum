@@ -1,0 +1,28 @@
+module A = {
+  a = 0
+  module B = {
+    b = 0
+    module C = {
+      c = 0
+      module D = {
+        d = 0
+        syntax f = (a, b, c, d)
+      }
+    }
+  }
+  module E = {
+    module G = {
+      module H = B.C
+      z = H.D.f   -- (a, B.b, H.c, H.D.d)
+    }
+    z = G.H.D.f   -- (a, B.b, G.H.c, G.H.D.d)
+  }
+  z = E.G.H.D.f   -- (a, B.b, E.G.H.c, E.G.H.D.d)
+  module I = {
+    module J = {
+      module K = E.G.H.D
+    }
+  }
+  z = I.J.K.f     -- (a, B.b, E.G.H.c, I.J.K.d)
+}
+z = A.E.G.H.D.f   -- (A.a, A.B.b, A.E.G.H.c, A.E.G.H.D.d)

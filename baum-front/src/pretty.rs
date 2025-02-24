@@ -65,8 +65,8 @@ impl<'a> Pretty<'a> {
     match &m {
       ModBody::Decls(ds) => self.s("{").open().ds(ds).close().s("}").ln(),
       ModBody::Import(path) => self.s("import ").s(path).ln(),
-      ModBody::App(mod_name, args) => {
-        self.is(mod_name, ".");
+      ModBody::App(l, mod_name, args) => {
+        self.s(&format!("[{}]", l)).is(mod_name, ".");
         for (vis, e) in args {
           self.s(" ");
           match vis {
@@ -105,10 +105,10 @@ impl<'a> Pretty<'a> {
   fn e(&mut self, e: &Expr) -> &mut Self {
     match &e.0 {
       ExprF::Hole => self.s("_"),
-      ExprF::Var(i) => self.i(i),
+      ExprF::Var(l, i) => self.s(&format!("[{}]", l)).i(i),
       ExprF::Ann(v, t) => self.e(v).s(" of ").e(t),
       ExprF::Uni => self.s("𝒰"),
-      ExprF::Ext(m, i) => self.is(m, ".").s(".").i(i),
+      ExprF::Ext(l, m, i) => self.s(&format!("[{}]", l)).is(m, ".").s(".").i(i),
       ExprF::Let(ds, e) => self.s("let").open().ds(ds).close().s("in ").e(e),
       ExprF::Lit(Literal::Nat(Nat(n))) => self.s(&format!("{}", n)),
       ExprF::Lit(Literal::Rat(r)) => self.s(&format!("{:?}", r)),
@@ -122,9 +122,9 @@ impl<'a> Pretty<'a> {
       ExprF::LamE(i, t, e) => self.s("λ(").i(i).s(": ").e(t).s(") ").e(e),
       ExprF::AppE(e1, e2) => match e2.0 {
         ExprF::Hole
-        | ExprF::Var(_)
+        | ExprF::Var(_, _)
         | ExprF::Uni
-        | ExprF::Ext(_, _)
+        | ExprF::Ext(_, _, _)
         | ExprF::Lit(_)
         | ExprF::TupleTy(_)
         | ExprF::TupleCon(_)

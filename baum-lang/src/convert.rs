@@ -4,6 +4,7 @@ use crate::types::syntax::{
 use crate::types::tree::*;
 use crate::types::tree_base::*;
 use baum_front::types::tree as front;
+use baum_front::types::tree::{ModDepth, ModLevel};
 use std::collections::HashMap;
 use std::rc::Rc;
 
@@ -19,10 +20,12 @@ fn ext_name(mod_name: &Vec<Id>, i: &Id) -> String {
   s
 }
 
+type Resolver = Vec<Vec<front::Id>>;
+
 #[derive(Debug, Clone)]
 enum Entity<'a> {
   Def(front::Id),
-  Mod(front::Id, Env<'a>),
+  Mod(front::Id, Resolver, Env<'a>),
 }
 
 #[derive(Debug, Clone)]
@@ -39,8 +42,9 @@ impl<'a> Env<'a> {
 }
 
 struct Builder<'a> {
-  mod_name: Vec<Id<'a>>,
-  envs: Vec<Env<'a>>,
+  envs: Vec<(front::ModDepth, Env<'a>)>,
+  cur_depth: front::ModDepth,
+  cur_mod_name: Vec<front::Id>,
   next_id: u32,
   syntax: HashMap<SyntaxId, SyntaxHandler<'a>>,
   symbols: HashMap<front::Id, String>,
@@ -50,8 +54,9 @@ struct Builder<'a> {
 impl<'a> Builder<'a> {
   fn new(syntax: HashMap<SyntaxId, SyntaxHandler<'a>>) -> Self {
     Self {
-      mod_name: Vec::new(),
-      envs: vec![Env::new()],
+      envs: vec![(0, Env::new())],
+      cur_depth: 0,
+      cur_mod_name: Vec::new(),
       next_id: 0,
       syntax,
       symbols: HashMap::new(),
@@ -65,7 +70,7 @@ impl<'a> Builder<'a> {
   }
 
   fn here(&mut self) -> &mut HashMap<Id<'a>, Entity<'a>> {
-    &mut self.envs.last_mut().unwrap().lookup
+    &mut self.envs.last_mut().unwrap().1.lookup
   }
 
   fn new_id(&mut self, id: &Id<'a>) -> front::Id {
@@ -81,20 +86,22 @@ impl<'a> Builder<'a> {
     i
   }
 
-  fn lookup_mod(&self, n: &Vec<Id<'a>>) -> Option<(Vec<front::Id>, Env<'a>)> {
+  fn lookup_mod(&self, n: &Vec<Id<'a>>) -> Option<(ModDepth, Vec<front::Id>, Resolver, Env<'a>)> {
     'k: for env in self.envs.iter().rev() {
-      let mut cur_env = env;
+      let mut cur_env = &env.1;
       let mut mod_name = Vec::new();
+      let mut mod_res = Vec::new();
       for name in n {
         match cur_env.lookup.get(name) {
-          Some(Entity::Mod(i, env)) => {
+          Some(Entity::Mod(i, res, env)) => {
             mod_name.push(*i);
+            mod_res = res.clone(); // a bit inefficient
             cur_env = env;
           }
           _ => continue 'k,
         }
       }
-      return Some((mod_name, cur_env.clone()));
+      return Some((env.0, mod_name, mod_res, cur_env.clone()));
     }
     None
   }
@@ -106,13 +113,32 @@ impl<'a> Builder<'a> {
     }
   }
 
+  fn level_from(&self, depth: ModDepth) -> ModLevel {
+    if self.cur_depth < depth {
+      0
+    } else {
+      (self.cur_depth - depth) as ModLevel
+    }
+  }
+
+  fn to_name(&self, mod_ids: &Vec<front::Id>) -> String {
+    let mut s = String::new();
+    for i in mod_ids {
+      s.push_str(self.symbols.get(i).unwrap_or(&"".to_string()));
+      s.push_str("#");
+      s.push_str(&i.0.to_string());
+      s.push_str(".");
+    }
+    s
+  }
+
   fn e_internal(&mut self, e: &Expr<'a>) -> Result<front::Expr> {
     match &e.0 {
       ExprF::Hole => Ok(front::Expr(front::ExprF::Hole)),
       ExprF::Var(i) => {
         for env in self.envs.iter().rev() {
-          if let Some(Entity::Def(i)) = env.lookup.get(i) {
-            return Ok(front::Expr(front::ExprF::Var(*i)));
+          if let Some(Entity::Def(i)) = env.1.lookup.get(i) {
+            return Ok(front::Expr(front::ExprF::Var(self.level_from(env.0), *i)));
           }
         }
         Err((e.1.begin, format!("symbol not found: {}", i.as_str())))
@@ -122,7 +148,7 @@ impl<'a> Builder<'a> {
         "module reference is not allowed in expression".to_string(),
       )),
       ExprF::Ext(mod_name, i) => {
-        let (m, env) = self.lookup_mod(mod_name).ok_or((
+        let (depth, m, res, env) = self.lookup_mod(mod_name).ok_or((
           e.1.begin,
           format!("module not found: {}", ext_name(mod_name, i)),
         ))?;
@@ -130,10 +156,14 @@ impl<'a> Builder<'a> {
           e.1.begin,
           format!("symbol not found: {}", ext_name(mod_name, i)),
         ))?;
-        Ok(front::Expr(front::ExprF::Ext(m, i.clone())))
+        Ok(front::Expr(front::ExprF::Ext(
+          self.level_from(depth),
+          m,
+          i.clone(),
+        )))
       }
       ExprF::Let(ds, e) => {
-        self.envs.push(Env::new());
+        self.envs.push((self.cur_depth, Env::new()));
         let mut decls = Vec::new();
         self.ds(ds, &mut Env::new(), &mut decls);
         let e = Rc::new(self.e(e));
@@ -148,6 +178,64 @@ impl<'a> Builder<'a> {
           .unwrap()
           .clone();
 
+        let resolver = if mod_name.is_empty() {
+          None // hmmmmmmmmmmm
+        } else {
+          let (md, mn, mres, _) = self
+            .lookup_mod(mod_name)
+            .ok_or(format!("module not found: {:?}", mod_name))
+            .unwrap(); // is this correct for empty mod...?
+
+          if match sid {
+            SyntaxId::User(_) => true,
+            _ => false,
+          } {
+            eprintln!(
+              "at {:?}, Syntax {:?} called with {:?} ({:?}) / {:?}",
+              e.1.begin.to_string(),
+              sid,
+              self.to_name(&mn),
+              md,
+              mres.iter().map(|m| self.to_name(m)).collect::<Vec<_>>()
+            );
+            eprintln!(
+              "Current mod: {:?} ({:?})",
+              self.to_name(&self.cur_mod_name),
+              self.cur_depth
+            );
+            let here = &self.cur_mod_name;
+            let mut res = Vec::new();
+            for r in &mres {
+              // remove common prefix with here, from r
+              let mut rr = Vec::new();
+              let mut common = true;
+              for (index, m) in r.iter().enumerate() {
+                if common {
+                  if index < here.len() && m == &here[index] {
+                    continue;
+                  }
+                }
+                common = false;
+                rr.push(m.clone());
+              }
+              res.push(rr);
+            }
+
+            eprintln!(
+              "Res: {:?}",
+              res
+                .iter()
+                .rev()
+                .map(|m| self.to_name(m))
+                .enumerate()
+                .collect::<Vec<_>>()
+            );
+            eprintln!();
+            Some(res)
+          } else {
+            None
+          }
+        };
         let (tokens, e, deps) = handler(elems).map_err(|err| (e.1.begin, err))?.into_inner();
 
         let mut i_map = HashMap::new();
@@ -165,7 +253,7 @@ impl<'a> Builder<'a> {
         for (elem, t) in elems.iter().zip(tokens.into_iter()) {
           match (elem, t) {
             (SyntaxElem::Expr(e), ElemToken::Expr(eid)) => {
-              self.envs.push(Env::new());
+              self.envs.push((self.cur_depth, Env::new()));
               // add dependencies
               for i_eid in deps.get(&eid).unwrap() {
                 let (i, id) = i_map.get(i_eid).unwrap();
@@ -182,8 +270,13 @@ impl<'a> Builder<'a> {
         struct E<'a> {
           i_map: HashMap<ElemId, (Id<'a>, front::Id)>,
           e_map: HashMap<ElemId, front::Expr>,
+          resolver: Option<Resolver>,
         }
-        let env = E { i_map, e_map };
+        let env = E {
+          i_map,
+          e_map,
+          resolver,
+        };
 
         fn replace_id(id: &LookupId, env: &E) -> front::Id {
           match id {
@@ -192,18 +285,50 @@ impl<'a> Builder<'a> {
           }
         }
 
+        fn resolve_ext(
+          l: &ModLevel,
+          mod_name: &Vec<LookupId>,
+          i: &front::Id,
+          env: &E,
+        ) -> front::Expr {
+          let mod_name = mod_name
+            .iter()
+            .map(|m| {
+              if let LookupId::General(m) = m {
+                *m
+              } else {
+                unreachable!()
+              }
+            })
+            .collect::<Vec<_>>();
+          let mod_name = match &env.resolver {
+            Some(res) => {
+              let l = *l as usize;
+              assert!(l < res.len());
+              let mut m = res[res.len() - 1 - l].clone();
+              m.extend(mod_name);
+              m
+            }
+            None => mod_name,
+          };
+          // TODO: Level ?
+          front::Expr(if mod_name.is_empty() {
+            front::ExprF::Var(-1, *i)
+          } else {
+            front::ExprF::Ext(-1, mod_name, *i)
+          })
+        }
+
         fn replace(e: &SyntaxExpr, env: &E) -> front::Expr {
           use front::ExprF::*;
           front::Expr(match &e.0 {
             Hole => Hole,
-            Var(LookupId::General(i)) => Var(*i),
-            Var(LookupId::InSyntax(i)) => env.e_map.get(i).unwrap().0.clone(), // expr
+            Var(l, LookupId::General(i)) => resolve_ext(l, &Vec::new(), i, env).0,
+            Var(_, LookupId::InSyntax(i)) => env.e_map.get(i).unwrap().0.clone(), // expr
             Ann(e1, e2) => Ann(Rc::new(replace(&e1, env)), Rc::new(replace(&e2, env))),
             Uni => Uni,
-            Ext(mod_name, i) => Ext(
-              mod_name.into_iter().map(|i| replace_id(i, env)).collect(),
-              replace_id(i, env),
-            ),
+            Ext(l, mod_name, LookupId::General(i)) => resolve_ext(l, mod_name, i, env).0,
+            Ext(_, _, LookupId::InSyntax(_)) => unreachable!(),
             Let(_, _) => unreachable!(),
             Lit(lit) => Lit(lit.clone()),
 
@@ -275,14 +400,16 @@ impl<'a> Builder<'a> {
 
   fn define_mod(
     &mut self,
+    mod_id: &front::Id,
     m_params: &Vec<(Vis, Vec<Id<'a>>, Option<Box<Expr<'a>>>)>,
     m_body: &ModBody<'a>,
   ) -> (
     Vec<(Vis, front::Id, Rc<front::Expr>)>,
     front::ModBody,
+    Resolver,
     Env<'a>,
   ) {
-    self.envs.push(Env::new());
+    self.envs.push((self.cur_depth, Env::new()));
     let mut param_names = Vec::new();
     let mut params = Vec::new();
     for (vis, names, ty) in m_params {
@@ -301,31 +428,119 @@ impl<'a> Builder<'a> {
     }
     let mut mod_env = Env::new();
     let mut mod_decls = Vec::new();
-    let mod_body = match m_body {
+    let (mod_body, mod_res) = match m_body {
       ModBodyF::Decls(ds) => {
         // overwrite the module parameter name references to actual definitions
         for ((_, i, _), name) in params.iter().zip(param_names.into_iter()) {
           let j = self.new_id(name);
-          let def_i = front::Expr(front::ExprF::Var(i.clone()));
+          let def_i = front::Expr(front::ExprF::Var(0, i.clone()));
           mod_decls.push(front::Decl::Def(j, def_i));
           self.here().insert(name.clone(), Entity::Def(j));
         }
+        self.cur_depth += 1;
+        self.cur_mod_name.push(mod_id.clone());
+        self.envs.push((self.cur_depth, Env::new()));
         self.ds(ds, &mut mod_env, &mut mod_decls);
-        front::ModBody::Decls(mod_decls)
+        self.envs.pop();
+        self.cur_mod_name.pop();
+        self.cur_depth -= 1;
+
+        let res = {
+          let mut res = Vec::new();
+          let mut m = Vec::new();
+          res.push(m.clone());
+          for mi in &self.cur_mod_name {
+            m.push(mi.clone());
+            res.push(m.clone());
+          }
+          m.push(mod_id.clone());
+          res.push(m);
+          res
+        };
+        (front::ModBody::Decls(mod_decls), res)
       }
       ModBodyF::Ref(ModRefF::App(m, m_args)) => {
-        let (m, env) = self.lookup_mod(&m).unwrap();
-        mod_env = env.clone();
+        let (depth, m, res, env) = self.lookup_mod(&m).unwrap();
         let mut args = Vec::new();
         for (vis, e) in m_args {
           args.push((vis.clone(), self.e(e)));
         }
-        front::ModBody::App(m, args)
+
+        // Rewriting resolvers: replace occurrence of m with relative mod_name
+        struct Replacer<'c> {
+          from: &'c Vec<front::Id>,
+          to: &'c Vec<front::Id>,
+        }
+
+        fn replace_res(res: &Resolver, repl: &Replacer) -> Resolver {
+          enum ModMatch {
+            Matched(Vec<front::Id>, Vec<front::Id>),
+            Unmatched(Vec<front::Id>),
+          }
+          fn last_match(r: &Vec<front::Id>, cut: &Vec<front::Id>) -> ModMatch {
+            let mut c = Vec::new();
+            for (i, m) in r.iter().enumerate() {
+              if m == &cut[0] && r[i..].starts_with(cut) {
+                return ModMatch::Matched(c, r[i + cut.len()..].to_vec());
+              }
+              c.push(m.clone());
+            }
+            ModMatch::Unmatched(c)
+          }
+
+          let mut ret_res = Vec::new();
+          for r in res {
+            match last_match(&r, &repl.from) {
+              ModMatch::Matched(mut rr, tail) => {
+                rr.extend(repl.to);
+                rr.extend(tail);
+                ret_res.push(rr);
+              }
+              ModMatch::Unmatched(r) => {
+                ret_res.push(r);
+              }
+            }
+          }
+          ret_res
+        }
+
+        fn replace_res_for_env<'a>(env: &Env<'a>, repl: &Replacer) -> Env<'a> {
+          let lookup = env
+            .lookup
+            .iter()
+            .map(|(name, entity)| {
+              let e = match entity {
+                Entity::Mod(i, res, env) => Entity::Mod(
+                  i.clone(),
+                  replace_res(res, repl),
+                  replace_res_for_env(env, repl),
+                ),
+                e => e.clone(),
+              };
+              (name.clone(), e)
+            })
+            .collect();
+          Env { lookup }
+        }
+
+        let mut repl_to = self.cur_mod_name[depth as usize..].to_vec();
+        repl_to.push(mod_id.clone());
+        let repl = Replacer {
+          from: &m,
+          to: &repl_to,
+        };
+        mod_env = replace_res_for_env(&env, &repl);
+        let mod_res = replace_res(&res, &repl);
+
+        (
+          front::ModBody::App(self.level_from(depth), m, args),
+          mod_res,
+        )
       }
       ModBodyF::Ref(ModRefF::Import(_)) => unimplemented!(),
     };
     self.envs.pop();
-    (params, mod_body, mod_env)
+    (params, mod_body, mod_res, mod_env)
   }
 
   fn d(&mut self, d: &Decl<'a>, cur_mod: &mut Env<'a>, decls: &mut Vec<front::Decl>) {
@@ -335,32 +550,33 @@ impl<'a> Builder<'a> {
         self.ds(ds, &mut empty_env, decls);
       }
       DeclF::Mod(md, mb) => {
-        self.mod_name.push(md.name.clone());
-        let (params, body, env) = self.define_mod(&md.params, mb);
-        self.mod_name.pop();
         let mod_id = self.new_id(&md.name);
+        let (params, body, res, env) = self.define_mod(&mod_id, &md.params, mb);
         decls.push(front::Decl::Mod(mod_id, params, body));
-        self
-          .here()
-          .insert(md.name.clone(), Entity::Mod(mod_id, env.clone())); // uh
+        self.here().insert(
+          md.name.clone(),
+          Entity::Mod(mod_id, res.clone(), env.clone()),
+        ); // uh
         cur_mod
           .lookup
-          .insert(md.name.clone(), Entity::Mod(mod_id, env));
+          .insert(md.name.clone(), Entity::Mod(mod_id, res, env));
       }
       DeclF::Open(mr) => {
         // define a dummy module to consume m_args
         let mb = ModBody::Ref(mr.clone());
-        let (params, body, env) = self.define_mod(&Vec::new(), &mb);
         let mod_id = self.fresh_id();
+        let (params, body, _, env) = self.define_mod(&mod_id, &Vec::new(), &mb);
         decls.push(front::Decl::Mod(mod_id, params, body));
 
         // inserts all entities from the dummy module to current module
         env.lookup.into_iter().for_each(|(name, entity)| {
           decls.push(match entity {
-            Entity::Def(i) => front::Decl::Def(i, front::Expr(front::ExprF::Ext(vec![mod_id], i))),
-            Entity::Mod(i, _) => {
+            Entity::Def(i) => {
+              front::Decl::Def(i, front::Expr(front::ExprF::Ext(0, vec![mod_id], i)))
+            }
+            Entity::Mod(i, _, _) => {
               let mn = vec![mod_id, i];
-              front::Decl::Mod(i, Vec::new(), front::ModBody::App(mn, Vec::new()))
+              front::Decl::Mod(i, Vec::new(), front::ModBody::App(0, mn, Vec::new()))
             }
           });
           self.here().insert(name, entity);
@@ -374,7 +590,7 @@ impl<'a> Builder<'a> {
         self.d(&d, cur_mod, decls);
       }
       DeclF::Def(def) => {
-        self.envs.push(Env::new());
+        self.envs.push((self.cur_depth, Env::new()));
         let mut conts = Vec::new();
         for (vis, names, ty) in &def.args {
           let ty = if let Some(ty) = ty {
@@ -429,7 +645,7 @@ impl<'a> Builder<'a> {
             }
           }
         }
-        self.envs.push(Env::new());
+        self.envs.push((self.cur_depth, Env::new()));
         let mut exprs = HashMap::new();
         for (s, t) in syndefs.iter().zip(tokens.iter()) {
           match s {
@@ -454,7 +670,7 @@ impl<'a> Builder<'a> {
             return;
           }
         };
-        self.envs.pop().unwrap();
+        self.envs.pop();
 
         struct E<'a> {
           id_since: u32,
@@ -489,14 +705,15 @@ impl<'a> Builder<'a> {
           use front::ExprF::*;
           SyntaxExpr(match &e.0 {
             Hole => Hole,
-            Var(i) => match env.exprs.get(i) {
-              Some(eid) => Var(LookupId::InSyntax(*eid)),
-              None => Var(LookupId::General(*i)),
+            Var(l, i) => match env.exprs.get(i) {
+              Some(eid) => Var(0, LookupId::InSyntax(*eid)),
+              None => Var(l.clone(), LookupId::General(*i)),
             },
             Ann(e1, e2) => Ann(Rc::new(replace(&e1, env)), Rc::new(replace(&e2, env))),
             Uni => Uni,
 
-            Ext(mod_name, i) => Ext(
+            Ext(l, mod_name, i) => Ext(
+              l.clone(),
               mod_name.iter().map(|i| LookupId::General(*i)).collect(),
               LookupId::General(*i),
             ),

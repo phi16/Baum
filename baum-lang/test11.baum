@@ -1,0 +1,36 @@
+module X = {
+  module Y f = {
+    syntax h = f
+  }
+  open Y 2
+  b = h
+}
+
+---
+
+u a b = λ(c)
+  let
+    module A = {
+      v = b
+    }
+    syntax P x = (a, x, A.v, c)
+  in P 0
+
+---
+
+module U x = {
+  syntax V a = (a, x)
+}
+open U 2
+u = V 3
+
+---
+
+module M e = {
+  syntax S x = λ(x) e
+}
+u x = M.S x
+
+---
+
+z = let module G = { x = 1 } in G.x
