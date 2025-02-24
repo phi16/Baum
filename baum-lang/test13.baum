@@ -9,6 +9,9 @@ module X = {
       }
       module C' = C u
       syntax f = (w, x, y, C'.z)
+      module D = {
+        a = f
+      }
     }
     module B' = B 2
   }

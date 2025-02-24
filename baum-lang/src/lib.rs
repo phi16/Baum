@@ -24,7 +24,7 @@ pub fn parse(code: &str) -> Result<front::Program, Vec<String>> {
 #[cfg(test)]
 #[test]
 fn test_dev() {
-  let code = include_str!("../test13.baum");
+  let code = include_str!("../test5.baum");
   match parse(code) {
     Ok(_) => {}
     Err(es) => {
