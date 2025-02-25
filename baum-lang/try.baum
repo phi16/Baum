@@ -1,0 +1,8 @@
+x = let
+  y = 1
+  in let
+  z = 1
+  in {
+    u = y,
+    v = u,
+  }

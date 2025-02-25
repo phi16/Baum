@@ -31,7 +31,7 @@ type Resolver = Vec<Vec<front::Id>>;
 #[derive(Debug, Clone)]
 struct Env<'a> {
   lookup: HashMap<Id<'a>, Entity<'a>>,
-  syntax: HashMap<SyntaxId, (Vec<front::Id>, Resolver)>,
+  syntax: HashMap<SyntaxId, Resolver>,
 }
 
 impl<'a> Env<'a> {
@@ -75,7 +75,7 @@ impl<'a> Builder<'a> {
     &mut self.envs.last_mut().unwrap().1.lookup
   }
 
-  fn here_syntax(&mut self) -> &mut HashMap<SyntaxId, (Vec<front::Id>, Resolver)> {
+  fn here_syntax(&mut self) -> &mut HashMap<SyntaxId, Resolver> {
     &mut self.envs.last_mut().unwrap().1.syntax
   }
 
@@ -117,7 +117,7 @@ impl<'a> Builder<'a> {
     }
   }
 
-  fn lookup_syntax(&self, sid: &SyntaxId) -> Option<(Vec<front::Id>, Resolver)> {
+  fn lookup_syntax(&self, sid: &SyntaxId) -> Option<Resolver> {
     for env in self.envs.iter().rev() {
       if let Some(s) = env.1.syntax.get(sid) {
         return Some(s.clone());
@@ -202,7 +202,7 @@ impl<'a> Builder<'a> {
           .unwrap()
           .clone();
 
-        let resolver = if mod_name.is_empty() {
+        let rez = if mod_name.is_empty() {
           self.lookup_syntax(sid)
         } else {
           self
@@ -221,16 +221,37 @@ impl<'a> Builder<'a> {
           );
           eprintln!(
             "resolver: {}",
-            resolver
+            rez
               .clone()
-              .map(|(here, rez)| format!(
-                "{:?}, rez = {}",
-                self.to_name(&here),
-                self.rez_to_str(&rez)
-              ))
+              .map(|rez| format!("rez = {}", self.rez_to_str(&rez)))
               .unwrap_or("None".to_string())
           );
         }
+
+        let resolver = rez.map(|rez| {
+          let here = &self.cur_mod_name;
+          rez
+            .iter()
+            .map(|r| {
+              // extract common prefix
+              let mut common = 0;
+              for (a, b) in r.iter().zip(here) {
+                if a != b {
+                  break;
+                }
+                common += 1;
+              }
+              let here_rest = here.len() - common;
+
+              eprintln!(
+                "RESOLVE: r = {:?}, here = {:?} / common = {:?}, here_rest = {:?}",
+                r, here, common, here_rest
+              );
+              let relative = r[common..].to_vec();
+              (here_rest as ModLevel, relative)
+            })
+            .collect::<Vec<_>>()
+        });
 
         let (tokens, e, deps) = handler(elems).map_err(|err| (e.1.begin, err))?.into_inner();
 
@@ -263,17 +284,15 @@ impl<'a> Builder<'a> {
           }
         }
 
-        struct E<'a, 'c> {
+        struct E<'a> {
           i_map: HashMap<ElemId, (Id<'a>, front::Id)>,
           e_map: HashMap<ElemId, front::Expr>,
-          resolver: Option<(Vec<front::Id>, Resolver)>,
-          here: &'c Vec<front::Id>,
+          resolver: Option<Vec<(ModLevel, Vec<front::Id>)>>,
         }
         let env = E {
           i_map,
           e_map,
           resolver,
-          here: &self.cur_mod_name,
         };
 
         fn replace_id(id: &LookupId, env: &E) -> front::Id {
@@ -301,26 +320,10 @@ impl<'a> Builder<'a> {
             .collect::<Vec<_>>();
 
           let (level, relative) = match &env.resolver {
-            Some((_, res)) => {
+            Some(res) => {
               let l = *l as usize;
               assert!(l < res.len());
-              let r = res[l].clone();
-              // extract common prefix
-              let mut common = 0;
-              for (a, b) in r.iter().zip(env.here) {
-                if a != b {
-                  break;
-                }
-                common += 1;
-              }
-              let here_rest = env.here.len() - common;
-
-              eprintln!(
-                "RESOLVE: r = {:?}, here = {:?} / common = {:?}, here_rest = {:?}",
-                r, env.here, i, here_rest
-              );
-              let relative = r[common..].to_vec();
-              (here_rest as ModLevel, relative)
+              res[l].clone()
             }
             None => (*l, Vec::new()),
           };
@@ -493,8 +496,7 @@ impl<'a> Builder<'a> {
               _ => {}
             }
           }
-          for (_, (here, rez)) in env.syntax.iter_mut() {
-            replace(here, repl);
+          for (_, rez) in env.syntax.iter_mut() {
             for m in rez.iter_mut() {
               replace(m, repl);
             }
@@ -759,11 +761,8 @@ impl<'a> Builder<'a> {
           r.pop();
         }
         rez.push(r);
-        let here = self.cur_mod_name.clone();
-        self
-          .here_syntax()
-          .insert(sid.clone(), (here.clone(), rez.clone()));
-        cur_mod.syntax.insert(sid.clone(), (here, rez));
+        self.here_syntax().insert(sid.clone(), rez.clone());
+        cur_mod.syntax.insert(sid.clone(), rez);
       }
     }
   }
