@@ -1,5 +1,5 @@
 use crate::types::env::SyntaxTable;
-use crate::types::regex::{deriv, Regex, Terminal};
+use crate::types::regex::{Regex, Terminal};
 use crate::types::tree::SyntaxId;
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -111,6 +111,8 @@ pub fn default_syntax_table<'a>() -> SyntaxTable {
   syntax.def("", regex_elems!["Σ", "{", props, "}"], SyntaxId::ObjTy);
   syntax.def("0", regex_elems!["π", "(", n, ")", e], SyntaxId::Proj);
   syntax.def("0", regex_elems!["π", "{", id, "}", e], SyntaxId::Prop);
+  syntax.def("5<", regex_elems![e, ".", n], SyntaxId::Proj);
+  syntax.def("5<", regex_elems![e, ".", id], SyntaxId::Prop);
 
   syntax
 }
@@ -137,25 +139,19 @@ struct MiniParser<'a, 'b> {
   tokens: Vec<ElemToken>,
 }
 
-enum ElemType {
-  Token,
-  Ident,
+enum LitType {
   Nat,
   Rat,
   Chr,
   Str,
-  Expr,
 }
 
-fn match_elem(e: &SyntaxElem, ty: ElemType) -> bool {
+fn match_lit(e: &SyntaxElem, ty: LitType) -> bool {
   match (e, ty) {
-    (SyntaxElem::Token(_), ElemType::Token) => true,
-    (SyntaxElem::Ident(_), ElemType::Ident) => true,
-    (SyntaxElem::Nat(_), ElemType::Nat) => true,
-    (SyntaxElem::Rat(_), ElemType::Rat) => true,
-    (SyntaxElem::Chr(_), ElemType::Chr) => true,
-    (SyntaxElem::Str(_), ElemType::Str) => true,
-    (SyntaxElem::Expr(_), ElemType::Expr) => true,
+    (SyntaxElem::Nat(_), LitType::Nat) => true,
+    (SyntaxElem::Rat(_), LitType::Rat) => true,
+    (SyntaxElem::Chr(_), LitType::Chr) => true,
+    (SyntaxElem::Str(_), LitType::Str) => true,
     _ => false,
   }
 }
@@ -213,9 +209,9 @@ impl<'a, 'b> MiniParser<'a, 'b> {
     Some(LookupId::InSyntax(id))
   }
 
-  fn take_lit(&mut self, ty: ElemType) -> Option<&'a str> {
+  fn take_lit(&mut self, ty: LitType) -> Option<&'a str> {
     let e = self.input.get(self.index)?;
-    if !match_elem(e, ty) {
+    if !match_lit(e, ty) {
       return None;
     }
     let (s, token) = match self.input.get(self.index).unwrap() {
@@ -246,7 +242,6 @@ impl<'a, 'b> MiniParser<'a, 'b> {
 }
 
 pub fn default_syntax_handlers<'a>() -> HashMap<SyntaxId, SyntaxHandler<'a>> {
-  use ElemType::*;
   let mut handlers: HashMap<SyntaxId, SyntaxHandler> = HashMap::new();
 
   fn make_handler<'a>(
@@ -263,7 +258,7 @@ pub fn default_syntax_handlers<'a>() -> HashMap<SyntaxId, SyntaxHandler<'a>> {
   handlers.insert(
     SyntaxId::Nat,
     make_handler(|p| {
-      let s = p.take_lit(Nat).unwrap();
+      let s = p.take_lit(LitType::Nat).unwrap();
       let n = s.parse().map_err(|e: ParseIntError| e.to_string())?;
       let n = lit::Literal::Nat(lit::Nat(n));
       Ok(SyntaxExpr(front::ExprF::Lit(n)))
@@ -272,7 +267,7 @@ pub fn default_syntax_handlers<'a>() -> HashMap<SyntaxId, SyntaxHandler<'a>> {
   handlers.insert(
     SyntaxId::Rat,
     make_handler(|p| {
-      let s = p.take_lit(ElemType::Rat).unwrap();
+      let s = p.take_lit(LitType::Rat).unwrap();
       let r = unimplemented!();
       Ok(SyntaxExpr(front::ExprF::Lit(r)))
     }),
@@ -280,7 +275,7 @@ pub fn default_syntax_handlers<'a>() -> HashMap<SyntaxId, SyntaxHandler<'a>> {
   handlers.insert(
     SyntaxId::Chr,
     make_handler(|p| {
-      let s = p.take_lit(ElemType::Chr).unwrap();
+      let s = p.take_lit(LitType::Chr).unwrap();
       let c = s.parse().map_err(|e: ParseCharError| e.to_string())?;
       let c = lit::Literal::Chr(c);
       Ok(SyntaxExpr(front::ExprF::Lit(c)))
@@ -289,7 +284,7 @@ pub fn default_syntax_handlers<'a>() -> HashMap<SyntaxId, SyntaxHandler<'a>> {
   handlers.insert(
     SyntaxId::Str,
     make_handler(|p| {
-      let s = p.take_lit(ElemType::Str).unwrap();
+      let s = p.take_lit(LitType::Str).unwrap();
       // TODO: process escape
       let s = lit::Literal::Str(s.to_string());
       Ok(SyntaxExpr(front::ExprF::Lit(s)))
@@ -522,12 +517,19 @@ pub fn default_syntax_handlers<'a>() -> HashMap<SyntaxId, SyntaxHandler<'a>> {
   handlers.insert(
     SyntaxId::Proj,
     make_handler(|p| {
-      p.take_token("π").unwrap();
-      p.take_token("(").unwrap();
-      let s = p.take_lit(ElemType::Nat).unwrap();
+      let (s, e) = if let Some(_) = p.take_token("π") {
+        p.take_token("(").unwrap();
+        let s = p.take_lit(LitType::Nat).unwrap();
+        p.take_token(")").unwrap();
+        let e = p.take_expr().unwrap();
+        (s, e)
+      } else {
+        let e = p.take_expr().unwrap();
+        p.take_token(".").unwrap();
+        let s = p.take_lit(LitType::Nat).unwrap();
+        (s, e)
+      };
       let n = s.parse().map_err(|e: ParseIntError| e.to_string())?;
-      p.take_token(")").unwrap();
-      let e = p.take_expr().unwrap();
       Ok(SyntaxExpr(front::ExprF::Proj(n, Rc::new(e))))
     }),
   );
@@ -631,11 +633,18 @@ pub fn default_syntax_handlers<'a>() -> HashMap<SyntaxId, SyntaxHandler<'a>> {
   handlers.insert(
     SyntaxId::Prop,
     make_handler(|p| {
-      p.take_token("π").unwrap();
-      p.take_token("{").unwrap();
-      let i = p.take_id().unwrap();
-      p.take_token("}").unwrap();
-      let e = p.take_expr().unwrap();
+      let (i, e) = if let Some(_) = p.take_token("π") {
+        p.take_token("{").unwrap();
+        let i = p.take_id().unwrap();
+        p.take_token("}").unwrap();
+        let e = p.take_expr().unwrap();
+        (i, e)
+      } else {
+        let e = p.take_expr().unwrap();
+        p.take_token(".").unwrap();
+        let i = p.take_id().unwrap();
+        (i, e)
+      };
       Ok(SyntaxExpr(front::ExprF::Prop(i, Rc::new(e))))
     }),
   );
