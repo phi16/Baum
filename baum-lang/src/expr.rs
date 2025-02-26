@@ -416,7 +416,6 @@ impl<'a, 'b> ExprParser<'a, 'b> {
       }
     };
     match self.tracker.peek_ty()? {
-      TokenType::Precedence => panic!(),
       TokenType::Natural | TokenType::Rational | TokenType::Char | TokenType::String => {
         // literal
         let lits = self.filter_p(env.syntax.lits(), base_p);
@@ -429,6 +428,7 @@ impl<'a, 'b> ExprParser<'a, 'b> {
         let (sid, _, elems) = self.parse_by_regex(pres, 0)?;
         Some(self.make_syntax(mod_name, sid, elems, begin_pos))
       }
+      _ => None,
     }
   }
 

@@ -332,7 +332,7 @@ pub fn tokenize<'a>(code: &'a str) -> Result<Vec<Token<'a>>, Vec<String>> {
       let indent = spaces.chars().count() as u16;
 
       // remove comments
-      let rest = if rest.len() >= 2 && &rest[0..2] == "--" {
+      let rest = if rest.chars().take(2).collect::<String>() == "--" {
         ""
       } else {
         match rest.find(" --") {

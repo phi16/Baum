@@ -101,7 +101,7 @@ impl Precedence {
       } else {
         false
       };
-      let mut nat = 0;
+      let mut nat: i16 = 0;
       let c = *ss.peek()?;
       if !c.is_ascii_digit() {
         return None;
@@ -112,7 +112,9 @@ impl Precedence {
           _ => break,
         };
         ss.next();
-        nat = nat * 10 + c.to_digit(10).unwrap() as i16;
+        nat = nat
+          .checked_mul(10)?
+          .checked_add(c.to_digit(10).unwrap() as i16)?; // TODO: returns reason
       }
       if negated {
         nat = -nat;
