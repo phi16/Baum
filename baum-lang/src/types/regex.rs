@@ -289,12 +289,23 @@ pub mod deriv {
     }
   }
 
-  pub fn skip_e(regex: &Rc<Regex>, skip: usize) -> Rc<Regex> {
+  pub enum SkipToken {
+    Expr,
+    Id,
+  }
+
+  pub fn skip_e(regex: &Rc<Regex>, skip: usize) -> (Rc<Regex>, Vec<SkipToken>) {
     let mut r = regex.clone();
+    let mut skipped = Vec::new();
     for _ in 0..skip {
       match *r {
         Regex::Seq(ref left, ref right) => match **left {
           Regex::Expr => {
+            skipped.push(SkipToken::Expr);
+            r = right.clone();
+          }
+          Regex::Terminal(Terminal::Id) => {
+            skipped.push(SkipToken::Id);
             r = right.clone();
           }
           _ => panic!(),
@@ -302,6 +313,6 @@ pub mod deriv {
         _ => panic!(),
       }
     }
-    r
+    (r, skipped)
   }
 }

@@ -32,7 +32,7 @@ impl<T> Syntax<T> {
 pub struct SyntaxTable<T> {
   pres: HashMap<String, Vec<Syntax<T>>>, // starts from token
   lits: Vec<Syntax<T>>,                  // literals
-  opes: HashMap<String, Vec<Syntax<T>>>, // starts from expr and token
+  opes: HashMap<String, Vec<Syntax<T>>>, // starts from expr (or ident) and token
   apps: Vec<Syntax<T>>,                  // expr expr
 }
 
@@ -73,7 +73,7 @@ impl<T> SyntaxTable<T> {
         Regex::Terminal(Terminal::Token(ref s)) => {
           self.pres.entry(s.to_string()).or_insert(Vec::new())
         }
-        Regex::Expr => match **cont {
+        Regex::Expr | Regex::Terminal(Terminal::Id) => match **cont {
           Regex::Terminal(Terminal::Token(ref s)) => {
             self.opes.entry(s.to_string()).or_insert(Vec::new())
           }

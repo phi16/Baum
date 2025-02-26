@@ -247,7 +247,10 @@ impl<'a, 'b> ExprParser<'a, 'b> {
     &mut self,
     ss: Vec<&'b Syntax>,
     heads: usize,
-  ) -> Option<(SyntaxId, Vec<SyntaxElem<'a>>)> {
+  ) -> Option<(SyntaxId, Vec<deriv::SkipToken>, Vec<SyntaxElem<'a>>)> {
+    fn skips_from(s: &Syntax, heads: usize) -> Vec<deriv::SkipToken> {
+      deriv::skip_e(&s.regex, heads).1
+    }
     if ss.is_empty() {
       return None;
     }
@@ -255,7 +258,7 @@ impl<'a, 'b> ExprParser<'a, 'b> {
       .into_iter()
       .map(|s| {
         assert!(!deriv::has_eps(&s.regex));
-        (SyntaxState::new(s), deriv::skip_e(&s.regex, heads))
+        (SyntaxState::new(s), deriv::skip_e(&s.regex, heads).0)
       })
       .collect::<Vec<_>>();
     let mut elems = Vec::new();
@@ -263,7 +266,7 @@ impl<'a, 'b> ExprParser<'a, 'b> {
       let (es, status) = self.read_until_expr(ss).ok()?;
       elems.extend(es);
       match status {
-        ReadStatus::Pass(s) => return Some((s.t.clone(), elems)),
+        ReadStatus::Pass(s) => return Some((s.t.clone(), skips_from(s, heads), elems)),
         ReadStatus::Await(conts) => {
           let pos = self.tracker.pos();
 
@@ -293,7 +296,7 @@ impl<'a, 'b> ExprParser<'a, 'b> {
           for sc in &conts {
             if deriv::has_eps(&sc.cont) {
               // TODO: need to check: no other syntaxes have eps...
-              return Some((sc.syntax.t.clone(), elems));
+              return Some((sc.syntax.t.clone(), skips_from(sc.syntax, heads), elems));
             }
           }
           ss = conts
@@ -417,13 +420,13 @@ impl<'a, 'b> ExprParser<'a, 'b> {
       TokenType::Natural | TokenType::Rational | TokenType::Char | TokenType::String => {
         // literal
         let lits = self.filter_p(env.syntax.lits(), base_p);
-        let (sid, elems) = self.parse_by_regex(lits, 0)?;
+        let (sid, _, elems) = self.parse_by_regex(lits, 0)?;
         Some(self.make_syntax(mod_name, sid, elems, begin_pos))
       }
       TokenType::Ident | TokenType::Reserved => {
         let s = self.tracker.peek().unwrap().str;
         let pres: Vec<&'b Syntax> = self.filter_p(env.syntax.choose_pre(s)?, base_p);
-        let (sid, elems) = self.parse_by_regex(pres, 0)?;
+        let (sid, _, elems) = self.parse_by_regex(pres, 0)?;
         Some(self.make_syntax(mod_name, sid, elems, begin_pos))
       }
     }
@@ -462,9 +465,19 @@ impl<'a, 'b> ExprParser<'a, 'b> {
         };
         match self.parse_by_regex(opes, 1) {
           None => Trailing::Applicand(e),
-          Some((sid, elems_tail)) => {
+          Some((sid, skip, elems_tail)) => {
             let begin = e.1.begin;
-            let mut elems = vec![SyntaxElem::Expr(Box::new(e))];
+            let mut elems = match skip[..] {
+              [deriv::SkipToken::Expr] => vec![SyntaxElem::Expr(Box::new(e))],
+              [deriv::SkipToken::Id] => match e {
+                Expr(ExprF::Var(id), _) => vec![SyntaxElem::Ident(id)],
+                _ => {
+                  self.add_error(begin, "expected identifier for syntax");
+                  vec![SyntaxElem::Ident(Id::new("_"))]
+                }
+              },
+              _ => unreachable!(),
+            };
             elems.extend(elems_tail);
             let s = self.make_syntax(mod_name, sid, elems, begin);
             Trailing::Continue(s)
