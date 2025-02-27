@@ -109,20 +109,6 @@ impl<'a, I: Iterator<Item = CharLoc<'a>>> Tokenizer<'a, I> {
     }
   }
 
-  fn skip_escape(&mut self) {
-    let (l, _) = self.iter.next().unwrap();
-    if let Some((_, c2)) = self.iter.peek() {
-      if *c2 == 'x' || *c2 == 'u' {
-        // hexadecimal or unicode escape
-        unimplemented!()
-      } else {
-        self.iter.next();
-      }
-    } else {
-      self.add_error_loc(&l, "unterminated escape character");
-    }
-  }
-
   fn string_literal(&mut self) -> Token<'a> {
     let (l0, c0) = self.iter.next().unwrap();
     let ty = if c0 == '\'' {
@@ -149,7 +135,17 @@ impl<'a, I: Iterator<Item = CharLoc<'a>>> Tokenizer<'a, I> {
         return t;
       }
       if *c1 == '\\' {
-        self.skip_escape()
+        self.iter.next();
+        if let Some((l1, _)) = self.iter.peek() {
+          if l0.ln != l1.ln {
+            continue;
+          }
+          // we don't need to care about the escape-sequence length,
+          // because we are just waiting for the closing quote
+          self.iter.next();
+        } else {
+          continue;
+        }
       } else {
         self.iter.next();
       }
@@ -248,6 +244,15 @@ impl<'a, I: Iterator<Item = CharLoc<'a>>> Tokenizer<'a, I> {
     };
     return self.make_token_addr(l0.col_bytes as usize, &l0, ty);
   }
+
+  fn dec_number(&mut self, l0: &Loc<'a>) {
+    while let Some((l1, c1)) = self.iter.peek() {
+      if l0.ln != l1.ln || !c1.is_ascii_digit() {
+        break;
+      }
+      self.iter.next();
+    }
+  }
 }
 
 impl<'a, I: Iterator<Item = (Loc<'a>, char)>> Iterator for Tokenizer<'a, I> {
@@ -295,12 +300,7 @@ impl<'a, I: Iterator<Item = (Loc<'a>, char)>> Iterator for Tokenizer<'a, I> {
     if ty == CharType::Number {
       if self.after_dot {
         // pure decimal natural number
-        while let Some((l1, c1)) = self.iter.peek() {
-          if l0.ln != l1.ln || !c1.is_ascii_digit() {
-            break;
-          }
-          self.iter.next();
-        }
+        self.dec_number(&l0);
         return Some(self.make_token_addr(l0.col_bytes as usize, &l0, TokenType::Natural));
       }
       return Some(self.number_literal());
