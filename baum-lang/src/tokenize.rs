@@ -36,6 +36,7 @@ struct Tokenizer<'a, I: Iterator<Item = CharLoc<'a>>> {
   iter: Peekable<I>,
   errors: Vec<String>,
   in_syntax: bool,
+  after_dot: bool,
 }
 
 impl<'a, I: Iterator<Item = CharLoc<'a>>> Tokenizer<'a, I> {
@@ -44,6 +45,7 @@ impl<'a, I: Iterator<Item = CharLoc<'a>>> Tokenizer<'a, I> {
       iter: input.peekable(),
       errors: Vec::new(),
       in_syntax: false,
+      after_dot: false,
     }
   }
 
@@ -52,9 +54,8 @@ impl<'a, I: Iterator<Item = CharLoc<'a>>> Tokenizer<'a, I> {
       "=" => TokenType::Reserved,
       _ => ty_base,
     };
-    if str == "syntax" {
-      self.in_syntax = true;
-    }
+    self.in_syntax = str == "syntax";
+    self.after_dot = str == ".";
     Token {
       str,
       ty,
@@ -256,7 +257,6 @@ impl<'a, I: Iterator<Item = (Loc<'a>, char)>> Iterator for Tokenizer<'a, I> {
     self.skip_space();
     let (l0, c0) = self.iter.peek()?.clone();
     if self.in_syntax {
-      self.in_syntax = false;
       let precedence = if c0 == '-' {
         self.iter.next();
         match self.iter.peek() {
@@ -293,6 +293,16 @@ impl<'a, I: Iterator<Item = (Loc<'a>, char)>> Iterator for Tokenizer<'a, I> {
       return Some(self.string_literal());
     }
     if ty == CharType::Number {
+      if self.after_dot {
+        // pure decimal natural number
+        while let Some((l1, c1)) = self.iter.peek() {
+          if l0.ln != l1.ln || !c1.is_ascii_digit() {
+            break;
+          }
+          self.iter.next();
+        }
+        return Some(self.make_token_addr(l0.col_bytes as usize, &l0, TokenType::Natural));
+      }
       return Some(self.number_literal());
     }
 
@@ -430,7 +440,9 @@ fn test() {
     vec![
       ("1.2", TokenType::Rational),
       (".", TokenType::Reserved),
-      ("3.4", TokenType::Rational),
+      ("3", TokenType::Natural),
+      (".", TokenType::Reserved),
+      ("4", TokenType::Natural),
       (".", TokenType::Reserved),
       ("5", TokenType::Natural),
     ]
