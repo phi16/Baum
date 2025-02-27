@@ -110,7 +110,7 @@ impl<'a> Pretty<'a> {
       ExprF::Uni => self.s("𝒰"),
       ExprF::Ext(l, m, i) => self.s(&format!("[{}]", l)).is(m, ".").s(".").i(i),
       ExprF::Let(ds, e) => self.s("let").open().ds(ds).close().s("in ").e(e),
-      ExprF::Lit(Literal::Nat(Nat(n))) => self.s(&format!("{}", n)),
+      ExprF::Lit(Literal::Nat(n)) => self.s(&format!("{:?}", n)),
       ExprF::Lit(Literal::Rat(r)) => self.s(&format!("{:?}", r)),
       ExprF::Lit(Literal::Chr(c)) => self.s(&format!("{:?}", c)),
       ExprF::Lit(Literal::Str(s)) => self.s(&format!("{:?}", s)),

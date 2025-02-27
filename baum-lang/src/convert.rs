@@ -402,9 +402,6 @@ impl<'a> Builder<'a> {
           })
         }
         let e = replace(&e, &env);
-
-        eprintln!();
-
         Ok(e)
       }
     }

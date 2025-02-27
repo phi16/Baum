@@ -171,6 +171,7 @@ impl<'a, I: Iterator<Item = CharLoc<'a>>> Tokenizer<'a, I> {
       ExpSign, // 1e+ (non-accepting state)
       ExpNat,  // 1e+4
     }
+    let mut dec = false;
     let mut hex = false;
     let mut s = if c0 == '0' { State::Zero } else { State::Nat };
     while let Some((l1, c1)) = self.iter.peek() {
@@ -182,8 +183,9 @@ impl<'a, I: Iterator<Item = CharLoc<'a>>> Tokenizer<'a, I> {
         State::Zero => {
           if c1 == 'b' || c1 == 'o' || c1 == 'x' {
             hex = c1 == 'x';
+            dec = false;
             s = State::Radix;
-          } else if c1 == 'e' || c1 == 'E' || c1 == 'p' {
+          } else if c1 == 'e' || c1 == 'E' {
             s = State::Exp;
           } else if c1 == '.' {
             s = State::Frac;
@@ -194,7 +196,7 @@ impl<'a, I: Iterator<Item = CharLoc<'a>>> Tokenizer<'a, I> {
           }
         }
         State::Radix | State::Nat => {
-          if !hex && (c1 == 'e' || c1 == 'E') || c1 == 'p' {
+          if !hex && (c1 == 'e' || c1 == 'E') || hex && c1 == 'p' {
             s = State::Exp;
           } else if c1 == '.' {
             s = State::Frac;
@@ -205,7 +207,7 @@ impl<'a, I: Iterator<Item = CharLoc<'a>>> Tokenizer<'a, I> {
           }
         }
         State::Frac => {
-          if !hex && (c1 == 'e' || c1 == 'E') || c1 == 'p' {
+          if !hex && (c1 == 'e' || c1 == 'E') || hex && c1 == 'p' {
             s = State::Exp;
           } else if c1.is_ascii_digit() || hex && c1.is_ascii_hexdigit() {
             s = State::Frac;
@@ -239,8 +241,8 @@ impl<'a, I: Iterator<Item = CharLoc<'a>>> Tokenizer<'a, I> {
       _ => {}
     }
     let ty = match s {
-      State::Zero | State::Nat => TokenType::Natural,
-      _ => TokenType::Rational,
+      State::Zero | State::Nat if dec => TokenType::DecNat,
+      _ => TokenType::Number,
     };
     return self.make_token_addr(l0.col_bytes as usize, &l0, ty);
   }
@@ -301,7 +303,7 @@ impl<'a, I: Iterator<Item = (Loc<'a>, char)>> Iterator for Tokenizer<'a, I> {
       if self.after_dot {
         // pure decimal natural number
         self.dec_number(&l0);
-        return Some(self.make_token_addr(l0.col_bytes as usize, &l0, TokenType::Natural));
+        return Some(self.make_token_addr(l0.col_bytes as usize, &l0, TokenType::DecNat));
       }
       return Some(self.number_literal());
     }
@@ -417,10 +419,10 @@ fn test() {
   assert_eq!(
     splitter("1.2 a.3"),
     vec![
-      ("1.2", TokenType::Rational),
+      ("1.2", TokenType::Number),
       ("a", TokenType::Ident),
       (".", TokenType::Reserved),
-      ("3", TokenType::Natural),
+      ("3", TokenType::DecNat),
     ]
   );
   assert_eq!(
@@ -438,13 +440,13 @@ fn test() {
   assert_eq!(
     splitter("1.2.3.4.5"),
     vec![
-      ("1.2", TokenType::Rational),
+      ("1.2", TokenType::Number),
       (".", TokenType::Reserved),
-      ("3", TokenType::Natural),
+      ("3", TokenType::DecNat),
       (".", TokenType::Reserved),
-      ("4", TokenType::Natural),
+      ("4", TokenType::DecNat),
       (".", TokenType::Reserved),
-      ("5", TokenType::Natural),
+      ("5", TokenType::DecNat),
     ]
   );
   assert_eq!(
@@ -465,6 +467,6 @@ fn test() {
   );
   assert_eq!(
     splitter("k= 1"),
-    vec![("k=", TokenType::Ident), ("1", TokenType::Natural),]
+    vec![("k=", TokenType::Ident), ("1", TokenType::DecNat),]
   );
 }

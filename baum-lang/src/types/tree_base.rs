@@ -51,8 +51,8 @@ pub enum DeclF<S, I, Ds, E, X> {
 pub enum SyntaxElemF<S, I, E> {
   Token(S),
   Ident(I),
-  Nat(S),
-  Rat(S),
+  Dec(S),
+  Num(S),
   Chr(S),
   Str(S),
   Expr(E),

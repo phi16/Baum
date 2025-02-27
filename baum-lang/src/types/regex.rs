@@ -6,8 +6,8 @@ use std::rc::Rc;
 pub enum Terminal {
   Token(String),
   Id,
-  Nat,
-  Rat,
+  Dec,
+  Num,
   Chr,
   Str,
 }
@@ -98,8 +98,8 @@ impl std::fmt::Debug for Regex {
         Regex::Terminal(t) => match t {
           Terminal::Token(s) => write!(f, "\"{}\"", s),
           Terminal::Id => write!(f, "i"),
-          Terminal::Nat => write!(f, "n"),
-          Terminal::Rat => write!(f, "r"),
+          Terminal::Dec => write!(f, "d"),
+          Terminal::Num => write!(f, "n"),
           Terminal::Chr => write!(f, "c"),
           Terminal::Str => write!(f, "s"),
         },
@@ -152,8 +152,8 @@ pub mod deriv {
   pub enum ElemType {
     Token,
     Id,
-    Nat,
-    Rat,
+    Dec,
+    Num,
     Chr,
     Str,
   }
@@ -172,8 +172,9 @@ pub mod deriv {
             (Terminal::Token(ref s), TokenType::Ident) if s == str => Some(ElemType::Token),
             (Terminal::Token(ref s), TokenType::Reserved) if s == str => Some(ElemType::Token),
             (Terminal::Id, TokenType::Ident) => Some(ElemType::Id),
-            (Terminal::Nat, TokenType::Natural) => Some(ElemType::Nat),
-            (Terminal::Rat, TokenType::Rational) => Some(ElemType::Rat),
+            (Terminal::Dec, TokenType::DecNat) => Some(ElemType::Dec),
+            (Terminal::Num, TokenType::DecNat) => Some(ElemType::Num),
+            (Terminal::Num, TokenType::Number) => Some(ElemType::Num),
             (Terminal::Chr, TokenType::Char) => Some(ElemType::Chr),
             (Terminal::Str, TokenType::String) => Some(ElemType::Str),
             _ => None,

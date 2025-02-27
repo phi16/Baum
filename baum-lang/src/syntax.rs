@@ -8,11 +8,11 @@ macro_rules! regex_elem {
   ($s:literal) => {
     (Regex::token($s))
   };
-  (n) => {
-    Rc::new(Regex::Terminal(Terminal::Nat))
+  (d) => {
+    Rc::new(Regex::Terminal(Terminal::Dec))
   };
-  (r) => {
-    Rc::new(Regex::Terminal(Terminal::Rat))
+  (n) => {
+    Rc::new(Regex::Terminal(Terminal::Num))
   };
   (c) => {
     Rc::new(Regex::Terminal(Terminal::Chr))
@@ -82,8 +82,7 @@ pub fn default_syntax_table<'a>() -> SyntaxTable {
   let def = &Regex::seqs(vec![id, args, may_type, &Regex::token("="), &e]);
   let defs = &Regex::sep0_(def, comma); // comma or...
 
-  syntax.def("", regex_elems![n], SyntaxId::Nat);
-  syntax.def("", regex_elems![r], SyntaxId::Rat);
+  syntax.def("", regex_elems![n], SyntaxId::Num);
   syntax.def("", regex_elems![c], SyntaxId::Chr);
   syntax.def("", regex_elems![s], SyntaxId::Str);
   // Base
@@ -111,7 +110,7 @@ pub fn default_syntax_table<'a>() -> SyntaxTable {
   syntax.def("", regex_elems!["Σ", "{", props, "}"], SyntaxId::ObjTy);
   syntax.def("0", regex_elems!["π", "(", n, ")", e], SyntaxId::Proj);
   syntax.def("0", regex_elems!["π", "{", id, "}", e], SyntaxId::Prop);
-  syntax.def("5<", regex_elems![e, ".", n], SyntaxId::Proj);
+  syntax.def("5<", regex_elems![e, ".", d], SyntaxId::Proj);
   syntax.def("5<", regex_elems![e, ".", id], SyntaxId::Prop);
 
   syntax
@@ -140,16 +139,16 @@ struct MiniParser<'a, 'b> {
 }
 
 enum LitType {
-  Nat,
-  Rat,
+  Dec,
+  Num,
   Chr,
   Str,
 }
 
 fn match_lit(e: &SyntaxElem, ty: LitType) -> bool {
   match (e, ty) {
-    (SyntaxElem::Nat(_), LitType::Nat) => true,
-    (SyntaxElem::Rat(_), LitType::Rat) => true,
+    (SyntaxElem::Dec(_), LitType::Dec) => true,
+    (SyntaxElem::Num(_), LitType::Num) => true,
     (SyntaxElem::Chr(_), LitType::Chr) => true,
     (SyntaxElem::Str(_), LitType::Str) => true,
     _ => false,
@@ -217,8 +216,8 @@ impl<'a, 'b> MiniParser<'a, 'b> {
     let (s, token) = match self.input.get(self.index).unwrap() {
       SyntaxElem::Token(_) => panic!(),
       SyntaxElem::Ident(_) => panic!(),
-      SyntaxElem::Nat(s) => (s, ElemToken::Nat),
-      SyntaxElem::Rat(s) => (s, ElemToken::Rat),
+      SyntaxElem::Dec(s) => (s, ElemToken::Dec),
+      SyntaxElem::Num(s) => (s, ElemToken::Num),
       SyntaxElem::Chr(s) => (s, ElemToken::Chr),
       SyntaxElem::Str(s) => (s, ElemToken::Str),
       SyntaxElem::Expr(_) => panic!(),
@@ -241,6 +240,122 @@ impl<'a, 'b> MiniParser<'a, 'b> {
   }
 }
 
+fn num_parse(s: &str) -> Result<lit::Literal, String> {
+  let mut it = s.chars().peekable();
+  let c0 = it.next().unwrap();
+  enum State {
+    Zero,    // 0
+    Radix,   // 0b, 0o, 0x (non-accepting state)
+    Nat,     // 123, 0x5c
+    Frac,    // 123., 0x1.23
+    Exp,     // 1e, 1p, 0x1.23p (non-accepting state)
+    ExpSign, // 1e+ (non-accepting state)
+    ExpNat,  // 1e+4
+  }
+  let mut hex = false;
+  let mut s = if c0 == '0' { State::Zero } else { State::Nat };
+  let mut coeff = c0.to_digit(10).unwrap();
+  let mut frac_digits = 0;
+  let mut nat_base = 10;
+  let mut exp = 0;
+  let mut exp_sign: i32 = 1;
+  while let Some(c1) = it.peek() {
+    let c1 = *c1;
+    match s {
+      State::Zero => {
+        if c1 == 'b' || c1 == 'o' || c1 == 'x' {
+          nat_base = match c1 {
+            'b' => 2,
+            'o' => 8,
+            'x' => 16,
+            _ => unreachable!(),
+          };
+          hex = c1 == 'x';
+          s = State::Radix;
+        } else if c1 == 'e' || c1 == 'E' {
+          s = State::Exp;
+        } else if c1 == '.' {
+          s = State::Frac;
+        } else if c1.is_ascii_digit() {
+          let d = c1.to_digit(10).unwrap();
+          coeff = d;
+          s = State::Nat;
+        } else {
+          unreachable!();
+        }
+      }
+      State::Radix | State::Nat => {
+        if !hex && (c1 == 'e' || c1 == 'E') || hex && c1 == 'p' {
+          s = State::Exp;
+        } else if c1 == '.' {
+          s = State::Frac;
+        } else if c1.is_ascii_digit() || hex && c1.is_ascii_hexdigit() {
+          let d = c1
+            .to_digit(nat_base)
+            .ok_or(format!("invalid digit: {}", c1))?;
+          coeff = coeff * nat_base + d;
+          s = State::Nat;
+        } else {
+          unreachable!();
+        }
+      }
+      State::Frac => {
+        if !hex && (c1 == 'e' || c1 == 'E') || hex && c1 == 'p' {
+          s = State::Exp;
+        } else if c1.is_ascii_digit() || hex && c1.is_ascii_hexdigit() {
+          let d = c1
+            .to_digit(nat_base)
+            .ok_or(format!("invalid digit: {}", c1))?;
+          coeff = coeff * nat_base + d;
+          frac_digits += 1;
+          s = State::Frac;
+        } else {
+          unreachable!();
+        }
+      }
+      State::Exp => {
+        if c1 == '+' || c1 == '-' {
+          s = State::ExpSign;
+          exp_sign = if c1 == '+' { 1 } else { -1 };
+        } else if c1.is_ascii_digit() {
+          let d = c1.to_digit(10).unwrap();
+          exp = d;
+          s = State::ExpNat;
+        } else {
+          unreachable!();
+        }
+      }
+      State::ExpSign | State::ExpNat => {
+        if c1.is_ascii_digit() {
+          let d = c1.to_digit(10).unwrap();
+          exp = exp * 10 + d;
+          s = State::ExpNat;
+        } else {
+          unreachable!();
+        }
+      }
+    }
+    it.next();
+  }
+  let base: u8 = if hex { 2 } else { 10 };
+  let mut exponent = exp_sign * exp as i32;
+  exponent -= frac_digits as i32 * if hex { 4 } else { 1 };
+  let lit = if exponent >= 0 {
+    lit::Literal::Nat(lit::Nat {
+      coeff,
+      base,
+      exponent: exponent as u32,
+    })
+  } else {
+    lit::Literal::Rat(lit::Rat {
+      coeff,
+      base,
+      exponent,
+    })
+  };
+  Ok(lit)
+}
+
 pub fn default_syntax_handlers<'a>() -> HashMap<SyntaxId, SyntaxHandler<'a>> {
   let mut handlers: HashMap<SyntaxId, SyntaxHandler> = HashMap::new();
 
@@ -256,20 +371,11 @@ pub fn default_syntax_handlers<'a>() -> HashMap<SyntaxId, SyntaxHandler<'a>> {
   }
 
   handlers.insert(
-    SyntaxId::Nat,
+    SyntaxId::Num,
     make_handler(|p| {
-      let s = p.take_lit(LitType::Nat).unwrap();
-      let n = s.parse().map_err(|e: ParseIntError| e.to_string())?;
-      let n = lit::Literal::Nat(lit::Nat(n));
+      let s = p.take_lit(LitType::Num).unwrap();
+      let n = num_parse(s)?;
       Ok(SyntaxExpr(front::ExprF::Lit(n)))
-    }),
-  );
-  handlers.insert(
-    SyntaxId::Rat,
-    make_handler(|p| {
-      let s = p.take_lit(LitType::Rat).unwrap();
-      let r = unimplemented!();
-      Ok(SyntaxExpr(front::ExprF::Lit(r)))
     }),
   );
   handlers.insert(
@@ -519,14 +625,14 @@ pub fn default_syntax_handlers<'a>() -> HashMap<SyntaxId, SyntaxHandler<'a>> {
     make_handler(|p| {
       let (s, e) = if let Some(_) = p.take_token("π") {
         p.take_token("(").unwrap();
-        let s = p.take_lit(LitType::Nat).unwrap();
+        let s = p.take_lit(LitType::Dec).unwrap();
         p.take_token(")").unwrap();
         let e = p.take_expr().unwrap();
         (s, e)
       } else {
         let e = p.take_expr().unwrap();
         p.take_token(".").unwrap();
-        let s = p.take_lit(LitType::Nat).unwrap();
+        let s = p.take_lit(LitType::Dec).unwrap();
         (s, e)
       };
       let n = s.parse().map_err(|e: ParseIntError| e.to_string())?;

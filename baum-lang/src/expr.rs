@@ -126,8 +126,8 @@ impl<'a, 'b> ExprParser<'a, 'b> {
         use deriv::ElemType;
         match ty {
           ElemType::Token => SyntaxElem::Token(s),
-          ElemType::Nat => SyntaxElem::Nat(s),
-          ElemType::Rat => SyntaxElem::Rat(s),
+          ElemType::Dec => SyntaxElem::Dec(s),
+          ElemType::Num => SyntaxElem::Num(s),
           ElemType::Chr => SyntaxElem::Chr(s),
           ElemType::Str => SyntaxElem::Str(s),
           ElemType::Id => SyntaxElem::Ident(Id::new(s)),
@@ -416,7 +416,7 @@ impl<'a, 'b> ExprParser<'a, 'b> {
       }
     };
     match self.tracker.peek_ty()? {
-      TokenType::Natural | TokenType::Rational | TokenType::Char | TokenType::String => {
+      TokenType::DecNat | TokenType::Number | TokenType::Char | TokenType::String => {
         // literal
         let lits = self.filter_p(env.syntax.lits(), base_p);
         let (sid, _, elems) = self.parse_by_regex(lits, 0)?;

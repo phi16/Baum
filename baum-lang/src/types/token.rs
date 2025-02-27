@@ -1,8 +1,8 @@
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TokenType {
   Ident,      // a, xs, +, p0', _
-  Natural,    // 0, 0x1F, 0xcc
-  Rational,   // 3.14, 1e-2, 0x1.23ap32
+  DecNat,     // 0, 1, 2, ...
+  Number,     // 0, 0x1F, 0xcc, 3.14, 1e-2, 0x1.23ap32
   Char,       // 'a', '\n', '\x1F', '\u3082'
   String,     // "Hello, World!", "a\nb"
   Precedence, // 1.-2.3<

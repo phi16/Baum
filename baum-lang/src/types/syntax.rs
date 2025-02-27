@@ -155,8 +155,8 @@ pub struct ElemId(pub u16);
 pub enum ElemToken {
   Token,
   Ident(ElemId),
-  Nat,
-  Rat,
+  Dec,
+  Num,
   Chr,
   Str,
   Expr(ElemId),

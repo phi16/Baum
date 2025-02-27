@@ -170,8 +170,8 @@ impl Pretty {
               }
             }
             SyntaxElem::Ident(i) => self.i(i),
-            SyntaxElem::Nat(s) => self.s(s),
-            SyntaxElem::Rat(s) => self.s(s),
+            SyntaxElem::Dec(s) => self.s(s),
+            SyntaxElem::Num(s) => self.s(s),
             SyntaxElem::Chr(s) => self.s("'").s(s).s("'"),
             SyntaxElem::Str(s) => self.s("\"").s(s).s("\""),
             SyntaxElem::Expr(e) => self.e(e),

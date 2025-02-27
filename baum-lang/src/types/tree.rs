@@ -22,8 +22,8 @@ pub struct TokenRange {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum SyntaxId {
   User(u16),
-  Nat,
-  Rat,
+  Dec,
+  Num,
   Chr,
   Str,
   Hole,

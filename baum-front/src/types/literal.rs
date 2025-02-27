@@ -1,9 +1,13 @@
 #[derive(Debug, Clone)]
-pub struct Nat(pub u32);
+pub struct Nat {
+  pub coeff: u32,
+  pub base: u8,
+  pub exponent: u32,
+}
 
 #[derive(Debug, Clone)]
 pub struct Rat {
-  pub denom: u32,
+  pub coeff: u32,
   pub base: u8,
   pub exponent: i32,
 }
