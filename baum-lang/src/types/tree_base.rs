@@ -17,9 +17,9 @@ pub struct ModDefF<I, E> {
 }
 
 #[derive(Debug, Clone)]
-pub enum ModBodyF<S, I, Ds, E> {
+pub enum ModBodyF<Ds, Mr> {
   Decls(Ds),
-  Ref(ModRefF<S, I, E>),
+  Ref(Mr),
 }
 
 #[derive(Debug, Clone)]
@@ -38,17 +38,17 @@ pub enum SynDefF<S, I> {
 }
 
 #[derive(Debug, Clone)]
-pub enum DeclF<S, I, Ds, E, X> {
+pub enum DeclF<S, I, Ds, E, X, Sy, Mr> {
   Local(Ds),
-  Mod(ModDefF<I, E>, ModBodyF<S, I, Ds, E>),
-  Open(ModRefF<S, I, E>),
-  Use(ModRefF<S, I, E>),
+  Mod(ModDefF<I, E>, ModBodyF<Ds, Mr>),
+  Open(Mr),
+  Use(Mr),
   Def(DefF<I, E>),
-  Syntax(X, Option<S>, Vec<SynDefF<S, I>>, E),
+  Syntax(X, Option<S>, Sy, E),
 }
 
 #[derive(Debug, Clone)]
-pub enum SyntaxElemF<S, I, E> {
+pub enum SynElemF<S, I, E> {
   Token(S),
   Ident(I),
   Dec(S),
@@ -59,11 +59,11 @@ pub enum SyntaxElemF<S, I, E> {
 }
 
 #[derive(Debug, Clone)]
-pub enum ExprF<S, I, Ds, E, X> {
+pub enum ExprF<I, Ds, E, X, Se> {
   Hole,
   Var(I),
   Mod(Vec<I>),
   Ext(Vec<I>, I),
   Let(Ds, E),
-  Syntax(Vec<I>, X, Vec<SyntaxElemF<S, I, E>>),
+  Syntax(Vec<I>, X, Se),
 }

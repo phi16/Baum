@@ -255,8 +255,8 @@ impl<'a> Builder<'a> {
 
         let mut i_map = HashMap::new();
         for (elem, t) in elems.iter().zip(tokens.iter()) {
-          match (elem, t) {
-            (SyntaxElem::Ident(i), ElemToken::Ident(eid)) => {
+          match (&elem.0, t) {
+            (SynElemF::Ident(i), ElemToken::Ident(eid)) => {
               let id = self.new_id(i);
               i_map.insert(eid.clone(), (i.clone(), id));
             }
@@ -266,8 +266,8 @@ impl<'a> Builder<'a> {
 
         let mut e_map = HashMap::new();
         for (elem, t) in elems.iter().zip(tokens.into_iter()) {
-          match (elem, t) {
-            (SyntaxElem::Expr(e), ElemToken::Expr(eid)) => {
+          match (&elem.0, t) {
+            (SynElemF::Expr(e), ElemToken::Expr(eid)) => {
               self.envs.push((self.cur_depth, Env::new()));
               // add dependencies
               for i_eid in deps.get(&eid).unwrap() {
@@ -464,7 +464,7 @@ impl<'a> Builder<'a> {
         self.cur_depth -= 1;
         front::ModBody::Decls(mod_decls)
       }
-      ModBodyF::Ref(ModRefF::App(m, m_args)) => {
+      ModBodyF::Ref(ModRef(ModRefF::App(m, m_args), _)) => {
         let (depth, m, env) = self.lookup_mod(&m).unwrap();
         let mut args = Vec::new();
         for (vis, e) in m_args {
@@ -511,7 +511,7 @@ impl<'a> Builder<'a> {
         replace_rez_for_env(&mut mod_env, &repl);
         front::ModBody::App(self.level_from(depth), m, args)
       }
-      ModBodyF::Ref(ModRefF::Import(_)) => unimplemented!(),
+      ModBodyF::Ref(ModRef(ModRefF::Import(_), _)) => unimplemented!(),
     };
     self.envs.pop();
     (params, mod_body, mod_env)
@@ -604,15 +604,15 @@ impl<'a> Builder<'a> {
         let mut i_env = HashMap::new();
         let mut tokens = Vec::new();
         for s in syndefs {
-          match s {
-            SynDef::Token(_) => tokens.push(ElemToken::Token),
-            SynDef::Ident(i) => {
+          match &s.0 {
+            SynDefF::Token(_) => tokens.push(ElemToken::Token),
+            SynDefF::Ident(i) => {
               let eid = ElemId(next_elem_id);
               next_elem_id += 1;
               tokens.push(ElemToken::Ident(eid));
               i_env.insert(i.clone(), eid.clone());
             }
-            SynDef::Expr(_) => {
+            SynDefF::Expr(_) => {
               let eid = ElemId(next_elem_id);
               next_elem_id += 1;
               tokens.push(ElemToken::Expr(eid));
@@ -622,10 +622,10 @@ impl<'a> Builder<'a> {
         self.envs.push((self.cur_depth, Env::new()));
         let mut exprs = HashMap::new();
         for (s, t) in syndefs.iter().zip(tokens.iter()) {
-          match s {
-            SynDef::Token(_) => {}
-            SynDef::Ident(_) => {}
-            SynDef::Expr(i) => {
+          match &s.0 {
+            SynDefF::Token(_) => {}
+            SynDefF::Ident(_) => {}
+            SynDefF::Expr(i) => {
               let id = self.new_id(i);
               self.here().insert(i.clone(), Entity::Def(id));
               let eid = match t {

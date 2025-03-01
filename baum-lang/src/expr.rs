@@ -4,8 +4,8 @@ use crate::types::precedence::Precedence;
 use crate::types::regex::{deriv, Regex};
 use crate::types::token::{ErrorPos, Token, TokenRange, TokenType};
 use crate::types::tracker::Tracker;
-use crate::types::tree::{Expr, Id, SyntaxElem, SyntaxId};
-use crate::types::tree_base::ExprF;
+use crate::types::tree::{Expr, Id, SynElem, SynElemInternal, SyntaxId};
+use crate::types::tree_base::{ExprF, SynElemF};
 use std::collections::HashSet;
 use std::rc::Rc;
 
@@ -22,7 +22,7 @@ enum AdvanceResult {
 struct SyntaxState<'a, 'b> {
   syntax: &'b Syntax,
   read: usize,
-  elems: Vec<SyntaxElem<'a>>,
+  elems: Vec<SynElem<'a>>,
 }
 
 impl<'a, 'b> SyntaxState<'a, 'b> {
@@ -34,7 +34,7 @@ impl<'a, 'b> SyntaxState<'a, 'b> {
     }
   }
 
-  fn advance(&self, e: SyntaxElem<'a>) -> Self {
+  fn advance(&self, e: SynElem<'a>) -> Self {
     SyntaxState {
       syntax: self.syntax,
       read: self.read + 1,
@@ -116,7 +116,7 @@ impl<'a, 'b> ExprParser<'a, 'b> {
     &self,
     regex: Rc<Regex>,
     t: &Token<'a>,
-  ) -> Option<(SyntaxElem<'a>, Vec<AdvanceResult>)> {
+  ) -> Option<(SynElemInternal<'a>, Vec<AdvanceResult>)> {
     let (qr, cont) = match deriv::d(&regex, &deriv::Query::Token(t.ty.clone(), t.str)) {
       Some(res) => res,
       None => return None,
@@ -125,12 +125,12 @@ impl<'a, 'b> ExprParser<'a, 'b> {
       deriv::QueryResult::Token(ty, s) => {
         use deriv::ElemType;
         match ty {
-          ElemType::Token => SyntaxElem::Token(s),
-          ElemType::Dec => SyntaxElem::Dec(s),
-          ElemType::Num => SyntaxElem::Num(s),
-          ElemType::Chr => SyntaxElem::Chr(s),
-          ElemType::Str => SyntaxElem::Str(s),
-          ElemType::Id => SyntaxElem::Ident(Id::new(s)),
+          ElemType::Token => SynElemF::Token(s),
+          ElemType::Dec => SynElemF::Dec(s),
+          ElemType::Num => SynElemF::Num(s),
+          ElemType::Chr => SynElemF::Chr(s),
+          ElemType::Str => SynElemF::Str(s),
+          ElemType::Id => SynElemF::Ident(Id::new(s)),
         }
       }
       _ => unreachable!(),
@@ -150,7 +150,7 @@ impl<'a, 'b> ExprParser<'a, 'b> {
   fn read_until_expr(
     &mut self,
     ss: Vec<(SyntaxState<'a, 'b>, Rc<Regex>)>,
-  ) -> Result<(Vec<SyntaxElem<'a>>, ReadStatus<'b>)> {
+  ) -> Result<(Vec<SynElem<'a>>, ReadStatus<'b>)> {
     let mut ss = ss;
     for (_, r) in &ss {
       assert!(!deriv::next_expr(r));
@@ -161,11 +161,12 @@ impl<'a, 'b> ExprParser<'a, 'b> {
 
     // longest match
     loop {
-      let t = match self.tracker.peek() {
+      let (t, loc) = match self.tracker.peek() {
         Some(t) => {
           let t = t.clone();
+          let loc = self.tracker.get_location();
           self.tracker.next();
-          t
+          (t, loc)
         }
         None => break,
       };
@@ -174,7 +175,9 @@ impl<'a, 'b> ExprParser<'a, 'b> {
       for s in ss {
         if let Some((e, conts)) = self.advance(s.1, &t) {
           for cont in conts {
-            let ns = s.0.advance(e.clone());
+            let ns = s
+              .0
+              .advance(SynElem(e.clone(), self.tracker.range_single(loc.clone())));
             match cont {
               AdvanceResult::Remain(r) => next_ss.push((ns, r)),
               AdvanceResult::Pass() => {
@@ -247,7 +250,7 @@ impl<'a, 'b> ExprParser<'a, 'b> {
     &mut self,
     ss: Vec<&'b Syntax>,
     heads: usize,
-  ) -> Option<(SyntaxId, Vec<deriv::SkipToken>, Vec<SyntaxElem<'a>>)> {
+  ) -> Option<(SyntaxId, Vec<deriv::SkipToken>, Vec<SynElem<'a>>)> {
     fn skips_from(s: &Syntax, heads: usize) -> Vec<deriv::SkipToken> {
       deriv::skip_e(&s.regex, heads).1
     }
@@ -291,7 +294,8 @@ impl<'a, 'b> ExprParser<'a, 'b> {
             &Precedence::Initial
           };
           let e = self.expr_p(p)?;
-          elems.push(SyntaxElem::Expr(Box::new(e)));
+          let range = e.1.clone();
+          elems.push(SynElem(SynElemF::Expr(Box::new(e)), range));
           self.known_ops = last_known_ops;
           for sc in &conts {
             if deriv::has_eps(&sc.cont) {
@@ -322,7 +326,7 @@ impl<'a, 'b> ExprParser<'a, 'b> {
     &mut self,
     mod_name: Vec<Id<'a>>,
     sid: SyntaxId,
-    elems: Vec<SyntaxElem<'a>>,
+    elems: Vec<SynElem<'a>>,
     range: TokenRange,
   ) -> Expr<'a> {
     Expr(ExprF::Syntax(mod_name, sid, elems), range)
@@ -448,14 +452,15 @@ impl<'a, 'b> ExprParser<'a, 'b> {
         match self.parse_by_regex(opes, 1) {
           None => Trailing::Applicand(e),
           Some((sid, skip, elems_tail)) => {
+            let range = e.1.clone();
             let begin = e.1.clone();
             let mut elems = match skip[..] {
-              [deriv::SkipToken::Expr] => vec![SyntaxElem::Expr(Box::new(e))],
+              [deriv::SkipToken::Expr] => vec![SynElem(SynElemF::Expr(Box::new(e)), range)],
               [deriv::SkipToken::Id] => match e {
-                Expr(ExprF::Var(id), _) => vec![SyntaxElem::Ident(id)],
+                Expr(ExprF::Var(id), _) => vec![SynElem(SynElemF::Ident(id), range)],
                 _ => {
-                  self.add_error(begin.clone().into(), "expected identifier for syntax");
-                  vec![SyntaxElem::Ident(Id::new("_"))]
+                  self.add_error(range.clone().into(), "expected identifier for syntax");
+                  vec![SynElem(SynElemF::Ident(Id::new("_")), range)]
                 }
               },
               _ => unreachable!(),
@@ -558,16 +563,17 @@ impl<'a, 'b> ExprParser<'a, 'b> {
             Some(e) => e,
             None => return Some(e1),
           };
-          let begin = e1.1.clone();
+          let e1_range = e1.1.clone();
+          let e2_range = e2.1.clone();
           let elems = vec![
-            SyntaxElem::Expr(Box::new(e1)),
-            SyntaxElem::Expr(Box::new(e2)),
+            SynElem(SynElemF::Expr(Box::new(e1)), e1_range.clone()),
+            SynElem(SynElemF::Expr(Box::new(e2)), e2_range),
           ];
           e = self.make_syntax(
             Vec::new(),
             app.t.clone(),
             elems,
-            self.tracker.range_extend(begin),
+            self.tracker.range_extend(e1_range),
           );
         }
       }

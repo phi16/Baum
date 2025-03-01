@@ -1,9 +1,9 @@
+mod builtin;
 pub mod convert;
 mod decl;
 mod expr;
 pub mod parse;
 mod pretty;
-mod syntax;
 pub mod tokenize;
 pub mod types;
 
@@ -19,9 +19,12 @@ pub fn run(code: &str) -> Result<front::Program, Vec<String>> {
     return Err(errors);
   }
   // eprintln!("--------");
-  // eprintln!("{}", pretty::pretty(&tree));
+  eprintln!("{}", pretty::pretty(&tree));
+  for t in &tree {
+    eprintln!("{:?}", t);
+  }
   // eprintln!("--------");
-  let front = convert::convert(&tree, syntax::default_syntax_handlers())?;
+  let front = convert::convert(&tree, builtin::builtin_syntax_handlers())?;
   // eprintln!("--------");
   // eprintln!("{}", baum_front::pretty::pretty(&front));
   // eprintln!("--------");

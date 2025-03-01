@@ -1,5 +1,5 @@
+use crate::builtin::builtin_syntax_table;
 use crate::decl::DeclParser;
-use crate::syntax::default_syntax_table;
 use crate::types::env::Env;
 use crate::types::token::Token;
 use crate::types::tracker::Tracker;
@@ -8,7 +8,7 @@ use std::collections::HashSet;
 
 pub fn parse<'a>(tokens: Vec<Token<'a>>) -> (Vec<Decl<'a>>, Vec<String>) {
   let tracker = Tracker::new(tokens);
-  let env = Env::from_syntax(default_syntax_table());
+  let env = Env::from_syntax(builtin_syntax_table());
   let mut parser = DeclParser::new(tracker, env, 0, HashSet::new(), Vec::new());
   let ds = parser.program();
   let (_, _, _, _, errors) = parser.into_inner();

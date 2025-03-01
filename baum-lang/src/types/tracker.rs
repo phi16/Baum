@@ -106,6 +106,10 @@ impl<'a> Tracker<'a> {
     }
   }
 
+  pub fn range_single(&self, loc: TokenLoc) -> TokenRange {
+    self.make_range(loc.clone(), TokenLoc::new(loc.into_inner() + 1))
+  }
+
   pub fn range_from(&self, begin: TokenLoc) -> TokenRange {
     self.make_range(begin, self.get_location())
   }

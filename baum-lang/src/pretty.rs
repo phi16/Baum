@@ -80,7 +80,7 @@ impl Pretty {
   }
 
   fn mr(&mut self, m: &ModRef) -> &mut Self {
-    match m {
+    match &m.0 {
       ModRefF::Import(s) => self.s("import ").s("\"").s(s).s("\"").ln(),
       ModRefF::App(is, params) => {
         self.is(is, ".");
@@ -129,7 +129,7 @@ impl Pretty {
           self.s(prec_str).s(" ");
         }
         for def in defs {
-          match def {
+          match &def.0 {
             SynDefF::Token(s) => self.s(s),
             SynDefF::Ident(i) => self.i(i),
             SynDefF::Expr(i) => self.i(i),
@@ -160,8 +160,8 @@ impl Pretty {
         self.s("[");
         for e in se.into_iter() {
           self.s(" ");
-          match e {
-            SyntaxElem::Token(s) => {
+          match &e.0 {
+            SynElemF::Token(s) => {
               if qualified {
                 qualified = false;
                 self.is(mod_name, ".").s(".").s(s)
@@ -169,12 +169,12 @@ impl Pretty {
                 self.s(s)
               }
             }
-            SyntaxElem::Ident(i) => self.i(i),
-            SyntaxElem::Dec(s) => self.s(s),
-            SyntaxElem::Num(s) => self.s(s),
-            SyntaxElem::Chr(s) => self.s("'").s(s).s("'"),
-            SyntaxElem::Str(s) => self.s("\"").s(s).s("\""),
-            SyntaxElem::Expr(e) => self.e(e),
+            SynElemF::Ident(i) => self.i(i),
+            SynElemF::Dec(s) => self.s(s),
+            SynElemF::Num(s) => self.s(s),
+            SynElemF::Chr(s) => self.s("'").s(s).s("'"),
+            SynElemF::Str(s) => self.s("\"").s(s).s("\""),
+            SynElemF::Expr(e) => self.e(e),
           };
         }
         self.s(" ]");

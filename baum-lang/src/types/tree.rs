@@ -1,6 +1,8 @@
 use crate::types::token::TokenRange;
 use crate::types::tree_base::*;
 
+use super::token::TokenLoc;
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Id<'a>(&'a str);
 
@@ -37,18 +39,28 @@ pub enum SyntaxId {
 }
 
 pub type Arg<'a> = ArgF<Id<'a>, Box<Expr<'a>>>;
-pub type ModRef<'a> = ModRefF<&'a str, Id<'a>, Box<Expr<'a>>>;
 pub type ModDef<'a> = ModDefF<Id<'a>, Box<Expr<'a>>>;
-pub type ModBody<'a> = ModBodyF<&'a str, Id<'a>, Vec<Decl<'a>>, Box<Expr<'a>>>;
+pub type ModBody<'a> = ModBodyF<Vec<Decl<'a>>, ModRef<'a>>;
 pub type Def<'a> = DefF<Id<'a>, Box<Expr<'a>>>;
-pub type SynDef<'a> = SynDefF<&'a str, Id<'a>>;
-pub type SyntaxElem<'a> = SyntaxElemF<&'a str, Id<'a>, Box<Expr<'a>>>;
 
-pub type DeclInternal<'a> = DeclF<&'a str, Id<'a>, Vec<Decl<'a>>, Box<Expr<'a>>, SyntaxId>;
-pub type ExprInternal<'a> = ExprF<&'a str, Id<'a>, Vec<Decl<'a>>, Box<Expr<'a>>, SyntaxId>;
+pub type ModRefInternal<'a> = ModRefF<&'a str, Id<'a>, Box<Expr<'a>>>;
+pub type SynDefInternal<'a> = SynDefF<&'a str, Id<'a>>;
+pub type SynElemInternal<'a> = SynElemF<&'a str, Id<'a>, Box<Expr<'a>>>;
+pub type DeclInternal<'a> =
+  DeclF<&'a str, Id<'a>, Vec<Decl<'a>>, Box<Expr<'a>>, SyntaxId, Vec<SynDef<'a>>, ModRef<'a>>;
+pub type ExprInternal<'a> = ExprF<Id<'a>, Vec<Decl<'a>>, Box<Expr<'a>>, SyntaxId, Vec<SynElem<'a>>>;
 
 #[derive(Debug, Clone)]
 pub struct Decl<'a>(pub DeclInternal<'a>, pub TokenRange);
 
 #[derive(Debug, Clone)]
 pub struct Expr<'a>(pub ExprInternal<'a>, pub TokenRange);
+
+#[derive(Debug, Clone)]
+pub struct SynDef<'a>(pub SynDefInternal<'a>, pub TokenLoc);
+
+#[derive(Debug, Clone)]
+pub struct SynElem<'a>(pub SynElemInternal<'a>, pub TokenRange);
+
+#[derive(Debug, Clone)]
+pub struct ModRef<'a>(pub ModRefInternal<'a>, pub TokenRange);

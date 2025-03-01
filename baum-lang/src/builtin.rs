@@ -1,6 +1,7 @@
 use crate::types::env::SyntaxTable;
 use crate::types::regex::{Regex, Terminal};
-use crate::types::tree::SyntaxId;
+use crate::types::tree::{SynElemInternal, SyntaxId};
+use crate::types::tree_base::SynElemF;
 use std::collections::HashMap;
 use std::rc::Rc;
 
@@ -52,7 +53,7 @@ fn regex_macro_test() {
   );
 }
 
-pub fn default_syntax_table<'a>() -> SyntaxTable {
+pub fn builtin_syntax_table<'a>() -> SyntaxTable {
   let mut syntax = SyntaxTable::new();
 
   let id = &Regex::id();
@@ -119,7 +120,7 @@ pub fn default_syntax_table<'a>() -> SyntaxTable {
 use crate::types::syntax::{
   ElemId, ElemToken, LookupId, SyntaxExpr, SyntaxHandler, SyntaxInterpret,
 };
-use crate::types::tree::SyntaxElem;
+use crate::types::tree::SynElem;
 use baum_front::types::literal as lit;
 use baum_front::types::tree as front;
 use std::char::ParseCharError;
@@ -132,7 +133,7 @@ enum Vis {
 }
 
 struct MiniParser<'a, 'b> {
-  input: &'b Vec<SyntaxElem<'a>>,
+  input: &'b Vec<SynElem<'a>>,
   index: usize,
   next_elem_id: u16,
   tokens: Vec<ElemToken>,
@@ -145,18 +146,18 @@ enum LitType {
   Str,
 }
 
-fn match_lit(e: &SyntaxElem, ty: LitType) -> bool {
+fn match_lit(e: &SynElemInternal, ty: LitType) -> bool {
   match (e, ty) {
-    (SyntaxElem::Dec(_), LitType::Dec) => true,
-    (SyntaxElem::Num(_), LitType::Num) => true,
-    (SyntaxElem::Chr(_), LitType::Chr) => true,
-    (SyntaxElem::Str(_), LitType::Str) => true,
+    (SynElemF::Dec(_), LitType::Dec) => true,
+    (SynElemF::Num(_), LitType::Num) => true,
+    (SynElemF::Chr(_), LitType::Chr) => true,
+    (SynElemF::Str(_), LitType::Str) => true,
     _ => false,
   }
 }
 
 impl<'a, 'b> MiniParser<'a, 'b> {
-  fn new(input: &'b Vec<SyntaxElem<'a>>) -> Self {
+  fn new(input: &'b Vec<SynElem<'a>>) -> Self {
     Self {
       input,
       index: 0,
@@ -175,7 +176,7 @@ impl<'a, 'b> MiniParser<'a, 'b> {
 
   fn peek_token(&self, s: &'a str) -> Option<()> {
     let e = self.input.get(self.index)?;
-    if let SyntaxElem::Token(t) = e {
+    if let SynElemF::Token(t) = &e.0 {
       if *t == s {
         return Some(());
       }
@@ -192,7 +193,7 @@ impl<'a, 'b> MiniParser<'a, 'b> {
 
   fn peek_id(&self) -> Option<()> {
     let e = self.input.get(self.index)?;
-    if let SyntaxElem::Ident(_) = e {
+    if let SynElemF::Ident(_) = e.0 {
       Some(())
     } else {
       None
@@ -210,17 +211,17 @@ impl<'a, 'b> MiniParser<'a, 'b> {
 
   fn take_lit(&mut self, ty: LitType) -> Option<&'a str> {
     let e = self.input.get(self.index)?;
-    if !match_lit(e, ty) {
+    if !match_lit(&e.0, ty) {
       return None;
     }
-    let (s, token) = match self.input.get(self.index).unwrap() {
-      SyntaxElem::Token(_) => panic!(),
-      SyntaxElem::Ident(_) => panic!(),
-      SyntaxElem::Dec(s) => (s, ElemToken::Dec),
-      SyntaxElem::Num(s) => (s, ElemToken::Num),
-      SyntaxElem::Chr(s) => (s, ElemToken::Chr),
-      SyntaxElem::Str(s) => (s, ElemToken::Str),
-      SyntaxElem::Expr(_) => panic!(),
+    let (s, token) = match self.input.get(self.index).unwrap().0 {
+      SynElemF::Token(_) => panic!(),
+      SynElemF::Ident(_) => panic!(),
+      SynElemF::Dec(s) => (s, ElemToken::Dec),
+      SynElemF::Num(s) => (s, ElemToken::Num),
+      SynElemF::Chr(s) => (s, ElemToken::Chr),
+      SynElemF::Str(s) => (s, ElemToken::Str),
+      SynElemF::Expr(_) => panic!(),
     };
     self.index += 1;
     self.tokens.push(token);
@@ -229,7 +230,7 @@ impl<'a, 'b> MiniParser<'a, 'b> {
 
   fn take_expr(&mut self) -> Option<SyntaxExpr> {
     let e = self.input.get(self.index)?;
-    if let SyntaxElem::Expr(_) = e {
+    if let SynElemF::Expr(_) = e.0 {
       self.index += 1;
       let id = ElemId(self.next_elem_id);
       self.next_elem_id += 1;
@@ -356,13 +357,13 @@ fn num_parse(s: &str) -> Result<lit::Literal, String> {
   Ok(lit)
 }
 
-pub fn default_syntax_handlers<'a>() -> HashMap<SyntaxId, SyntaxHandler<'a>> {
+pub fn builtin_syntax_handlers<'a>() -> HashMap<SyntaxId, SyntaxHandler<'a>> {
   let mut handlers: HashMap<SyntaxId, SyntaxHandler> = HashMap::new();
 
   fn make_handler<'a>(
     f: impl for<'b> Fn(&mut MiniParser<'a, 'b>) -> Result<SyntaxExpr, String> + 'static,
   ) -> SyntaxHandler<'a> {
-    Rc::new(move |elems: &Vec<SyntaxElem<'a>>| {
+    Rc::new(move |elems: &Vec<SynElem<'a>>| {
       let mut p = MiniParser::new(elems);
       let e = f(&mut p)?;
       let tokens = p.done().unwrap();

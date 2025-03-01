@@ -145,7 +145,7 @@ impl<T> SyntaxTable<T> {
   }
 }
 
-use crate::types::tree::SyntaxElem;
+use crate::types::tree::SynElem;
 use baum_front::types::tree as front;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -310,4 +310,4 @@ impl SyntaxInterpret {
 }
 
 pub type SyntaxHandler<'a> =
-  Rc<dyn for<'b> Fn(&'b Vec<SyntaxElem<'a>>) -> Result<SyntaxInterpret, String>>;
+  Rc<dyn for<'b> Fn(&'b Vec<SynElem<'a>>) -> Result<SyntaxInterpret, String>>;

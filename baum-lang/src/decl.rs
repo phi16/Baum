@@ -25,11 +25,11 @@ fn fv<'a>(e: &Expr<'a>) -> Option<Vec<(Id<'a>, Role)>> {
       }
       ExprF::Syntax(_, _, ref elems) => {
         for elem in elems {
-          match elem {
-            SyntaxElem::Ident(ref id) => {
+          match &elem.0 {
+            SynElemF::Ident(ref id) => {
               v.push((id.clone(), Role::Ident));
             }
-            SyntaxElem::Expr(ref e) => {
+            SynElemF::Expr(ref e) => {
               fv_internal(e, v, invalid);
             }
             _ => {}
@@ -291,7 +291,8 @@ impl<'a> DeclParser<'a> {
         }
         Some(_) => {
           // TODO: restrict some symbols...
-          tokens.push(self.tracker.peek().unwrap().clone());
+          let loc = self.tracker.get_location();
+          tokens.push((self.tracker.peek().unwrap().clone(), loc));
           self.tracker.next();
         }
       }
@@ -324,12 +325,12 @@ impl<'a> DeclParser<'a> {
     let mut rs = Vec::new();
     let mut defs = Vec::new();
     let mut last_is_expr = false;
-    for t in tokens {
+    for (t, loc) in tokens {
       let mut is_expr = false;
       match t.ty {
         TokenType::Reserved => {
           rs.push(Regex::token(t.str));
-          defs.push(SynDefF::Token(t.str));
+          defs.push(SynDef(SynDefF::Token(t.str), loc));
         }
         TokenType::Ident => {
           let id = Id::new(t.str);
@@ -343,17 +344,17 @@ impl<'a> DeclParser<'a> {
             match role {
               Role::Expr => {
                 rs.push(Regex::e());
-                defs.push(SynDefF::Expr(id));
+                defs.push(SynDef(SynDefF::Expr(id), loc));
                 is_expr = true;
               }
               Role::Ident => {
                 rs.push(Regex::id());
-                defs.push(SynDefF::Ident(id));
+                defs.push(SynDef(SynDefF::Ident(id), loc));
               }
             }
           } else {
             rs.push(Regex::token(t.str));
-            defs.push(SynDefF::Token(t.str));
+            defs.push(SynDef(SynDefF::Token(t.str), loc));
           }
         }
         _ => return Err((t.pos.into(), "expected identifier or symbols".to_string())),
@@ -377,8 +378,9 @@ impl<'a> DeclParser<'a> {
           return Ok((name, params));
         }
         ExprF::Syntax(_, SyntaxId::AppE, args) => {
-          use SyntaxElemF::*;
+          use SynElemF::*;
           // e0 e1
+          let args = args.into_iter().map(|e| e.0).collect::<Vec<_>>();
           if let [Expr(e0), Expr(e1)] = args.as_slice() {
             rev_params.push((Vis::Explicit, e1.clone()));
             e = *e0.clone();
@@ -388,8 +390,9 @@ impl<'a> DeclParser<'a> {
           }
         }
         ExprF::Syntax(_, SyntaxId::AppI, args) => {
-          use SyntaxElemF::*;
+          use SynElemF::*;
           // e0 { e1 }
+          let args = args.into_iter().map(|e| e.0).collect::<Vec<_>>();
           if let [Expr(e0), Token("{"), Expr(e1), Token("}")] = args.as_slice() {
             rev_params.push((Vis::Implicit, e1.clone()));
             e = *e0.clone();
@@ -405,6 +408,7 @@ impl<'a> DeclParser<'a> {
   }
 
   fn modref_internal(&mut self) -> Result<ModRef<'a>> {
+    let loc = self.tracker.get_location();
     match self.tracker.peek_str() {
       None => return Err((self.tracker.epos(), "expected module reference".to_string())),
       Some("import") => {
@@ -416,12 +420,15 @@ impl<'a> DeclParser<'a> {
           }
           _ => return Err((self.tracker.epos(), "expected string literal".to_string())),
         };
-        Ok(ModRefF::Import(s))
+        Ok(ModRef(ModRefF::Import(s), self.tracker.range_from(loc)))
       }
       Some(_) => {
         let e = self.expr_or_hole(None);
         let (name, params) = self.extract_modref(e)?;
-        Ok(ModRefF::App(name, params))
+        Ok(ModRef(
+          ModRefF::App(name, params),
+          self.tracker.range_from(loc),
+        ))
       }
     }
   }
@@ -435,7 +442,7 @@ impl<'a> DeclParser<'a> {
   }
 
   pub fn resolve_modref(&self, mr: &ModRef<'a>) -> Option<&Rc<Env<'a>>> {
-    match mr {
+    match &mr.0 {
       ModRefF::Import(_) => {
         unimplemented!()
       }
