@@ -1,0 +1,15 @@
+y = _
+add = _
+syntax a + b = add a b
+z = 1.23e0 + 3.5
+x = 0123
+x = 0o123
+x = 0xA.p+7
+x = 0b1001
+x = y.a.0.1.2.3.b
+p = _
+u = 'a' p
+u = 1 + 0x123
+v = 0xf.ffp10
+w = 110
+z = (1.).2 2.3e1

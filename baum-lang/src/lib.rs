@@ -19,16 +19,16 @@ pub fn run(code: &str) -> Result<front::Program, Vec<(ErrorPos, String)>> {
   if !errors.is_empty() {
     return Err(errors);
   }
-  // eprintln!("--------");
-  // eprintln!("{}", pretty::pretty(&tree));
-  // eprintln!("--------");
+  eprintln!("--------");
+  eprintln!("{}", pretty::pretty(&tree));
+  eprintln!("--------");
   let (front, errors) = convert::convert(&tree);
   if !errors.is_empty() {
     return Err(errors);
   }
-  // eprintln!("--------");
-  // eprintln!("{}", baum_front::pretty::pretty(&front));
-  // eprintln!("--------");
+  eprintln!("--------");
+  eprintln!("{}", baum_front::pretty::pretty(&front));
+  eprintln!("--------");
   Ok(front)
 }
 
