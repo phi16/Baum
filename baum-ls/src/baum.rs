@@ -1,16 +1,34 @@
 use baum_lang::types;
 
+pub enum TokenType {
+  Def,
+  Bind,
+  Unknown,
+  Prop,
+  Module,
+
+  Syntax,
+  Keyword,
+  Symbol,
+  Precedence,
+
+  String,
+  Number,
+
+  Comment,
+}
+
 pub struct TokenData {
   pub line: u32,
   pub column: u32,
   pub length: u32,
-  pub token_type: u32,
+  pub token_type: TokenType,
 }
 
 pub fn tokenize_example(code: &str) -> Result<Vec<TokenData>, Vec<String>> {
   let lines = code.lines().collect::<Vec<_>>();
   let (tokens, comments, _) = baum_lang::tokenize::tokenize(code);
-  let tokens_iter = tokens.into_iter().filter_map(|t| {
+  let tokens_iter = tokens.into_iter().map(|t| {
     let column = t.pos.column;
     let length = t.pos.length;
     let mut l = lines.get(t.pos.line as usize).unwrap().chars();
@@ -23,20 +41,23 @@ pub fn tokenize_example(code: &str) -> Result<Vec<TokenData>, Vec<String>> {
       .take(length as usize)
       .map(|c| c.len_utf16())
       .sum::<usize>() as u32;
-    Some(TokenData {
+    TokenData {
       line: t.pos.line,
       column: utf16_column,
       length: utf16_length,
       token_type: match t.ty {
-        types::token::TokenType::Ident => 2,
-        types::token::TokenType::DecNat => 7,
-        types::token::TokenType::Number => 7,
-        types::token::TokenType::Char => 6,
-        types::token::TokenType::String => 6,
-        types::token::TokenType::Precedence => 8,
-        types::token::TokenType::Reserved => 8,
+        types::token::TokenType::Ident => match t.str {
+          "syntax" | "local" | "module" | "let" | "in" => TokenType::Keyword,
+          _ => TokenType::Unknown,
+        },
+        types::token::TokenType::DecNat => TokenType::Number,
+        types::token::TokenType::Number => TokenType::Number,
+        types::token::TokenType::Char => TokenType::String,
+        types::token::TokenType::String => TokenType::String,
+        types::token::TokenType::Precedence => TokenType::Precedence,
+        types::token::TokenType::Reserved => TokenType::Symbol,
       },
-    })
+    }
   });
   let comments_iter = comments.into_iter().map(|(line, column)| {
     let mut l = lines.get(line as usize).unwrap().chars();
@@ -50,7 +71,7 @@ pub fn tokenize_example(code: &str) -> Result<Vec<TokenData>, Vec<String>> {
       line,
       column: utf16_column,
       length: utf16_length,
-      token_type: 5,
+      token_type: TokenType::Comment,
     }
   });
   let mut tokens_iter = tokens_iter.peekable();

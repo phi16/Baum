@@ -365,7 +365,7 @@ pub fn tokenize<'a>(code: &'a str) -> (Vec<Token<'a>>, Vec<(u32, u32)>, Vec<Stri
       };
 
       (
-        comment.map(|i| (ln, i as u32)),
+        comment.map(|i| (ln, indent + i as u32)),
         rest
           .char_indices()
           .enumerate()

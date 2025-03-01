@@ -1,4 +1,4 @@
-use crate::types::token::{ErrorPos, Indent, Token, TokenRange, TokenType};
+use crate::types::token::{ErrorPos, Indent, Token, TokenLoc, TokenRange, TokenType};
 
 #[derive(Clone)]
 pub struct TrackerState {
@@ -55,7 +55,7 @@ impl<'a> Tracker<'a> {
     self.peek().map(|t| (&t.ty, t.str))
   }
 
-  pub fn next(&mut self) -> Option<&Token<'a>> {
+  pub fn next(&mut self) {
     match self.peek_raw() {
       Some(t) => {
         let line = t.pos.line;
@@ -63,13 +63,12 @@ impl<'a> Tracker<'a> {
         let length = t.pos.length;
         self.state.last_eol = ErrorPos::Pos(line, column);
         self.state.last_pos = (line, column + length);
+        self.state.current_pos += 1;
       }
       _ => {
         self.state.last_eol = ErrorPos::EoF;
       }
     };
-    self.state.current_pos += 1;
-    self.peek_raw()
   }
 
   pub fn skip_to_next_head(&mut self) {
@@ -88,42 +87,35 @@ impl<'a> Tracker<'a> {
       .map_or(last_pos, |t| ErrorPos::Pos(t.pos.line, t.pos.column))
   }
 
-  pub fn pos(&self) -> Option<(u32, u32)> {
-    let pos = self.peek()?.pos;
-    Some((pos.line, pos.column))
+  pub fn get_location(&self) -> TokenLoc {
+    TokenLoc::new(self.state.current_pos)
   }
 
-  pub fn range_from(&self, begin: Option<(u32, u32)>) -> TokenRange {
-    let begin = begin.unwrap_or(self.state.last_pos);
+  pub fn make_range(&self, begin: TokenLoc, end: TokenLoc) -> TokenRange {
+    let begin_pos = match self.token_list.get(begin.clone().into_inner()) {
+      Some(t) => (t.pos.line, t.pos.column),
+      None => match self.token_list.last() {
+        Some(t) => (t.pos.line, t.pos.column + t.pos.length),
+        None => (0, 0),
+      },
+    };
     TokenRange {
-      begin_line: begin.0,
-      begin_column: begin.1,
-      end_line: self.state.last_pos.0,
-      end_column: self.state.last_pos.1,
+      begin_pos,
+      begin,
+      end,
     }
+  }
+
+  pub fn range_from(&self, begin: TokenLoc) -> TokenRange {
+    self.make_range(begin, self.get_location())
   }
 
   pub fn range_extend(&self, base: TokenRange) -> TokenRange {
-    TokenRange {
-      begin_line: base.begin_line,
-      begin_column: base.begin_column,
-      end_line: self.state.last_pos.0,
-      end_column: self.state.last_pos.1,
-    }
+    self.make_range(base.begin, self.get_location())
   }
 
   pub fn range_here(&self) -> TokenRange {
-    let pos = self.pos().unwrap_or(self.state.last_pos);
-    TokenRange {
-      begin_line: pos.0,
-      begin_column: pos.1,
-      end_line: pos.0,
-      end_column: pos.1,
-    }
-  }
-
-  pub fn get_location(&self) -> usize {
-    self.state.current_pos
+    self.make_range(self.get_location(), self.get_location())
   }
 
   pub fn save_indent(&self) -> Indent {

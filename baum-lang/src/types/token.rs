@@ -9,6 +9,18 @@ pub enum TokenType {
   Reserved,   // :, =, [, }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TokenLoc(usize);
+
+impl TokenLoc {
+  pub fn new(loc: usize) -> Self {
+    TokenLoc(loc)
+  }
+  pub fn into_inner(self) -> usize {
+    self.0
+  }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TokenPos {
   pub line: u32,
@@ -18,10 +30,9 @@ pub struct TokenPos {
 
 #[derive(Debug, Clone)]
 pub struct TokenRange {
-  pub begin_line: u32,
-  pub begin_column: u32,
-  pub end_line: u32,
-  pub end_column: u32,
+  pub begin_pos: (u32, u32),
+  pub begin: TokenLoc,
+  pub end: TokenLoc,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -39,7 +50,7 @@ impl From<TokenPos> for ErrorPos {
 
 impl From<TokenRange> for ErrorPos {
   fn from(pos: TokenRange) -> Self {
-    ErrorPos::Pos(pos.begin_line, pos.begin_column)
+    ErrorPos::Pos(pos.begin_pos.0, pos.begin_pos.1)
   }
 }
 

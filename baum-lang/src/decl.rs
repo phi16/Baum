@@ -587,7 +587,7 @@ impl<'a> DeclParser<'a> {
   }
 
   fn decl(&mut self, cur_mod: &mut Env<'a>) -> Result<Decl<'a>> {
-    let begin = self.tracker.pos();
+    let begin = self.tracker.get_location();
     let res = self.decl_internal(cur_mod)?;
     let range = self.tracker.range_from(begin);
     self.allow_semicolon();

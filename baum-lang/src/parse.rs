@@ -1,33 +1,38 @@
 use crate::decl::DeclParser;
 use crate::syntax::default_syntax_table;
-use crate::tokenize::tokenize;
 use crate::types::env::Env;
+use crate::types::token::Token;
 use crate::types::tracker::Tracker;
 use crate::types::tree::Decl;
 use std::collections::HashSet;
 
-pub fn parse<'a>(code: &'a str) -> Result<Vec<Decl<'a>>, Vec<String>> {
-  let (tokens, _, errors) = tokenize(code);
-  if !errors.is_empty() {
-    return Err(errors);
-  }
+pub fn parse<'a>(tokens: Vec<Token<'a>>) -> (Vec<Decl<'a>>, Vec<String>) {
   let tracker = Tracker::new(tokens);
   let env = Env::from_syntax(default_syntax_table());
   let mut parser = DeclParser::new(tracker, env, 0, HashSet::new(), Vec::new());
   let ds = parser.program();
   let (_, _, _, _, errors) = parser.into_inner();
-  if errors.is_empty() {
-    Ok(ds)
-  } else {
-    Err(errors)
-  }
+  (ds, errors)
 }
 
 #[cfg(test)]
 #[test]
 fn test_full_features() {
-  assert!(parse(include_str!("../examples/pass.baum")).is_ok());
-  assert!(parse(include_str!("../examples/fail.baum")).is_err()); // TODO: error count check?
+  use crate::tokenize::tokenize;
+
+  fn test<'a>(code: &'a str) -> Result<Vec<Decl<'a>>, Vec<String>> {
+    let (tokens, _, errors) = tokenize(code);
+    if !errors.is_empty() {
+      return Err(errors);
+    }
+    let (ds, errors) = parse(tokens);
+    if !errors.is_empty() {
+      return Err(errors);
+    }
+    Ok(ds)
+  }
+  assert!(test(include_str!("../examples/pass.baum")).is_ok());
+  assert!(test(include_str!("../examples/fail.baum")).is_err()); // TODO: error count check?
 }
 
 #[cfg(test)]

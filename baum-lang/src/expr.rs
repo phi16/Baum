@@ -356,7 +356,7 @@ impl<'a, 'b> ExprParser<'a, 'b> {
   }
 
   fn expr_leading(&mut self, base_p: &Precedence) -> Option<Expr<'a>> {
-    let begin_pos = self.tracker.pos();
+    let begin_pos = self.tracker.get_location();
     let (mod_name, env) = match self.tracker.peek_ty_str() {
       None => return None,
       Some((TokenType::Ident, s)) if self.env.is_modname(s) => {
@@ -473,7 +473,7 @@ impl<'a, 'b> ExprParser<'a, 'b> {
     match self.tracker.peek_str() {
       Some(s) if self.known_ops.contains(s) => return None,
       Some("let") => {
-        let let_pos = self.tracker.pos();
+        let let_pos = self.tracker.get_location();
         self.tracker.next();
 
         let (ds, d_env) = {
