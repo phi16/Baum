@@ -12,11 +12,11 @@ use baum_front::types::tree as front;
 pub fn parse(code: &str) -> Result<front::Program, Vec<String>> {
   let tree = parse::parse(code)?;
   // eprintln!("--------");
-  // eprintln!("{}", pretty::pretty(&tree));
+  eprintln!("{}", pretty::pretty(&tree));
   // eprintln!("--------");
   let front = convert::convert(&tree, syntax::default_syntax_handlers())?;
   // eprintln!("--------");
-  // eprintln!("{}", baum_front::pretty::pretty(&core));
+  eprintln!("{}", baum_front::pretty::pretty(&front));
   // eprintln!("--------");
   Ok(front)
 }

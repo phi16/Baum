@@ -66,7 +66,7 @@ z = x {y = 2}
 y = {y = 1} + 2
 y = {y} + 1 -- fail
 u = 1 + 5
-      
+
 syntax [ a ] = block a
 syntax 4> a → b = Π(a) b
 syntax 5> (a: e) → b = Π(a: e) b

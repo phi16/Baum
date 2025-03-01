@@ -1,4 +1,4 @@
-use crate::types::token::{ErrorPos, Indent, Token, TokenPos, TokenRange, TokenType};
+use crate::types::token::{ErrorPos, Indent, Token, TokenRange, TokenType};
 
 #[derive(Clone)]
 pub struct TrackerState {

@@ -2,7 +2,7 @@ use crate::decl::DeclParser;
 use crate::types::env::{Env, Syntax};
 use crate::types::precedence::Precedence;
 use crate::types::regex::{deriv, Regex};
-use crate::types::token::{ErrorPos, Token, TokenPos, TokenRange, TokenType};
+use crate::types::token::{ErrorPos, Token, TokenRange, TokenType};
 use crate::types::tracker::Tracker;
 use crate::types::tree::{Expr, Id, SyntaxElem, SyntaxId};
 use crate::types::tree_base::ExprF;
