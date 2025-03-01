@@ -1,0 +1,34 @@
+{
+  "name": "baum-vscode",
+  "version": "0.0.1",
+  "author": "phi16",
+  "license": "MIT",
+  "description": "baum-ls support for Visual Studio Code",
+  "engines": {
+    "vscode": "^1.97.0"
+  },
+  "main": "./extension.js",
+  "activationEvents": [
+    "onLanguage:baum"
+  ],
+  "contributes": {
+    "languages": [
+      {
+        "id": "baum",
+        "extensions": [".baum"]
+      }
+    ],
+    "commands": [
+      {
+        "command": "baum-vscode.restartServer",
+        "title": "baum-ls: Restart server"
+      }
+    ]
+  },
+  "dependencies": {
+    "vscode-languageclient": "^9.0.1"
+  },
+  "private": true
+}
+
+

@@ -2,9 +2,9 @@ use crate::decl::DeclParser;
 use crate::types::env::{Env, Syntax};
 use crate::types::precedence::Precedence;
 use crate::types::regex::{deriv, Regex};
-use crate::types::token::{Token, TokenPos, TokenType};
+use crate::types::token::{ErrorPos, Token, TokenPos, TokenRange, TokenType};
 use crate::types::tracker::Tracker;
-use crate::types::tree::{Expr, Id, SyntaxElem, SyntaxId, TokenRange};
+use crate::types::tree::{Expr, Id, SyntaxElem, SyntaxId};
 use crate::types::tree_base::ExprF;
 use std::collections::HashSet;
 use std::rc::Rc;
@@ -107,7 +107,7 @@ impl<'a, 'b> ExprParser<'a, 'b> {
     )
   }
 
-  fn add_error(&mut self, pos: TokenPos, msg: &str) {
+  fn add_error(&mut self, pos: ErrorPos, msg: &str) {
     let s = format!("{}, expr: {}", pos.to_string(), msg);
     self.errors.push(s);
   }
@@ -268,7 +268,7 @@ impl<'a, 'b> ExprParser<'a, 'b> {
       match status {
         ReadStatus::Pass(s) => return Some((s.t.clone(), skips_from(s, heads), elems)),
         ReadStatus::Await(conts) => {
-          let pos = self.tracker.pos();
+          let pos = self.tracker.epos();
 
           // Rule: the last non-term can be predicted by the syntax, to use precedence correctly
           let last_count = conts.iter().filter(|sc| deriv::has_eps(&sc.cont)).count();
@@ -323,15 +323,9 @@ impl<'a, 'b> ExprParser<'a, 'b> {
     mod_name: Vec<Id<'a>>,
     sid: SyntaxId,
     elems: Vec<SyntaxElem<'a>>,
-    begin: TokenPos,
+    range: TokenRange,
   ) -> Expr<'a> {
-    Expr(
-      ExprF::Syntax(mod_name, sid, elems),
-      TokenRange {
-        begin,
-        end: self.tracker.pos(),
-      },
-    )
+    Expr(ExprF::Syntax(mod_name, sid, elems), range)
   }
 
   fn module_name(&mut self) -> Option<ModQualifier<'a, 'b>> {
@@ -370,10 +364,7 @@ impl<'a, 'b> ExprParser<'a, 'b> {
           ModQualifier::Itself(mod_name) => {
             return Some(Expr(
               ExprF::Mod(mod_name),
-              TokenRange {
-                begin: begin_pos,
-                end: self.tracker.pos(),
-              },
+              self.tracker.range_from(begin_pos),
             ));
           }
           ModQualifier::Qualified(mod_name, env) => {
@@ -384,10 +375,7 @@ impl<'a, 'b> ExprParser<'a, 'b> {
                 self.tracker.next();
                 return Some(Expr(
                   ExprF::Ext(mod_name, id),
-                  TokenRange {
-                    begin: begin_pos,
-                    end: self.tracker.pos(),
-                  },
+                  self.tracker.range_from(begin_pos),
                 ));
               }
               _ => {
@@ -402,13 +390,7 @@ impl<'a, 'b> ExprParser<'a, 'b> {
         // identifier
         let id = Id::new(s);
         self.tracker.next();
-        return Some(Expr(
-          ExprF::Var(id),
-          TokenRange {
-            begin: begin_pos,
-            end: self.tracker.pos(),
-          },
-        ));
+        return Some(Expr(ExprF::Var(id), self.tracker.range_from(begin_pos)));
       }
       _ => {
         // leading op
@@ -420,13 +402,13 @@ impl<'a, 'b> ExprParser<'a, 'b> {
         // literal
         let lits = self.filter_p(env.syntax.lits(), base_p);
         let (sid, _, elems) = self.parse_by_regex(lits, 0)?;
-        Some(self.make_syntax(mod_name, sid, elems, begin_pos))
+        Some(self.make_syntax(mod_name, sid, elems, self.tracker.range_from(begin_pos)))
       }
       TokenType::Ident | TokenType::Reserved => {
         let s = self.tracker.peek().unwrap().str;
         let pres: Vec<&'b Syntax> = self.filter_p(env.syntax.choose_pre(s)?, base_p);
         let (sid, _, elems) = self.parse_by_regex(pres, 0)?;
-        Some(self.make_syntax(mod_name, sid, elems, begin_pos))
+        Some(self.make_syntax(mod_name, sid, elems, self.tracker.range_from(begin_pos)))
       }
       _ => None,
     }
@@ -466,20 +448,20 @@ impl<'a, 'b> ExprParser<'a, 'b> {
         match self.parse_by_regex(opes, 1) {
           None => Trailing::Applicand(e),
           Some((sid, skip, elems_tail)) => {
-            let begin = e.1.begin;
+            let begin = e.1.clone();
             let mut elems = match skip[..] {
               [deriv::SkipToken::Expr] => vec![SyntaxElem::Expr(Box::new(e))],
               [deriv::SkipToken::Id] => match e {
                 Expr(ExprF::Var(id), _) => vec![SyntaxElem::Ident(id)],
                 _ => {
-                  self.add_error(begin, "expected identifier for syntax");
+                  self.add_error(begin.clone().into(), "expected identifier for syntax");
                   vec![SyntaxElem::Ident(Id::new("_"))]
                 }
               },
               _ => unreachable!(),
             };
             elems.extend(elems_tail);
-            let s = self.make_syntax(mod_name, sid, elems, begin);
+            let s = self.make_syntax(mod_name, sid, elems, self.tracker.range_extend(begin));
             Trailing::Continue(s)
           }
         }
@@ -518,7 +500,7 @@ impl<'a, 'b> ExprParser<'a, 'b> {
             self.tracker.next();
           }
           _ => {
-            self.add_error(self.tracker.pos(), "expected 'in'");
+            self.add_error(self.tracker.epos(), "expected 'in'");
             return None;
           }
         };
@@ -550,10 +532,7 @@ impl<'a, 'b> ExprParser<'a, 'b> {
 
         return Some(Expr(
           ExprF::Let(ds, Box::new(e)),
-          TokenRange {
-            begin: let_pos,
-            end: self.tracker.pos(),
-          },
+          self.tracker.range_from(let_pos),
         ));
       }
       _ => {}
@@ -579,12 +558,17 @@ impl<'a, 'b> ExprParser<'a, 'b> {
             Some(e) => e,
             None => return Some(e1),
           };
-          let begin = e1.1.begin;
+          let begin = e1.1.clone();
           let elems = vec![
             SyntaxElem::Expr(Box::new(e1)),
             SyntaxElem::Expr(Box::new(e2)),
           ];
-          e = self.make_syntax(Vec::new(), app.t.clone(), elems, begin);
+          e = self.make_syntax(
+            Vec::new(),
+            app.t.clone(),
+            elems,
+            self.tracker.range_extend(begin),
+          );
         }
       }
     }

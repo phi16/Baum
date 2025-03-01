@@ -1,4 +1,4 @@
-pub use crate::types::token::TokenPos;
+use crate::types::token::TokenRange;
 use crate::types::tree_base::*;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -11,12 +11,6 @@ impl<'a> Id<'a> {
   pub fn as_str(&self) -> &'a str {
     self.0
   }
-}
-
-#[derive(Debug, Clone)]
-pub struct TokenRange {
-  pub begin: TokenPos,
-  pub end: TokenPos,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]

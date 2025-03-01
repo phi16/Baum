@@ -1,6 +1,7 @@
 use crate::types::syntax::{
   ElemId, ElemToken, LookupId, SyntaxExpr, SyntaxHandler, SyntaxInterpret,
 };
+use crate::types::token::ErrorPos;
 use crate::types::tree::*;
 use crate::types::tree_base::*;
 use baum_front::types::tree as front;
@@ -8,7 +9,7 @@ use baum_front::types::tree::{ModDepth, ModLevel};
 use std::collections::HashMap;
 use std::rc::Rc;
 
-type Result<T> = std::result::Result<T, (TokenPos, String)>;
+type Result<T> = std::result::Result<T, (ErrorPos, String)>;
 
 fn ext_name(mod_name: &Vec<Id>, i: &Id) -> String {
   let mut s = String::new();
@@ -66,7 +67,7 @@ impl<'a> Builder<'a> {
     }
   }
 
-  fn add_error(&mut self, pos: TokenPos, msg: &str) {
+  fn add_error(&mut self, pos: ErrorPos, msg: &str) {
     let s = format!("{}: {}", pos.to_string(), msg);
     self.errors.push(s);
   }
@@ -157,6 +158,7 @@ impl<'a> Builder<'a> {
   }
 
   fn e_internal(&mut self, e: &Expr<'a>) -> Result<front::Expr> {
+    let epos: ErrorPos = e.1.clone().into();
     match &e.0 {
       ExprF::Hole => Ok(front::Expr(front::ExprF::Hole)),
       ExprF::Var(i) => {
@@ -165,21 +167,19 @@ impl<'a> Builder<'a> {
             return Ok(front::Expr(front::ExprF::Var(self.level_from(env.0), *i)));
           }
         }
-        Err((e.1.begin, format!("symbol not found: {}", i.as_str())))
+        Err((epos, format!("symbol not found: {}", i.as_str())))
       }
       ExprF::Mod(_) => Err((
-        e.1.begin,
+        epos,
         "module reference is not allowed in expression".to_string(),
       )),
       ExprF::Ext(mod_name, i) => {
-        let (depth, m, env) = self.lookup_mod(mod_name).ok_or((
-          e.1.begin,
-          format!("module not found: {}", ext_name(mod_name, i)),
-        ))?;
-        let i = self.lookup_id(i, &env).ok_or((
-          e.1.begin,
-          format!("symbol not found: {}", ext_name(mod_name, i)),
-        ))?;
+        let (depth, m, env) = self
+          .lookup_mod(mod_name)
+          .ok_or((epos, format!("module not found: {}", ext_name(mod_name, i))))?;
+        let i = self
+          .lookup_id(i, &env)
+          .ok_or((epos, format!("symbol not found: {}", ext_name(mod_name, i))))?;
         Ok(front::Expr(front::ExprF::Ext(
           self.level_from(depth),
           m,
@@ -214,11 +214,7 @@ impl<'a> Builder<'a> {
             .cloned()
         };
         if let SyntaxId::User(_) = sid {
-          eprintln!(
-            "at {}, query: mod_name = {:?}",
-            e.1.begin.to_string(),
-            mod_name
-          );
+          eprintln!("at {}, query: mod_name = {:?}", epos.to_string(), mod_name);
           eprintln!(
             "resolver: {}",
             rez
@@ -253,7 +249,9 @@ impl<'a> Builder<'a> {
             .collect::<Vec<_>>()
         });
 
-        let (tokens, e, deps) = handler(elems).map_err(|err| (e.1.begin, err))?.into_inner();
+        let (tokens, e, deps) = handler(elems)
+          .map_err(|err| (e.1.clone().into(), err))?
+          .into_inner();
 
         let mut i_map = HashMap::new();
         for (elem, t) in elems.iter().zip(tokens.iter()) {

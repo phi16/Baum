@@ -1,4 +1,4 @@
-use crate::types::token::{Indent, Token, TokenPos, TokenType};
+use crate::types::token::{ErrorPos, Indent, Token, TokenPos, TokenType};
 use core::iter::Peekable;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -25,9 +25,9 @@ fn get_char_type(c: char) -> CharType {
 struct Loc<'a> {
   str: &'a str,
   ln: u32,
-  col_chars: u16,
-  col_bytes: u16,
-  indent: u16,
+  col_chars: u32,
+  col_bytes: u32,
+  indent: u32,
 }
 
 type CharLoc<'a> = (Loc<'a>, char);
@@ -56,10 +56,21 @@ impl<'a, I: Iterator<Item = CharLoc<'a>>> Tokenizer<'a, I> {
     };
     self.in_syntax = str == "syntax";
     self.after_dot = str == ".";
+    let mut len = str.chars().count();
+    match ty {
+      TokenType::Char | TokenType::String => {
+        len += 2;
+      }
+      _ => {}
+    }
     Token {
       str,
       ty,
-      pos: TokenPos::Pos(loc.ln, loc.col_chars + loc.indent),
+      pos: TokenPos {
+        line: loc.ln,
+        column: loc.col_chars + loc.indent,
+        length: len as u32,
+      },
       indent: if loc.col_chars == 0 {
         Indent::Head(loc.indent)
       } else {
@@ -85,13 +96,13 @@ impl<'a, I: Iterator<Item = CharLoc<'a>>> Tokenizer<'a, I> {
     self.make_token_internal(l0, str, ty)
   }
 
-  fn add_error(&mut self, pos: TokenPos, msg: &str) {
+  fn add_error(&mut self, pos: ErrorPos, msg: &str) {
     let s = format!("{}: {}", pos.to_string(), msg);
     self.errors.push(s);
   }
 
   fn add_error_loc(&mut self, l: &Loc<'a>, msg: &str) {
-    self.add_error(TokenPos::Pos(l.ln, l.col_chars), msg);
+    self.add_error(ErrorPos::Pos(l.ln, l.col_chars), msg);
   }
 
   fn skip_space(&mut self) {
@@ -120,7 +131,7 @@ impl<'a, I: Iterator<Item = CharLoc<'a>>> Tokenizer<'a, I> {
     while let Some((l1, c1)) = self.iter.peek() {
       if l0.ln != l1.ln {
         self.add_error(
-          TokenPos::EoL(l0.ln),
+          ErrorPos::EoL(l0.ln),
           if c0 == '\'' {
             "unterminated character literal"
           } else {
@@ -150,7 +161,7 @@ impl<'a, I: Iterator<Item = CharLoc<'a>>> Tokenizer<'a, I> {
         self.iter.next();
       }
     }
-    self.add_error(TokenPos::EoF, "unterminated character or string literal");
+    self.add_error(ErrorPos::EoF, "unterminated character or string literal");
     return self.make_token_addr(l, &l0, ty);
   }
 
@@ -171,7 +182,7 @@ impl<'a, I: Iterator<Item = CharLoc<'a>>> Tokenizer<'a, I> {
       ExpSign, // 1e+ (non-accepting state)
       ExpNat,  // 1e+4
     }
-    let mut dec = false;
+    let mut dec = true;
     let mut hex = false;
     let mut s = if c0 == '0' { State::Zero } else { State::Nat };
     while let Some((l1, c1)) = self.iter.peek() {
@@ -334,54 +345,55 @@ impl<'a, I: Iterator<Item = (Loc<'a>, char)>> Iterator for Tokenizer<'a, I> {
   }
 }
 
-pub fn tokenize<'a>(code: &'a str) -> Result<Vec<Token<'a>>, Vec<String>> {
-  let iter = code
+pub fn tokenize<'a>(code: &'a str) -> (Vec<Token<'a>>, Vec<(u32, u32)>, Vec<String>) {
+  let (comments, lines): (Vec<_>, Vec<_>) = code
     .lines()
     .enumerate()
     .map(|(ln, line)| {
       let ln = ln as u32;
       let (spaces, rest) = line.split_at(line.chars().take_while(|c| *c == ' ').count());
-      let indent = spaces.chars().count() as u16;
+      let indent = spaces.chars().count() as u32;
 
       // remove comments
-      let rest = if rest.chars().take(2).collect::<String>() == "--" {
-        ""
+      let (comment, rest) = if rest.chars().take(2).collect::<String>() == "--" {
+        (Some(0), "")
       } else {
         match rest.find(" --") {
-          Some(i) => &rest[..i],
-          None => rest,
+          Some(i) => (Some(i), &rest[..i]),
+          None => (None, rest),
         }
       };
 
-      rest
-        .char_indices()
-        .enumerate()
-        .map(move |(col_chars, (col_bytes, c))| {
-          let col_chars = col_chars as u16;
-          let col_bytes = col_bytes as u16;
-          (
-            Loc {
-              str: &rest,
-              ln,
-              col_chars,
-              col_bytes,
-              indent,
-            },
-            c,
-          )
-        })
+      (
+        comment.map(|i| (ln, i as u32)),
+        rest
+          .char_indices()
+          .enumerate()
+          .map(move |(col_chars, (col_bytes, c))| {
+            let col_chars = col_chars as u32;
+            let col_bytes = col_bytes as u32;
+            (
+              Loc {
+                str: &rest,
+                ln,
+                col_chars,
+                col_bytes,
+                indent,
+              },
+              c,
+            )
+          }),
+      )
     })
-    .flatten();
+    .unzip();
+  let comments = comments.into_iter().filter_map(|c| c).collect::<Vec<_>>();
+  let iter = lines.into_iter().flatten();
   let mut tokenizer = Tokenizer::new(iter);
   let mut tokens = Vec::new();
   while let Some(t) = tokenizer.next() {
     tokens.push(t);
   }
-  if tokenizer.errors.is_empty() {
-    Ok(tokens)
-  } else {
-    Err(tokenizer.errors)
-  }
+  (tokens, comments, tokenizer.errors)
 }
 
 #[cfg(test)]
@@ -400,17 +412,26 @@ fn test() {
     32. 0.32 0.32e4 0.32e+6 0.32e-6
     0x1.23ap32 0x1.23ap32 0x1.23ap+32 0x1.23p-32
     12"#;
-  assert!(tokenize(str0).is_ok());
-  assert!(tokenize("1 2 3").is_ok());
-  assert!(tokenize("1 2e+ 3").is_err());
-  assert!(tokenize("0x").is_err());
-  assert!(tokenize("0x.12p").is_err());
-  assert!(tokenize("0x.12p+").is_err());
-  assert!(tokenize("0x.12p+4").is_ok());
-  assert!(tokenize("0x.p+4").is_ok());
+  fn test<'a>(code: &'a str) -> Result<Vec<Token<'a>>, Vec<String>> {
+    let (tokens, _, errors) = tokenize(code);
+    if errors.is_empty() {
+      Ok(tokens)
+    } else {
+      Err(errors)
+    }
+  }
+
+  assert!(test(str0).is_ok());
+  assert!(test("1 2 3").is_ok());
+  assert!(test("1 2e+ 3").is_err());
+  assert!(test("0x").is_err());
+  assert!(test("0x.12p").is_err());
+  assert!(test("0x.12p+").is_err());
+  assert!(test("0x.12p+4").is_ok());
+  assert!(test("0x.p+4").is_ok());
 
   fn splitter(s: &str) -> Vec<(&str, TokenType)> {
-    tokenize(s)
+    test(s)
       .unwrap_or(vec![])
       .into_iter()
       .map(|t| (t.str, t.ty))

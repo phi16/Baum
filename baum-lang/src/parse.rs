@@ -7,10 +7,10 @@ use crate::types::tree::Decl;
 use std::collections::HashSet;
 
 pub fn parse<'a>(code: &'a str) -> Result<Vec<Decl<'a>>, Vec<String>> {
-  let tokens = match tokenize(code) {
-    Ok(tokens) => tokens,
-    Err(e) => return Err(e),
-  };
+  let (tokens, _, errors) = tokenize(code);
+  if !errors.is_empty() {
+    return Err(errors);
+  }
   let tracker = Tracker::new(tokens);
   let env = Env::from_syntax(default_syntax_table());
   let mut parser = DeclParser::new(tracker, env, 0, HashSet::new(), Vec::new());
