@@ -26,8 +26,8 @@ pub fn parse<'a>(code: &'a str) -> Result<Vec<Decl<'a>>, Vec<String>> {
 #[cfg(test)]
 #[test]
 fn test_full_features() {
-  assert!(parse(include_str!("../pass.baum")).is_ok());
-  assert!(parse(include_str!("../fail.baum")).is_err()); // TODO: error count check?
+  assert!(parse(include_str!("../examples/pass.baum")).is_ok());
+  assert!(parse(include_str!("../examples/fail.baum")).is_err()); // TODO: error count check?
 }
 
 #[cfg(test)]

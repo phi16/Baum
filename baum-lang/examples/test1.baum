@@ -44,13 +44,14 @@ y = 1 * 2 + 3
 z = 1 + 2 +
 z = 1 + [ 1 + 2 | 3 + 4 ] * 5
 w = 1 + [ 1 + 2 ? 3 + 4 ] * 5
-a = prim "a"
+a = prim "mochi"
 b = g λ() x
 b = g λ(a) x
 b = g λ(a: b) x
 b = Σ() λ(a: b c, ) λ{x: y} x
 g = 1
 k = let x = 1; y = 2 in t
+"🖐🏽🖐🏽🖐🏽🖐🏽🖐🏽" a 1 2 a b 2 1 a b
 g = k
 ot = Σ{x: Π(Nat) Nat, y: Nat}
 o = { x v: Nat = 1, y = 2 }
@@ -88,3 +89,5 @@ pb = A.# 0 @
 pa = A.& 0 &
 pi = 1 A./ 2
 syntax 1 po p = let x = 1 in po
+
+v = x + 1
