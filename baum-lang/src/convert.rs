@@ -1,3 +1,4 @@
+use crate::builtin::builtin_syntax_handlers;
 use crate::types::syntax::{
   ElemId, ElemToken, LookupId, SyntaxExpr, SyntaxHandler, SyntaxInterpret,
 };
@@ -769,18 +770,11 @@ impl<'a> Builder<'a> {
   }
 }
 
-pub fn convert<'a>(
-  ds: &Vec<Decl<'a>>,
-  syntax_handlers: HashMap<SyntaxId, SyntaxHandler<'a>>,
-) -> std::result::Result<front::Program, Vec<(ErrorPos, String)>> {
-  let mut b = Builder::new(syntax_handlers);
+pub fn convert<'a>(ds: &Vec<Decl<'a>>) -> (front::Program, Vec<(ErrorPos, String)>) {
+  let mut b = Builder::new(builtin_syntax_handlers());
   let mut cur_mod = Env::new();
   let mut decls = Vec::new();
   b.ds(ds, &mut cur_mod, &mut decls);
-  if b.errors.is_empty() {
-    let symbols = b.symbols;
-    Ok(front::Program { decls, symbols })
-  } else {
-    Err(b.errors)
-  }
+  let symbols = b.symbols;
+  (front::Program { decls, symbols }, b.errors)
 }

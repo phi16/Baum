@@ -89,9 +89,7 @@ impl Context {
         self.e(&e);
       }
       ExprF::Syntax(mod_name, sid, elems) => {
-        for i in 0..mod_name.len() {
-          self.mark_as(loc, i as i32 * 2, TokenType::Module);
-        }
+        let mut first_token = true;
         use types::tree::SyntaxId;
         let syn_type = match sid {
           SyntaxId::User(_) => TokenType::UserSyntax,
@@ -101,6 +99,16 @@ impl Context {
           let loc = &e.1.begin;
           match &e.0 {
             SynElemF::Token(_) => {
+              if first_token {
+                first_token = false;
+                for i in 0..mod_name.len() {
+                  self.mark_as(
+                    loc,
+                    (i as i32 - mod_name.len() as i32) * 2,
+                    TokenType::Module,
+                  );
+                }
+              }
               self.mark_as(loc, 0, syn_type.clone());
             }
             SynElemF::Ident(_) => {
@@ -299,6 +307,12 @@ pub fn tokenize_example(code: &str) -> (Vec<TokenData>, Vec<Diagnostic>) {
     x.ds(&tree);
     for (pos, e) in &errors {
       add_diag(pos, e);
+    }
+    if errors.is_empty() {
+      let (_, errors) = baum_lang::convert::convert(&tree);
+      for (pos, e) in &errors {
+        add_diag(pos, e);
+      }
     }
   }
   let comments_iter = comments.into_iter().map(|(line, column)| {

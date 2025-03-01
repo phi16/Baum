@@ -4,7 +4,6 @@ x = 'a'
 x = "abc"
 
 x (a: x) {b c: x x} = x
-
 x = _
 x = U
 x = λ(a, b c: U, c: U 1) x

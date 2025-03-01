@@ -22,7 +22,10 @@ pub fn run(code: &str) -> Result<front::Program, Vec<(ErrorPos, String)>> {
   // eprintln!("--------");
   // eprintln!("{}", pretty::pretty(&tree));
   // eprintln!("--------");
-  let front = convert::convert(&tree, builtin::builtin_syntax_handlers())?;
+  let (front, errors) = convert::convert(&tree);
+  if !errors.is_empty() {
+    return Err(errors);
+  }
   // eprintln!("--------");
   // eprintln!("{}", baum_front::pretty::pretty(&front));
   // eprintln!("--------");
