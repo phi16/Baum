@@ -85,8 +85,8 @@ fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
           token_types: token_type_list(),
           token_modifiers: token_modifiers_list(),
         },
-        range: Some(false),
-        full: Some(SemanticTokensFullOptions::Bool(true)),
+        range: Some(true),
+        full: Some(SemanticTokensFullOptions::Delta { delta: Some(true) }),
         work_done_progress_options: Default::default(),
       },
     )),
@@ -102,7 +102,7 @@ fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
 
 fn semantic_tokens(
   uri: &lsp_types::Uri,
-) -> Result<(SemanticTokensPartialResult, Vec<baum::Diagnostic>), Box<dyn Error>> {
+) -> Result<(Vec<SemanticToken>, Vec<baum::Diagnostic>), Box<dyn Error>> {
   let file_path = uri.as_str().replace("file:///c%3A/", "C:/");
   eprintln!("file_path = {:?}", uri.as_str());
   eprintln!("file_path = {:?}", file_path);
@@ -128,7 +128,6 @@ fn semantic_tokens(
       prev_column = t.column;
     }
   }
-  let result = SemanticTokensPartialResult { data: result };
   Ok((result, diagnostics))
 }
 
@@ -136,6 +135,8 @@ fn main_loop(
   connection: Connection,
   _params: serde_json::Value,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
+  eprintln!("params = {:?}", _params);
+  let mut st_id = 0;
   for msg in &connection.receiver {
     match msg {
       Message::Request(req) => {
@@ -143,12 +144,31 @@ fn main_loop(
           return Ok(());
         }
         eprintln!("main_loop req: {:?}", req);
-        if let Ok((id, params)) = cast::<request::SemanticTokensFullRequest>(req) {
-          eprintln!("semantic tokens request #{:?}: {:?}", id, params);
-          let (result, diags) = match semantic_tokens(&params.text_document.uri) {
-            Ok((r, diags)) => (Some(r), diags),
-            Err(_) => (None, vec![]),
+        if let Some((id, text_document)) = {
+          if let Ok((id, params)) = cast::<request::SemanticTokensFullRequest>(req.clone()) {
+            eprintln!("semantic tokens request #{:?}: {:?}", id, params);
+            Some((id, params.text_document))
+          } else if let Ok((id, params)) =
+            cast::<request::SemanticTokensFullDeltaRequest>(req.clone())
+          {
+            eprintln!("semantic tokens delta request #{:?}: {:?}", id, params);
+            Some((id, params.text_document))
+          } else if let Ok((id, params)) = cast::<request::SemanticTokensRangeRequest>(req) {
+            eprintln!("semantic tokens range request #{:?}: {:?}", id, params);
+            Some((id, params.text_document))
+          } else {
+            None
+          }
+        } {
+          let (result, diags) = match semantic_tokens(&text_document.uri) {
+            Ok((r, diags)) => (r, diags),
+            Err(_) => (vec![], vec![]),
           };
+          let result = SemanticTokensResult::Tokens(SemanticTokens {
+            result_id: Some(st_id.to_string()),
+            data: result,
+          });
+          st_id += 1;
           let result = serde_json::to_value(&result).unwrap();
           let resp = Response {
             id,
@@ -175,7 +195,7 @@ fn main_loop(
             });
           }
           let params = PublishDiagnosticsParams {
-            uri: params.text_document.uri,
+            uri: text_document.uri,
             diagnostics,
             version: None,
           };
