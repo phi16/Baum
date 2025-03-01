@@ -57,7 +57,7 @@ pub struct DeclParser<'a> {
   env: Env<'a>,
   next_syntax_id: u16,
   known_ops: HashSet<String>,
-  errors: Vec<String>,
+  errors: Vec<(ErrorPos, String)>,
 }
 
 impl<'a> DeclParser<'a> {
@@ -66,7 +66,7 @@ impl<'a> DeclParser<'a> {
     env: Env<'a>,
     next_syntax_id: u16,
     known_ops: HashSet<String>,
-    errors: Vec<String>,
+    errors: Vec<(ErrorPos, String)>,
   ) -> Self {
     DeclParser {
       tracker,
@@ -77,7 +77,15 @@ impl<'a> DeclParser<'a> {
     }
   }
 
-  pub fn into_inner(self) -> (Tracker<'a>, Env<'a>, u16, HashSet<String>, Vec<String>) {
+  pub fn into_inner(
+    self,
+  ) -> (
+    Tracker<'a>,
+    Env<'a>,
+    u16,
+    HashSet<String>,
+    Vec<(ErrorPos, String)>,
+  ) {
     (
       self.tracker,
       self.env,
@@ -88,8 +96,8 @@ impl<'a> DeclParser<'a> {
   }
 
   fn add_error(&mut self, pos: ErrorPos, msg: &str) {
-    let s = format!("{}, decl: {}", pos.to_string(), msg);
-    self.errors.push(s);
+    let s = format!("decl: {}", msg);
+    self.errors.push((pos, s));
   }
 
   fn err_here<T>(&mut self, msg: &str) -> Result<T> {

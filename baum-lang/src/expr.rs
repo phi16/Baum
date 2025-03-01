@@ -9,7 +9,7 @@ use crate::types::tree_base::{ExprF, SynElemF};
 use std::collections::HashSet;
 use std::rc::Rc;
 
-type Result<T> = std::result::Result<T, String>;
+type Result<T> = std::result::Result<T, (ErrorPos, String)>;
 
 #[derive(Debug, Clone)]
 enum AdvanceResult {
@@ -76,7 +76,7 @@ pub struct ExprParser<'a, 'b> {
   next_syntax_id: u16,
   in_syntax: bool,
   known_ops: HashSet<String>,
-  errors: Vec<String>,
+  errors: Vec<(ErrorPos, String)>,
 }
 
 impl<'a, 'b> ExprParser<'a, 'b> {
@@ -86,7 +86,7 @@ impl<'a, 'b> ExprParser<'a, 'b> {
     next_syntax_id: u16,
     in_syntax: bool,
     known_ops: HashSet<String>,
-    errors: Vec<String>,
+    errors: Vec<(ErrorPos, String)>,
   ) -> Self {
     ExprParser {
       tracker,
@@ -98,7 +98,7 @@ impl<'a, 'b> ExprParser<'a, 'b> {
     }
   }
 
-  pub fn into_inner(self) -> (Tracker<'a>, u16, HashSet<String>, Vec<String>) {
+  pub fn into_inner(self) -> (Tracker<'a>, u16, HashSet<String>, Vec<(ErrorPos, String)>) {
     (
       self.tracker,
       self.next_syntax_id,
@@ -108,8 +108,8 @@ impl<'a, 'b> ExprParser<'a, 'b> {
   }
 
   fn add_error(&mut self, pos: ErrorPos, msg: &str) {
-    let s = format!("{}, expr: {}", pos.to_string(), msg);
-    self.errors.push(s);
+    let s = format!("expr: {}", msg);
+    self.errors.push((pos, s));
   }
 
   fn advance(
@@ -208,22 +208,23 @@ impl<'a, 'b> ExprParser<'a, 'b> {
       ss = next_ss;
     }
 
+    let epos = self.tracker.epos();
     let passes = passed_ss.len();
     let awaits = awaiting_ss.len();
     if passes == 0 && awaits == 0 {
-      return Err("failed to parse (no candidate)".to_string());
+      return Err((epos, "failed to parse (no candidate)".to_string()));
     }
     let ts = last_tracker_state.unwrap();
     self.tracker.restore_state(ts);
 
     if passes >= 1 && awaits >= 1 {
-      return Err("ambiguous parse (pass/await)".to_string());
+      return Err((epos, "ambiguous parse (pass/await)".to_string()));
     }
     if passes >= 1 {
       // pass
       assert!(awaits == 0);
       if passes >= 2 {
-        return Err("ambiguous parse (pass/pass)".to_string());
+        return Err((epos, "ambiguous parse (pass/pass)".to_string()));
       }
       let s = passed_ss.pop().unwrap();
       Ok((s.elems, ReadStatus::Pass(s.syntax)))

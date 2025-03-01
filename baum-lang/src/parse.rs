@@ -1,12 +1,12 @@
 use crate::builtin::builtin_syntax_table;
 use crate::decl::DeclParser;
 use crate::types::env::Env;
-use crate::types::token::Token;
+use crate::types::token::{ErrorPos, Token};
 use crate::types::tracker::Tracker;
 use crate::types::tree::Decl;
 use std::collections::HashSet;
 
-pub fn parse<'a>(tokens: Vec<Token<'a>>) -> (Vec<Decl<'a>>, Vec<String>) {
+pub fn parse<'a>(tokens: Vec<Token<'a>>) -> (Vec<Decl<'a>>, Vec<(ErrorPos, String)>) {
   let tracker = Tracker::new(tokens);
   let env = Env::from_syntax(builtin_syntax_table());
   let mut parser = DeclParser::new(tracker, env, 0, HashSet::new(), Vec::new());
@@ -20,7 +20,7 @@ pub fn parse<'a>(tokens: Vec<Token<'a>>) -> (Vec<Decl<'a>>, Vec<String>) {
 fn test_full_features() {
   use crate::tokenize::tokenize;
 
-  fn test<'a>(code: &'a str) -> Result<Vec<Decl<'a>>, Vec<String>> {
+  fn test<'a>(code: &'a str) -> Result<Vec<Decl<'a>>, Vec<(ErrorPos, String)>> {
     let (tokens, _, errors) = tokenize(code);
     if !errors.is_empty() {
       return Err(errors);

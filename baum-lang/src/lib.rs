@@ -8,8 +8,9 @@ pub mod tokenize;
 pub mod types;
 
 use baum_front::types::tree as front;
+use types::token::ErrorPos;
 
-pub fn run(code: &str) -> Result<front::Program, Vec<String>> {
+pub fn run(code: &str) -> Result<front::Program, Vec<(ErrorPos, String)>> {
   let (tokens, _, errors) = tokenize::tokenize(code);
   if !errors.is_empty() {
     return Err(errors);
@@ -19,10 +20,7 @@ pub fn run(code: &str) -> Result<front::Program, Vec<String>> {
     return Err(errors);
   }
   // eprintln!("--------");
-  eprintln!("{}", pretty::pretty(&tree));
-  for t in &tree {
-    eprintln!("{:?}", t);
-  }
+  // eprintln!("{}", pretty::pretty(&tree));
   // eprintln!("--------");
   let front = convert::convert(&tree, builtin::builtin_syntax_handlers())?;
   // eprintln!("--------");
@@ -38,8 +36,8 @@ fn test_dev() {
   match run(code) {
     Ok(_) => {}
     Err(es) => {
-      for e in es {
-        eprintln!("{}", e);
+      for (pos, e) in es {
+        eprintln!("{}: {}", pos.to_string(), e);
       }
     }
   }

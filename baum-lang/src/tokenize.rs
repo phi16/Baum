@@ -34,7 +34,7 @@ type CharLoc<'a> = (Loc<'a>, char);
 
 struct Tokenizer<'a, I: Iterator<Item = CharLoc<'a>>> {
   iter: Peekable<I>,
-  errors: Vec<String>,
+  errors: Vec<(ErrorPos, String)>,
   in_syntax: bool,
   after_dot: bool,
 }
@@ -97,8 +97,7 @@ impl<'a, I: Iterator<Item = CharLoc<'a>>> Tokenizer<'a, I> {
   }
 
   fn add_error(&mut self, pos: ErrorPos, msg: &str) {
-    let s = format!("{}: {}", pos.to_string(), msg);
-    self.errors.push(s);
+    self.errors.push((pos, msg.to_string()));
   }
 
   fn add_error_loc(&mut self, l: &Loc<'a>, msg: &str) {
@@ -345,7 +344,7 @@ impl<'a, I: Iterator<Item = (Loc<'a>, char)>> Iterator for Tokenizer<'a, I> {
   }
 }
 
-pub fn tokenize<'a>(code: &'a str) -> (Vec<Token<'a>>, Vec<(u32, u32)>, Vec<String>) {
+pub fn tokenize<'a>(code: &'a str) -> (Vec<Token<'a>>, Vec<(u32, u32)>, Vec<(ErrorPos, String)>) {
   let (comments, lines): (Vec<_>, Vec<_>) = code
     .lines()
     .enumerate()
@@ -412,7 +411,7 @@ fn test() {
     32. 0.32 0.32e4 0.32e+6 0.32e-6
     0x1.23ap32 0x1.23ap32 0x1.23ap+32 0x1.23p-32
     12"#;
-  fn test<'a>(code: &'a str) -> Result<Vec<Token<'a>>, Vec<String>> {
+  fn test<'a>(code: &'a str) -> Result<Vec<Token<'a>>, Vec<(ErrorPos, String)>> {
     let (tokens, _, errors) = tokenize(code);
     if errors.is_empty() {
       Ok(tokens)

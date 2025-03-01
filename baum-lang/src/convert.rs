@@ -51,7 +51,7 @@ struct Builder<'a> {
   next_id: u32,
   syntax: HashMap<SyntaxId, SyntaxHandler<'a>>,
   symbols: HashMap<front::Id, String>,
-  errors: Vec<String>,
+  errors: Vec<(ErrorPos, String)>,
 }
 
 impl<'a> Builder<'a> {
@@ -68,8 +68,8 @@ impl<'a> Builder<'a> {
   }
 
   fn add_error(&mut self, pos: ErrorPos, msg: &str) {
-    let s = format!("{}: {}", pos.to_string(), msg);
-    self.errors.push(s);
+    let s = format!("{}", msg);
+    self.errors.push((pos, s));
   }
 
   fn here(&mut self) -> &mut HashMap<Id<'a>, Entity<'a>> {
@@ -772,7 +772,7 @@ impl<'a> Builder<'a> {
 pub fn convert<'a>(
   ds: &Vec<Decl<'a>>,
   syntax_handlers: HashMap<SyntaxId, SyntaxHandler<'a>>,
-) -> std::result::Result<front::Program, Vec<String>> {
+) -> std::result::Result<front::Program, Vec<(ErrorPos, String)>> {
   let mut b = Builder::new(syntax_handlers);
   let mut cur_mod = Env::new();
   let mut decls = Vec::new();

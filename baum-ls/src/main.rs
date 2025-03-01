@@ -1,5 +1,5 @@
 use baum::TokenType;
-use lsp_server::{Connection, ExtractError, Message, Request, RequestId, Response};
+use lsp_server::{Connection, ExtractError, Message, Notification, Request, RequestId, Response};
 use lsp_types::*;
 use std::{error::Error, fs::File, io::Read};
 mod baum;
@@ -72,16 +72,22 @@ fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
   let (connection, io_handles) = Connection::stdio();
 
   let server_capabilities = serde_json::to_value(&ServerCapabilities {
+    diagnostic_provider: Some(DiagnosticServerCapabilities::Options(DiagnosticOptions {
+      identifier: None,
+      inter_file_dependencies: false,
+      workspace_diagnostics: false,
+      work_done_progress_options: Default::default(),
+    })),
     position_encoding: Some(PositionEncodingKind::UTF16), // sadly
     semantic_tokens_provider: Some(SemanticTokensServerCapabilities::SemanticTokensOptions(
       SemanticTokensOptions {
-        work_done_progress_options: Default::default(),
         legend: SemanticTokensLegend {
           token_types: token_type_list(),
           token_modifiers: token_modifiers_list(),
         },
         range: Some(false),
         full: Some(SemanticTokensFullOptions::Bool(true)),
+        work_done_progress_options: Default::default(),
       },
     )),
     ..Default::default()
@@ -94,13 +100,15 @@ fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
   Ok(())
 }
 
-fn semantic_tokens(uri: &lsp_types::Uri) -> Result<SemanticTokensPartialResult, Box<dyn Error>> {
+fn semantic_tokens(
+  uri: &lsp_types::Uri,
+) -> Result<(SemanticTokensPartialResult, Vec<baum::Diagnostic>), Box<dyn Error>> {
   let file_path = uri.as_str().replace("file:///c%3A/", "C:/");
   eprintln!("file_path = {:?}", uri.as_str());
   eprintln!("file_path = {:?}", file_path);
   let mut contents = String::new();
   File::open(file_path)?.read_to_string(&mut contents)?;
-  let tokens = baum::tokenize_example(&contents).map_err(|_| "something wrong")?;
+  let (tokens, diagnostics) = baum::tokenize_example(&contents);
   let mut prev_line = 0;
   let mut prev_column = 0;
   let mut result = Vec::new();
@@ -121,7 +129,7 @@ fn semantic_tokens(uri: &lsp_types::Uri) -> Result<SemanticTokensPartialResult, 
     }
   }
   let result = SemanticTokensPartialResult { data: result };
-  Ok(result)
+  Ok((result, diagnostics))
 }
 
 fn main_loop(
@@ -137,7 +145,10 @@ fn main_loop(
         eprintln!("main_loop req: {:?}", req);
         if let Ok((id, params)) = cast::<request::SemanticTokensFullRequest>(req) {
           eprintln!("semantic tokens request #{:?}: {:?}", id, params);
-          let result = semantic_tokens(&params.text_document.uri).ok();
+          let (result, diags) = match semantic_tokens(&params.text_document.uri) {
+            Ok((r, diags)) => (Some(r), diags),
+            Err(_) => (None, vec![]),
+          };
           let result = serde_json::to_value(&result).unwrap();
           let resp = Response {
             id,
@@ -145,6 +156,33 @@ fn main_loop(
             error: None,
           };
           connection.sender.send(Message::Response(resp))?;
+          let mut diagnostics = Vec::new();
+          for d in diags {
+            diagnostics.push(Diagnostic {
+              range: Range {
+                start: Position {
+                  line: d.begin_line,
+                  character: d.begin_column,
+                },
+                end: Position {
+                  line: d.end_line,
+                  character: d.end_column,
+                },
+              },
+              severity: Some(DiagnosticSeverity::ERROR),
+              message: d.message,
+              ..Default::default()
+            });
+          }
+          let params = PublishDiagnosticsParams {
+            uri: params.text_document.uri,
+            diagnostics,
+            version: None,
+          };
+          connection.sender.send(Message::Notification(Notification {
+            method: "textDocument/publishDiagnostics".to_string(),
+            params: serde_json::to_value(&params).unwrap(),
+          }))?;
           continue;
         }
       }

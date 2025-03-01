@@ -23,6 +23,14 @@ pub enum TokenType {
   Comment,
 }
 
+pub struct Diagnostic {
+  pub begin_line: u32,
+  pub begin_column: u32,
+  pub end_line: u32,
+  pub end_column: u32,
+  pub message: String,
+}
+
 pub struct TokenData {
   pub line: u32,
   pub column: u32,
@@ -217,8 +225,28 @@ impl Context {
   }
 }
 
-pub fn tokenize_example(code: &str) -> Result<Vec<TokenData>, Vec<String>> {
+pub fn tokenize_example(code: &str) -> (Vec<TokenData>, Vec<Diagnostic>) {
   let lines = code.lines().collect::<Vec<_>>();
+
+  let mut diags = Vec::new();
+  let mut add_diag = |pos: &types::token::ErrorPos, msg: &str| {
+    use types::token::*;
+    let (begin_line, begin_column) = match pos {
+      ErrorPos::Pos(line, column) => (*line, *column),
+      ErrorPos::EoL(line) => (*line, lines[*line as usize].len() as u32),
+      ErrorPos::EoF => (lines.len() as u32, 0),
+    };
+    let end_line = begin_line;
+    let end_column = begin_column + 1;
+    diags.push(Diagnostic {
+      begin_line,
+      begin_column,
+      end_line,
+      end_column,
+      message: msg.to_string(),
+    });
+  };
+
   let (tokens, comments, errors) = baum_lang::tokenize::tokenize(code);
   let mut x = Context::new(
     tokens
@@ -263,9 +291,15 @@ pub fn tokenize_example(code: &str) -> Result<Vec<TokenData>, Vec<String>> {
       },
     );
   });
+  for (pos, e) in &errors {
+    add_diag(pos, e);
+  }
   if errors.is_empty() {
-    let (tree, _) = baum_lang::parse::parse(tokens);
+    let (tree, errors) = baum_lang::parse::parse(tokens);
     x.ds(&tree);
+    for (pos, e) in &errors {
+      add_diag(pos, e);
+    }
   }
   let comments_iter = comments.into_iter().map(|(line, column)| {
     let mut l = lines.get(line as usize).unwrap().chars();
@@ -314,5 +348,5 @@ pub fn tokenize_example(code: &str) -> Result<Vec<TokenData>, Vec<String>> {
       }
     }
   }
-  Ok(res)
+  (res, diags)
 }
