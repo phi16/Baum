@@ -11,9 +11,9 @@ pub enum ModRefF<S, I, E> {
 }
 
 #[derive(Debug, Clone)]
-pub struct ModDefF<I, E> {
+pub struct ModDefF<I, A> {
   pub name: I,
-  pub params: Vec<ArgF<I, E>>,
+  pub params: Vec<A>,
 }
 
 #[derive(Debug, Clone)]
@@ -23,9 +23,9 @@ pub enum ModBodyF<Ds, Mr> {
 }
 
 #[derive(Debug, Clone)]
-pub struct DefF<I, E> {
+pub struct DefF<I, A, E> {
   pub name: I,
-  pub args: Vec<ArgF<I, E>>,
+  pub args: Vec<A>,
   pub ty: Option<E>,
   pub body: E,
 }
@@ -38,12 +38,12 @@ pub enum SynDefF<S, I> {
 }
 
 #[derive(Debug, Clone)]
-pub enum DeclF<S, I, Ds, E, X, Sy, Mr> {
+pub enum DeclF<S, I, Ds, A, E, X, Sy, Mr> {
   Local(Ds),
-  Mod(ModDefF<I, E>, ModBodyF<Ds, Mr>),
+  Mod(ModDefF<I, A>, ModBodyF<Ds, Mr>),
   Open(Mr),
   Use(Mr),
-  Def(DefF<I, E>),
+  Def(DefF<I, A, E>),
   Syntax(X, Option<S>, Sy, E),
 }
 

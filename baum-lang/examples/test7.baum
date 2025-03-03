@@ -42,3 +42,5 @@ h c = [a,c,c,c]  -- h c = (λ(a) c, λ(c') c')
 
 syntax j w x y | z = {w (x: y) = z}
 z = let a = 1 in j a a a | a  -- {a (a: a) = a} = {a (a': 1) = a'}
+
+j c = c

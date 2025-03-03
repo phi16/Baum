@@ -52,7 +52,7 @@ impl Pretty {
   }
 
   fn arg(&mut self, arg: &Arg) -> &mut Self {
-    let (vis, ids, ty) = arg;
+    let (vis, ids, ty) = &arg.0;
     self.s(" ");
     match vis {
       Vis::Explicit => self.s("("),

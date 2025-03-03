@@ -25,6 +25,7 @@ fn ext_name(mod_name: &Vec<Id>, i: &Id) -> String {
 #[derive(Debug, Clone)]
 enum Entity<'a> {
   Def(front::Id),
+  Bind(front::Id),
   Mod(front::Id, Env<'a>),
 }
 
@@ -112,7 +113,7 @@ impl<'a> Builder<'a> {
     None
   }
 
-  fn lookup_id(&self, i: &Id<'a>, env: &Env<'a>) -> Option<front::Id> {
+  fn lookup_def(&self, i: &Id<'a>, env: &Env<'a>) -> Option<front::Id> {
     match env.lookup.get(i) {
       Some(Entity::Def(i)) => Some(*i),
       _ => None,
@@ -164,8 +165,16 @@ impl<'a> Builder<'a> {
       ExprF::Hole => Ok(front::Expr(front::ExprF::Hole)),
       ExprF::Var(i) => {
         for env in self.envs.iter().rev() {
-          if let Some(Entity::Def(i)) = env.1.lookup.get(i) {
-            return Ok(front::Expr(front::ExprF::Var(self.level_from(env.0), *i)));
+          match env.1.lookup.get(i) {
+            Some(Entity::Def(i)) => {
+              return Ok(front::Expr(front::ExprF::Ext(
+                self.level_from(env.0),
+                vec![],
+                *i,
+              )))
+            }
+            Some(Entity::Bind(i)) => return Ok(front::Expr(front::ExprF::Bind(*i))),
+            _ => {}
           }
         }
         Err((epos, format!("symbol not found: {}", i.as_str())))
@@ -179,7 +188,7 @@ impl<'a> Builder<'a> {
           .lookup_mod(mod_name)
           .ok_or((epos, format!("module not found: {}", ext_name(mod_name, i))))?;
         let i = self
-          .lookup_id(i, &env)
+          .lookup_def(i, &env)
           .ok_or((epos, format!("symbol not found: {}", ext_name(mod_name, i))))?;
         Ok(front::Expr(front::ExprF::Ext(
           self.level_from(depth),
@@ -273,7 +282,7 @@ impl<'a> Builder<'a> {
               // add dependencies
               for i_eid in deps.get(&eid).unwrap() {
                 let (i, id) = i_map.get(i_eid).unwrap();
-                self.here().insert(i.clone(), Entity::Def(id.clone()));
+                self.here().insert(i.clone(), Entity::Bind(id.clone()));
               }
               let e = self.e(e);
               self.envs.pop();
@@ -330,19 +339,15 @@ impl<'a> Builder<'a> {
           let mut mod_name = relative;
           mod_name.extend(base_mod_name);
 
-          front::Expr(if mod_name.is_empty() {
-            front::ExprF::Var(level, *i)
-          } else {
-            front::ExprF::Ext(level, mod_name, *i)
-          })
+          front::Expr(front::ExprF::Ext(level, mod_name, *i))
         }
 
         fn replace(e: &SyntaxExpr, env: &E) -> front::Expr {
           use front::ExprF::*;
           front::Expr(match &e.0 {
             Hole => Hole,
-            Var(l, LookupId::General(i)) => resolve_ext(l, &Vec::new(), i, env).0,
-            Var(_, LookupId::InSyntax(i)) => env.e_map.get(i).unwrap().0.clone(), // expr
+            Bind(LookupId::General(i)) => Bind(i.clone()),
+            Bind(LookupId::InSyntax(i)) => env.e_map.get(i).unwrap().0.clone(), // expr
             Ann(e1, e2) => Ann(Rc::new(replace(&e1, env)), Rc::new(replace(&e2, env))),
             Uni => Uni,
             Ext(l, mod_name, LookupId::General(i)) => resolve_ext(l, mod_name, i, env).0,
@@ -419,7 +424,7 @@ impl<'a> Builder<'a> {
   fn define_mod(
     &mut self,
     mod_id: &front::Id,
-    m_params: &Vec<(Vis, Vec<Id<'a>>, Option<Box<Expr<'a>>>)>,
+    m_params: &Vec<Arg<'a>>,
     m_body: &ModBody<'a>,
   ) -> (
     Vec<(Vis, front::Id, Rc<front::Expr>)>,
@@ -429,7 +434,7 @@ impl<'a> Builder<'a> {
     self.envs.push((self.cur_depth, Env::new()));
     let mut param_names = Vec::new();
     let mut params = Vec::new();
-    for (vis, names, ty) in m_params {
+    for Arg((vis, names, ty), _) in m_params {
       let ty = if let Some(ty) = ty {
         self.e(&ty)
       } else {
@@ -438,7 +443,7 @@ impl<'a> Builder<'a> {
       let ty = Rc::new(ty);
       for name in names {
         let i = self.new_id(name);
-        self.here().insert(name.clone(), Entity::Def(i));
+        self.here().insert(name.clone(), Entity::Bind(i));
         param_names.push(name);
         params.push((vis.clone(), i, ty.clone()));
       }
@@ -453,7 +458,7 @@ impl<'a> Builder<'a> {
         // overwrite the module parameter name references to actual definitions
         for ((_, i, _), name) in params.iter().zip(param_names.into_iter()) {
           let j = self.new_id(name);
-          let def_i = front::Expr(front::ExprF::Var(0, i.clone()));
+          let def_i = front::Expr(front::ExprF::Ext(0, vec![], i.clone()));
           mod_decls.push(front::Decl::Def(j, def_i));
           self.here().insert(name.clone(), Entity::Def(j));
         }
@@ -548,6 +553,7 @@ impl<'a> Builder<'a> {
             Entity::Def(i) => {
               front::Decl::Def(i, front::Expr(front::ExprF::Ext(0, vec![mod_id], i)))
             }
+            Entity::Bind(_) => unreachable!(),
             Entity::Mod(i, _) => {
               let mn = vec![mod_id, i];
               front::Decl::Mod(i, Vec::new(), front::ModBody::App(0, mn, Vec::new()))
@@ -567,7 +573,7 @@ impl<'a> Builder<'a> {
       DeclF::Def(def) => {
         self.envs.push((self.cur_depth, Env::new()));
         let mut conts = Vec::new();
-        for (vis, names, ty) in &def.args {
+        for Arg((vis, names, ty), _) in &def.args {
           let ty = if let Some(ty) = ty {
             self.e(&ty)
           } else {
@@ -576,7 +582,7 @@ impl<'a> Builder<'a> {
           let ty = Rc::new(ty);
           for name in names {
             let i = self.new_id(name);
-            self.here().insert(name.clone(), Entity::Def(i));
+            self.here().insert(name.clone(), Entity::Bind(i));
             conts.push((vis.clone(), i, ty.clone()));
           }
         }
@@ -628,7 +634,7 @@ impl<'a> Builder<'a> {
             SynDefF::Ident(_) => {}
             SynDefF::Expr(i) => {
               let id = self.new_id(i);
-              self.here().insert(i.clone(), Entity::Def(id));
+              self.here().insert(i.clone(), Entity::Bind(id));
               let eid = match t {
                 ElemToken::Expr(eid) => eid.clone(),
                 _ => panic!(),
@@ -680,9 +686,9 @@ impl<'a> Builder<'a> {
           use front::ExprF::*;
           SyntaxExpr(match &e.0 {
             Hole => Hole,
-            Var(l, i) => match env.exprs.get(i) {
-              Some(eid) => Var(0, LookupId::InSyntax(*eid)),
-              None => Var(l.clone(), LookupId::General(*i)),
+            Bind(i) => match env.exprs.get(i) {
+              Some(eid) => Bind(LookupId::InSyntax(*eid)),
+              None => Bind(LookupId::General(*i)),
             },
             Ann(e1, e2) => Ann(Rc::new(replace(&e1, env)), Rc::new(replace(&e2, env))),
             Uni => Uni,

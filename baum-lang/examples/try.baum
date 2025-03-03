@@ -6,4 +6,6 @@ module A = {
 }
 a = _
 b = _
-z = A.! a A.* b
+-- z = A.! a A.* b
+syntax | i | x = λ(i) x
+f x y = 1

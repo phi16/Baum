@@ -38,17 +38,28 @@ pub enum SyntaxId {
   Prop,
 }
 
-pub type Arg<'a> = ArgF<Id<'a>, Box<Expr<'a>>>;
-pub type ModDef<'a> = ModDefF<Id<'a>, Box<Expr<'a>>>;
+pub type ModDef<'a> = ModDefF<Id<'a>, Arg<'a>>;
 pub type ModBody<'a> = ModBodyF<Vec<Decl<'a>>, ModRef<'a>>;
-pub type Def<'a> = DefF<Id<'a>, Box<Expr<'a>>>;
+pub type Def<'a> = DefF<Id<'a>, Arg<'a>, Box<Expr<'a>>>;
 
+pub type ArgInternal<'a> = ArgF<Id<'a>, Box<Expr<'a>>>;
 pub type ModRefInternal<'a> = ModRefF<&'a str, Id<'a>, Box<Expr<'a>>>;
 pub type SynDefInternal<'a> = SynDefF<&'a str, Id<'a>>;
 pub type SynElemInternal<'a> = SynElemF<&'a str, Id<'a>, Box<Expr<'a>>>;
-pub type DeclInternal<'a> =
-  DeclF<&'a str, Id<'a>, Vec<Decl<'a>>, Box<Expr<'a>>, SyntaxId, Vec<SynDef<'a>>, ModRef<'a>>;
+pub type DeclInternal<'a> = DeclF<
+  &'a str,
+  Id<'a>,
+  Vec<Decl<'a>>,
+  Arg<'a>,
+  Box<Expr<'a>>,
+  SyntaxId,
+  Vec<SynDef<'a>>,
+  ModRef<'a>,
+>;
 pub type ExprInternal<'a> = ExprF<Id<'a>, Vec<Decl<'a>>, Box<Expr<'a>>, SyntaxId, Vec<SynElem<'a>>>;
+
+#[derive(Debug, Clone)]
+pub struct Arg<'a>(pub ArgInternal<'a>, pub TokenLoc);
 
 #[derive(Debug, Clone)]
 pub struct Decl<'a>(pub DeclInternal<'a>, pub TokenRange);

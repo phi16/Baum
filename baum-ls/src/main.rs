@@ -1,8 +1,9 @@
-use baum::TokenType;
+use lang::TokenType;
 use lsp_server::{Connection, ExtractError, Message, Notification, Request, RequestId, Response};
 use lsp_types::*;
 use std::{error::Error, fs::File, io::Read};
-mod baum;
+mod lang;
+mod server;
 
 struct TokenTypeSignature(pub u32);
 
@@ -102,13 +103,13 @@ fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
 
 fn semantic_tokens(
   uri: &lsp_types::Uri,
-) -> Result<(Vec<SemanticToken>, Vec<baum::Diagnostic>), Box<dyn Error>> {
+) -> Result<(Vec<SemanticToken>, Vec<lang::Diagnostic>), Box<dyn Error>> {
   let file_path = uri.as_str().replace("file:///c%3A/", "C:/");
   eprintln!("file_path = {:?}", uri.as_str());
   eprintln!("file_path = {:?}", file_path);
   let mut contents = String::new();
   File::open(file_path)?.read_to_string(&mut contents)?;
-  let (tokens, diagnostics) = baum::tokenize_example(&contents);
+  let (tokens, diagnostics) = lang::tokenize_example(&contents);
   let mut prev_line = 0;
   let mut prev_column = 0;
   let mut result = Vec::new();
@@ -168,6 +169,8 @@ fn main_loop(
             result_id: Some(st_id.to_string()),
             data: result,
           });
+          let result: <request::SemanticTokensFullRequest as lsp_types::request::Request>::Result =
+            Some(result);
           st_id += 1;
           let result = serde_json::to_value(&result).unwrap();
           let resp = Response {

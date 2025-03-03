@@ -68,8 +68,7 @@ impl Context {
         self.mark_as(loc, 0, TokenType::BuiltinSyntax);
       }
       ExprF::Var(_) => {
-        // TODO: Bind or Ext
-        self.mark_as(loc, 0, TokenType::Bind);
+        self.mark_as(loc, 0, TokenType::Unknown);
       }
       ExprF::Mod(mod_name) => {
         for i in 0..mod_name.len() {
@@ -165,6 +164,7 @@ impl Context {
 
   fn d(&mut self, d: &types::tree::Decl) {
     let loc = &d.1.begin;
+    use types::tree::Arg;
     use types::tree_base::*;
     match &d.0 {
       DeclF::Local(ds) => {
@@ -174,7 +174,10 @@ impl Context {
       DeclF::Mod(md, body) => {
         self.mark_as(loc, 0, TokenType::Keyword);
         self.mark_as(loc, 1, TokenType::Module);
-        for arg in &md.params {
+        for Arg(arg, loc) in &md.params {
+          for i in 0..arg.1.len() {
+            self.mark_as(loc, i as i32, TokenType::Bind);
+          }
           if let Some(e) = &arg.2 {
             self.e(e);
           }
@@ -198,7 +201,10 @@ impl Context {
       }
       DeclF::Def(def) => {
         self.mark_as(loc, 0, TokenType::Def);
-        for arg in &def.args {
+        for Arg(arg, loc) in &def.args {
+          for i in 0..arg.1.len() {
+            self.mark_as(loc, i as i32, TokenType::Bind);
+          }
           if let Some(e) = &arg.2 {
             self.e(e);
           }
@@ -309,7 +315,8 @@ pub fn tokenize_example(code: &str) -> (Vec<TokenData>, Vec<Diagnostic>) {
       add_diag(pos, e);
     }
     if errors.is_empty() {
-      let (_, errors) = baum_lang::convert::convert(&tree);
+      let (front, errors) = baum_lang::convert::convert(&tree);
+      // TODO: use front to coloring
       for (pos, e) in &errors {
         add_diag(pos, e);
       }

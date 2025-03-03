@@ -105,10 +105,17 @@ impl<'a> Pretty<'a> {
   fn e(&mut self, e: &Expr) -> &mut Self {
     match &e.0 {
       ExprF::Hole => self.s("_"),
-      ExprF::Var(l, i) => self.s(&format!("[{}]", l)).i(i),
+      ExprF::Bind(i) => self.i(i),
       ExprF::Ann(v, t) => self.e(v).s(" of ").e(t),
       ExprF::Uni => self.s("𝒰"),
-      ExprF::Ext(l, m, i) => self.s(&format!("[{}]", l)).is(m, ".").s(".").i(i),
+      ExprF::Ext(l, m, i) => {
+        self.s(&format!("[{}]", l));
+        if m.is_empty() {
+          self.is(m, ".").s(".").i(i)
+        } else {
+          self.i(i)
+        }
+      }
       ExprF::Let(ds, e) => self.s("let").open().ds(ds).close().s("in ").e(e),
       ExprF::Lit(Literal::Nat(n)) => self.s(&format!("{:?}", n)),
       ExprF::Lit(Literal::Rat(r)) => self.s(&format!("{:?}", r)),
@@ -122,7 +129,7 @@ impl<'a> Pretty<'a> {
       ExprF::LamE(i, t, e) => self.s("λ(").i(i).s(": ").e(t).s(") ").e(e),
       ExprF::AppE(e1, e2) => match e2.0 {
         ExprF::Hole
-        | ExprF::Var(_, _)
+        | ExprF::Bind(_)
         | ExprF::Uni
         | ExprF::Ext(_, _, _)
         | ExprF::Lit(_)

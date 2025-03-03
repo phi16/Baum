@@ -165,6 +165,7 @@ impl<'a> DeclParser<'a> {
             Vis::Implicit
           };
           self.tracker.next();
+          let loc = self.tracker.get_location();
           let ids = self
             .ids()
             .ok_or((self.tracker.epos(), "expected identifier list".to_string()))?;
@@ -181,13 +182,14 @@ impl<'a> DeclParser<'a> {
             _ => (vis, ids, None),
           };
           self.expect_str(match_cl)?;
-          args.push(arg);
+          args.push(Arg(arg, loc));
         }
         Some(_) => {
+          let loc = self.tracker.get_location();
           let ids = self
             .ids()
             .ok_or((self.tracker.epos(), "expected identifier list".to_string()))?;
-          args.push((Vis::Explicit, ids, None));
+          args.push(Arg((Vis::Explicit, ids, None), loc));
         }
       }
     }
@@ -501,6 +503,7 @@ impl<'a> DeclParser<'a> {
                 Vis::Implicit
               };
               self.tracker.next();
+              let loc = self.tracker.get_location();
               let ids = self
                 .ids()
                 .ok_or((self.tracker.epos(), "expected identifier list".to_string()))?;
@@ -517,11 +520,15 @@ impl<'a> DeclParser<'a> {
                 _ => None,
               };
               self.expect_str(match_cl)?;
-              params.push((vis, ids, ty));
+              params.push(Arg((vis, ids, ty), loc));
             }
             Some((TokenType::Ident, _)) => {
               // explicit argument with no type: rejected in the later pass.
-              params.push((Vis::Explicit, vec![self.expect_id().unwrap()], None));
+              let loc = self.tracker.get_location();
+              params.push(Arg(
+                (Vis::Explicit, vec![self.expect_id().unwrap()], None),
+                loc,
+              ));
             }
             _ => return self.err_here("expected module parameters or body"),
           }
