@@ -29,30 +29,46 @@ impl std::fmt::Debug for NameId {
 }
 
 #[derive(Debug, Clone)]
-pub enum ExprF<DefI, LocI, NameI, E> {
-  Hole,
-  Var(LocI),
-  Ann(E, E),
-  Uni,
-
-  Def(DefI),
-  Let(Vec<(DefI, E)>, E),
-
-  Pi(Option<LocI>, E, E),
-  Lam(LocI, E, E),
-  App(E, E),
-
-  Sigma(Vec<(NameI, Option<LocI>, E)>),
-  Obj(Vec<(NameI, E)>),
-  Prop(NameI, E),
+pub enum Vis {
+  Explicit,
+  Implicit,
 }
 
 #[derive(Debug, Clone)]
-pub struct Expr(pub ExprF<DefId, BindId, NameId, Rc<Expr>>);
+pub struct PTag {
+  pub vis: Vis,
+}
+
+#[derive(Debug, Clone)]
+pub struct STag {
+  pub is_tuple: bool,
+}
+
+#[derive(Debug, Clone)]
+pub enum ExprF<E> {
+  Hole,
+  Bind(BindId),
+  Ann(E, E),
+  Uni,
+
+  Def(DefId),
+  Let(Vec<(DefId, E)>, E),
+
+  Pi(PTag, Option<BindId>, E, E),
+  Lam(PTag, BindId, E, E),
+  App(PTag, E, E),
+
+  Sigma(STag, Vec<(NameId, Option<BindId>, E)>),
+  Obj(STag, Vec<(NameId, E)>),
+  Prop(STag, NameId, E),
+}
+
+#[derive(Debug, Clone)]
+pub struct Expr(pub ExprF<Rc<Expr>>);
 
 #[derive(Debug, Clone)]
 pub struct Program {
-  pub decls: Vec<(DefId, Rc<Expr>)>,
+  pub defs: Vec<(DefId, Rc<Expr>)>,
   pub def_symbols: HashMap<DefId, String>,
   pub bind_symbols: HashMap<BindId, String>,
   pub name_symbols: HashMap<NameId, String>,

@@ -9,3 +9,4 @@ b = _
 -- z = A.! a A.* b
 syntax | i | x = λ(i) x
 f x y = 1
+k = (λ(a) a) a

@@ -29,13 +29,17 @@ pub fn run(code: &str) -> Result<front::Program, Vec<(ErrorPos, String)>> {
   eprintln!("--------");
   eprintln!("{}", baum_front::pretty::pretty(&front));
   eprintln!("--------");
+  let (core, errors) = baum_front::convert::convert(front.clone());
+  eprintln!("--------");
+  eprintln!("{:?}", core);
+  eprintln!("--------");
   Ok(front)
 }
 
 #[cfg(test)]
 #[test]
 fn test_dev() {
-  let code = include_str!("../examples/try.baum");
+  let code = include_str!("../examples/test5.baum");
   match run(code) {
     Ok(_) => {}
     Err(es) => {
