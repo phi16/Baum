@@ -17,6 +17,10 @@ pub struct STag {
 
 type CoreExpr = core::Expr<PTag, STag>;
 
+fn wrap(e: core::ExprF<PTag, STag, Rc<CoreExpr>>) -> Rc<CoreExpr> {
+  Rc::new(core::Expr(e))
+}
+
 #[derive(Debug, Clone)]
 enum Entity {
   Bind(core::BindId),
@@ -219,7 +223,7 @@ impl Builder {
                     is_mod: true,
                   },
                   self.name_from_def(m),
-                  Rc::new(core::Expr(e)),
+                  wrap(e),
                 );
               }
               core::ExprF::Prop(
@@ -228,7 +232,7 @@ impl Builder {
                   is_mod: true,
                 },
                 self.name_from_def(i),
-                Rc::new(core::Expr(e)),
+                wrap(e),
               )
             }
             None => {
@@ -426,7 +430,7 @@ impl Builder {
                 Entity::Bind(bind) => bind,
                 Entity::Mod(bind) => bind,
               };
-              defs.push((name, Rc::new(core::Expr(core::ExprF::Bind(bind)))));
+              defs.push((name, wrap(core::ExprF::Bind(bind))));
             }
             let obj = core::ExprF::Obj(
               STag {
@@ -435,7 +439,7 @@ impl Builder {
               },
               defs,
             );
-            core::ExprF::Let(decls.defs, Rc::new(core::Expr(obj)))
+            core::ExprF::Let(decls.defs, wrap(obj))
           }
           ModBody::Import(_) => {
             self.errors.push("Import not yet supported".to_string());
@@ -451,7 +455,7 @@ impl Builder {
                     is_mod: true,
                   },
                   self.name_from_def(m),
-                  Rc::new(core::Expr(e)),
+                  wrap(e),
                 );
               }
               for (vis, arg) in args {
@@ -465,7 +469,7 @@ impl Builder {
                     vis,
                     is_mod_param: true,
                   },
-                  Rc::new(core::Expr(e)),
+                  wrap(e),
                   Rc::new(arg),
                 );
               }
@@ -490,11 +494,11 @@ impl Builder {
             },
             is_mod_param: true,
           };
-          e = core::ExprF::Lam(tag, i, ty, Rc::new(core::Expr(e)));
+          e = core::ExprF::Lam(tag, i, ty, wrap(e));
         }
-        let e = core::ExprF::Synth(Rc::new(core::Expr(e)));
+        let e = core::ExprF::Synth(wrap(e));
         let bind = self.add_bind_ty(name, BindType::Mod);
-        decls.defs.push((bind, Rc::new(core::Expr(e))));
+        decls.defs.push((bind, wrap(e)));
         self
           .envs
           .last_mut()
