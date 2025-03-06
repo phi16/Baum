@@ -109,7 +109,7 @@ pub fn builtin_syntax_table<'a>() -> SyntaxTable {
   syntax.def("", regex_elems!["{", defs, "}"], SyntaxId::ObjCon);
   syntax.def("", regex_elems!["Σ", "(", types, ")"], SyntaxId::TupleTy);
   syntax.def("", regex_elems!["Σ", "{", props, "}"], SyntaxId::ObjTy);
-  syntax.def("0", regex_elems!["π", "(", n, ")", e], SyntaxId::Proj);
+  syntax.def("0", regex_elems!["π", "(", d, ")", e], SyntaxId::Proj);
   syntax.def("0", regex_elems!["π", "{", id, "}", e], SyntaxId::Prop);
   syntax.def("5<", regex_elems![e, ".", d], SyntaxId::Proj);
   syntax.def("5<", regex_elems![e, ".", id], SyntaxId::Prop);

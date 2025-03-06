@@ -96,6 +96,7 @@ impl<'a> Builder<'a> {
   }
 
   fn lookup_mod(&self, n: &Vec<Id<'a>>) -> Option<(ModDepth, Vec<front::Id>, Env<'a>)> {
+    assert!(!n.is_empty());
     'k: for env in self.envs.iter().rev() {
       let mut cur_env = &env.1;
       let mut mod_name = Vec::new();

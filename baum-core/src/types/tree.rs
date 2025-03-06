@@ -2,15 +2,6 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
-pub struct DefId(pub u32);
-
-impl std::fmt::Debug for DefId {
-  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    write!(f, "@{}", self.0)
-  }
-}
-
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct BindId(pub u32);
 
 impl std::fmt::Debug for BindId {
@@ -37,11 +28,13 @@ pub enum Vis {
 #[derive(Debug, Clone)]
 pub struct PTag {
   pub vis: Vis,
+  pub is_mod_param: bool,
 }
 
 #[derive(Debug, Clone)]
 pub struct STag {
   pub is_tuple: bool,
+  pub is_mod: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -51,8 +44,7 @@ pub enum ExprF<E> {
   Ann(E, E),
   Uni,
 
-  Def(DefId),
-  Let(Vec<(DefId, E)>, E),
+  Let(Vec<(BindId, E)>, E),
 
   Pi(PTag, Option<BindId>, E, E),
   Lam(PTag, BindId, E, E),
@@ -68,8 +60,7 @@ pub struct Expr(pub ExprF<Rc<Expr>>);
 
 #[derive(Debug, Clone)]
 pub struct Program {
-  pub defs: Vec<(DefId, Rc<Expr>)>,
-  pub def_symbols: HashMap<DefId, String>,
+  pub defs: Vec<(BindId, Rc<Expr>)>,
   pub bind_symbols: HashMap<BindId, String>,
   pub name_symbols: HashMap<NameId, String>,
 }

@@ -31,15 +31,26 @@ pub fn run(code: &str) -> Result<front::Program, Vec<(ErrorPos, String)>> {
   eprintln!("--------");
   let (core, errors) = baum_front::convert::convert(front.clone());
   eprintln!("--------");
-  eprintln!("{:?}", core);
+  eprintln!("{}", baum_core::pretty::pretty(&core));
   eprintln!("--------");
+  if !errors.is_empty() {
+    return Err(
+      errors
+        .iter()
+        .map(|e| {
+          let pos = ErrorPos::EoF;
+          (pos, e.clone())
+        })
+        .collect(),
+    );
+  }
   Ok(front)
 }
 
 #[cfg(test)]
 #[test]
 fn test_dev() {
-  let code = include_str!("../examples/test5.baum");
+  let code = include_str!("../examples/test10.baum");
   match run(code) {
     Ok(_) => {}
     Err(es) => {
