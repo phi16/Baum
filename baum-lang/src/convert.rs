@@ -97,19 +97,24 @@ impl<'a> Builder<'a> {
 
   fn lookup_mod(&self, n: &Vec<Id<'a>>) -> Option<(ModDepth, Vec<front::Id>, Env<'a>)> {
     assert!(!n.is_empty());
-    'k: for env in self.envs.iter().rev() {
-      let mut cur_env = &env.1;
-      let mut mod_name = Vec::new();
-      for name in n {
-        match cur_env.lookup.get(name) {
-          Some(Entity::Mod(i, env)) => {
-            mod_name.push(*i);
-            cur_env = env;
+    for (depth, env) in self.envs.iter().rev() {
+      match env.lookup.get(&n[0]) {
+        Some(Entity::Mod(i, env)) => {
+          let mut cur_env = env;
+          let mut mod_name = vec![*i];
+          for name in n.iter().skip(1) {
+            match cur_env.lookup.get(name) {
+              Some(Entity::Mod(i, env)) => {
+                mod_name.push(*i);
+                cur_env = env;
+              }
+              _ => return None,
+            }
           }
-          _ => continue 'k,
+          return Some((*depth, mod_name, cur_env.clone()));
         }
+        _ => {}
       }
-      return Some((env.0, mod_name, cur_env.clone()));
     }
     None
   }
