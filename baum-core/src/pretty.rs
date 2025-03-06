@@ -58,14 +58,14 @@ impl<'a> Pretty<'a> {
     self
   }
 
-  fn defs(&mut self, ds: &Vec<(BindId, Rc<Expr>)>) -> &mut Self {
+  fn defs<P, S>(&mut self, ds: &Vec<(BindId, Rc<Expr<P, S>>)>) -> &mut Self {
     for (i, e) in ds {
       self.i(i).s(" = ").e(e).ln();
     }
     self
   }
 
-  fn e(&mut self, e: &Expr) -> &mut Self {
+  fn e<P, S>(&mut self, e: &Expr<P, S>) -> &mut Self {
     match &e.0 {
       ExprF::Hole => self.s("_"),
       ExprF::Bind(i) => self.i(i),
@@ -74,19 +74,19 @@ impl<'a> Pretty<'a> {
       ExprF::Uni => self.s("𝒰"),
       ExprF::Let(defs, e) => self.s("let").open().defs(defs).close().s("in ").e(e),
 
-      ExprF::Pi(tag, i, t, e) => match i {
+      ExprF::Pi(_, i, t, e) => match i {
         Some(i) => self.s("Π(").i(i).s(": ").e(t).s(") ").e(e),
         None => self.s("Π(").e(t).s(") ").e(e),
       },
-      ExprF::Lam(tag, i, t, e) => self.s("λ(").i(i).s(": ").e(t).s(") ").e(e),
-      ExprF::App(tag, e1, e2) => match e2.0 {
+      ExprF::Lam(_, i, t, e) => self.s("λ(").i(i).s(": ").e(t).s(") ").e(e),
+      ExprF::App(_, e1, e2) => match e2.0 {
         ExprF::Hole | ExprF::Bind(_) | ExprF::Uni | ExprF::Sigma(_, _) | ExprF::Obj(_, _) => {
           self.e(e1).s(" ").e(e2)
         }
         _ => self.e(e1).s(" (").e(e2).s(")"),
       },
 
-      ExprF::Sigma(tag, es) => {
+      ExprF::Sigma(_, es) => {
         self.s("Σ{");
         for (name, bind, t) in es {
           if let Some(bind) = bind {
@@ -97,19 +97,19 @@ impl<'a> Pretty<'a> {
         }
         self.s("}")
       }
-      ExprF::Obj(tag, es) => {
+      ExprF::Obj(_, es) => {
         self.s("{");
         for (name, e) in es {
           self.name(name).s(" = ").e(e).s(", ");
         }
         self.s("}")
       }
-      ExprF::Prop(tag, name, e) => self.e(e).s(".").name(name),
+      ExprF::Prop(_, name, e) => self.e(e).s(".").name(name),
     }
   }
 }
 
-pub fn pretty(program: &Program) -> String {
+pub fn pretty<P, S>(program: &Program<P, S>) -> String {
   let mut p = Pretty::new(&program.bind_symbols, &program.name_symbols);
   p.defs(&program.defs);
   p.str.join("\n")

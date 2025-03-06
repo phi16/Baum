@@ -26,19 +26,7 @@ pub enum Vis {
 }
 
 #[derive(Debug, Clone)]
-pub struct PTag {
-  pub vis: Vis,
-  pub is_mod_param: bool,
-}
-
-#[derive(Debug, Clone)]
-pub struct STag {
-  pub is_tuple: bool,
-  pub is_mod: bool,
-}
-
-#[derive(Debug, Clone)]
-pub enum ExprF<E> {
+pub enum ExprF<PTag, STag, E> {
   Hole,
   Bind(BindId),
   Ann(E, E),
@@ -57,11 +45,11 @@ pub enum ExprF<E> {
 }
 
 #[derive(Debug, Clone)]
-pub struct Expr(pub ExprF<Rc<Expr>>);
+pub struct Expr<PTag, STag>(pub ExprF<PTag, STag, Rc<Expr<PTag, STag>>>);
 
 #[derive(Debug, Clone)]
-pub struct Program {
-  pub defs: Vec<(BindId, Rc<Expr>)>,
+pub struct Program<PTag, STag> {
+  pub defs: Vec<(BindId, Rc<Expr<PTag, STag>>)>,
   pub bind_symbols: HashMap<BindId, String>,
   pub name_symbols: HashMap<NameId, String>,
 }

@@ -4,6 +4,20 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 #[derive(Debug, Clone)]
+pub struct PTag {
+  pub vis: Vis,
+  pub is_mod_param: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct STag {
+  pub is_tuple: bool,
+  pub is_mod: bool,
+}
+
+type CoreExpr = core::Expr<PTag, STag>;
+
+#[derive(Debug, Clone)]
 enum Entity {
   Bind(core::BindId),
   Mod(core::BindId),
@@ -41,7 +55,7 @@ enum Name {
 }
 
 struct Decls {
-  defs: Vec<(core::BindId, Rc<core::Expr>)>,
+  defs: Vec<(core::BindId, Rc<CoreExpr>)>,
 }
 
 struct Builder {
@@ -165,7 +179,7 @@ impl Builder {
     }
   }
 
-  fn e(&mut self, e: &Expr) -> core::Expr {
+  fn e(&mut self, e: &Expr) -> CoreExpr {
     use ExprF::*;
     core::Expr(match &e.0 {
       Hole => core::ExprF::Hole,
@@ -200,7 +214,7 @@ impl Builder {
               let mut e = core::ExprF::Bind(bind);
               for m in mod_name.iter().skip(1) {
                 e = core::ExprF::Prop(
-                  core::STag {
+                  STag {
                     is_tuple: false,
                     is_mod: true,
                   },
@@ -209,7 +223,7 @@ impl Builder {
                 );
               }
               core::ExprF::Prop(
-                core::STag {
+                STag {
                   is_tuple: false,
                   is_mod: true,
                 },
@@ -241,8 +255,8 @@ impl Builder {
       }
 
       PiE(i, ty, e) => {
-        let tag = core::PTag {
-          vis: core::Vis::Explicit,
+        let tag = PTag {
+          vis: Vis::Explicit,
           is_mod_param: false,
         };
         self.envs.push(Env::new());
@@ -253,8 +267,8 @@ impl Builder {
         core::ExprF::Pi(tag, i, ty, e)
       }
       LamE(i, ty, e) => {
-        let tag = core::PTag {
-          vis: core::Vis::Explicit,
+        let tag = PTag {
+          vis: Vis::Explicit,
           is_mod_param: false,
         };
         self.envs.push(Env::new());
@@ -265,8 +279,8 @@ impl Builder {
         core::ExprF::Lam(tag, i, ty, e)
       }
       AppE(e1, e2) => {
-        let tag = core::PTag {
-          vis: core::Vis::Explicit,
+        let tag = PTag {
+          vis: Vis::Explicit,
           is_mod_param: false,
         };
         let e1 = Rc::new(self.e(&e1));
@@ -275,8 +289,8 @@ impl Builder {
       }
 
       PiI(i, ty, e) => {
-        let tag = core::PTag {
-          vis: core::Vis::Implicit,
+        let tag = PTag {
+          vis: Vis::Implicit,
           is_mod_param: false,
         };
         self.envs.push(Env::new());
@@ -287,8 +301,8 @@ impl Builder {
         core::ExprF::Pi(tag, i, ty, e)
       }
       LamI(i, ty, e) => {
-        let tag = core::PTag {
-          vis: core::Vis::Implicit,
+        let tag = PTag {
+          vis: Vis::Implicit,
           is_mod_param: false,
         };
         self.envs.push(Env::new());
@@ -299,8 +313,8 @@ impl Builder {
         core::ExprF::Lam(tag, i, ty, e)
       }
       AppI(e1, e2) => {
-        let tag = core::PTag {
-          vis: core::Vis::Implicit,
+        let tag = PTag {
+          vis: Vis::Implicit,
           is_mod_param: false,
         };
         let e1 = Rc::new(self.e(&e1));
@@ -309,7 +323,7 @@ impl Builder {
       }
 
       TupleTy(elems) => {
-        let tag = core::STag {
+        let tag = STag {
           is_tuple: true,
           is_mod: false,
         };
@@ -326,7 +340,7 @@ impl Builder {
         core::ExprF::Sigma(tag, es)
       }
       TupleCon(elems) => {
-        let tag = core::STag {
+        let tag = STag {
           is_tuple: true,
           is_mod: false,
         };
@@ -340,7 +354,7 @@ impl Builder {
         core::ExprF::Obj(tag, es)
       }
       Proj(i, e) => {
-        let tag = core::STag {
+        let tag = STag {
           is_tuple: true,
           is_mod: false,
         };
@@ -350,7 +364,7 @@ impl Builder {
       }
 
       ObjTy(elems) => {
-        let tag = core::STag {
+        let tag = STag {
           is_tuple: false,
           is_mod: false,
         };
@@ -366,7 +380,7 @@ impl Builder {
         core::ExprF::Sigma(tag, es)
       }
       ObjCon(elems) => {
-        let tag = core::STag {
+        let tag = STag {
           is_tuple: false,
           is_mod: false,
         };
@@ -379,7 +393,7 @@ impl Builder {
         core::ExprF::Obj(tag, es)
       }
       Prop(i, e) => {
-        let tag = core::STag {
+        let tag = STag {
           is_tuple: false,
           is_mod: false,
         };
@@ -415,7 +429,7 @@ impl Builder {
               defs.push((name, Rc::new(core::Expr(core::ExprF::Bind(bind)))));
             }
             let obj = core::ExprF::Obj(
-              core::STag {
+              STag {
                 is_tuple: false,
                 is_mod: true,
               },
@@ -432,7 +446,7 @@ impl Builder {
               let mut e = core::ExprF::Bind(bind);
               for m in mod_name.iter().skip(1) {
                 e = core::ExprF::Prop(
-                  core::STag {
+                  STag {
                     is_tuple: false,
                     is_mod: true,
                   },
@@ -442,12 +456,12 @@ impl Builder {
               }
               for (vis, arg) in args {
                 let vis = match vis {
-                  Vis::Explicit => core::Vis::Explicit,
-                  Vis::Implicit => core::Vis::Implicit,
+                  Vis::Explicit => Vis::Explicit,
+                  Vis::Implicit => Vis::Implicit,
                 };
                 let arg = self.e(arg);
                 e = core::ExprF::App(
-                  core::PTag {
+                  PTag {
                     vis,
                     is_mod_param: true,
                   },
@@ -469,10 +483,10 @@ impl Builder {
         let mut e = e;
         for p in ps.into_iter().rev() {
           let (vis, i, ty) = p;
-          let tag = core::PTag {
+          let tag = PTag {
             vis: match vis {
-              Vis::Explicit => core::Vis::Explicit,
-              Vis::Implicit => core::Vis::Implicit,
+              Vis::Explicit => Vis::Explicit,
+              Vis::Implicit => Vis::Implicit,
             },
             is_mod_param: true,
           };
@@ -512,7 +526,7 @@ impl Builder {
   }
 }
 
-pub fn convert(p: Program) -> (core::Program, Vec<String>) {
+pub fn convert(p: Program) -> (core::Program<PTag, STag>, Vec<String>) {
   let mut b = Builder::new(p.symbols);
   let defs = b.ds(&p.decls).defs;
   (
