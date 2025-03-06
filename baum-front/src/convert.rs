@@ -478,6 +478,7 @@ impl Builder {
           };
           e = core::ExprF::Lam(tag, i, ty, Rc::new(core::Expr(e)));
         }
+        let e = core::ExprF::Synth(Rc::new(core::Expr(e)));
         let bind = self.add_bind_ty(name, BindType::Mod);
         decls.defs.push((bind, Rc::new(core::Expr(e))));
         self
@@ -490,7 +491,8 @@ impl Builder {
       Decl::Def(i, e) => {
         let e = self.e(&e);
         let bind = self.add_bind_ty(&i, BindType::Def);
-        decls.defs.push((bind, Rc::new(e)));
+        let synth = core::Expr(core::ExprF::Synth(Rc::new(e)));
+        decls.defs.push((bind, Rc::new(synth)));
         self
           .envs
           .last_mut()

@@ -42,6 +42,7 @@ pub enum ExprF<E> {
   Hole,
   Bind(BindId),
   Ann(E, E),
+  Synth(E),
   Uni,
 
   Let(Vec<(BindId, E)>, E),
