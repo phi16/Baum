@@ -50,7 +50,7 @@ pub fn run(code: &str) -> Result<front::Program, Vec<(ErrorPos, String)>> {
 #[cfg(test)]
 #[test]
 fn test_dev() {
-  let code = include_str!("../examples/test5.baum");
+  let code = include_str!("../examples/test15.baum");
   match run(code) {
     Ok(_) => {}
     Err(es) => {

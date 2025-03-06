@@ -10,3 +10,6 @@ b = _
 syntax | i | x = λ(i) x
 f x y = 1
 k = (λ(a) a) a
+
+syntax [x] = {j = 1, x = 1}
+a = [j]
