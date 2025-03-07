@@ -242,6 +242,7 @@ impl<'a, 'b> MiniParser<'a, 'b> {
 }
 
 fn num_parse(s: &str) -> Result<lit::Literal, String> {
+  use lit::{BigInt, BigNat};
   let mut it = s.chars().peekable();
   let c0 = it.next().unwrap();
   enum State {
@@ -255,11 +256,11 @@ fn num_parse(s: &str) -> Result<lit::Literal, String> {
   }
   let mut hex = false;
   let mut s = if c0 == '0' { State::Zero } else { State::Nat };
-  let mut coeff = c0.to_digit(10).unwrap();
+  let mut coeff = vec![c0.to_digit(10).unwrap()];
   let mut frac_digits = 0;
   let mut nat_base = 10;
-  let mut exp = 0;
-  let mut exp_sign: i32 = 1;
+  let mut exp = Vec::new();
+  let mut exp_negative: bool = false;
   while let Some(c1) = it.peek() {
     let c1 = *c1;
     match s {
@@ -279,7 +280,7 @@ fn num_parse(s: &str) -> Result<lit::Literal, String> {
           s = State::Frac;
         } else if c1.is_ascii_digit() {
           let d = c1.to_digit(10).unwrap();
-          coeff = d;
+          coeff = vec![d];
           s = State::Nat;
         } else {
           unreachable!();
@@ -294,7 +295,7 @@ fn num_parse(s: &str) -> Result<lit::Literal, String> {
           let d = c1
             .to_digit(nat_base)
             .ok_or(format!("invalid digit: {}", c1))?;
-          coeff = coeff * nat_base + d;
+          coeff.push(d);
           s = State::Nat;
         } else {
           unreachable!();
@@ -307,7 +308,7 @@ fn num_parse(s: &str) -> Result<lit::Literal, String> {
           let d = c1
             .to_digit(nat_base)
             .ok_or(format!("invalid digit: {}", c1))?;
-          coeff = coeff * nat_base + d;
+          coeff.push(d);
           frac_digits += 1;
           s = State::Frac;
         } else {
@@ -317,10 +318,10 @@ fn num_parse(s: &str) -> Result<lit::Literal, String> {
       State::Exp => {
         if c1 == '+' || c1 == '-' {
           s = State::ExpSign;
-          exp_sign = if c1 == '+' { 1 } else { -1 };
+          exp_negative = c1 == '-';
         } else if c1.is_ascii_digit() {
           let d = c1.to_digit(10).unwrap();
-          exp = d;
+          exp = vec![d];
           s = State::ExpNat;
         } else {
           unreachable!();
@@ -329,7 +330,7 @@ fn num_parse(s: &str) -> Result<lit::Literal, String> {
       State::ExpSign | State::ExpNat => {
         if c1.is_ascii_digit() {
           let d = c1.to_digit(10).unwrap();
-          exp = exp * 10 + d;
+          exp.push(d);
           s = State::ExpNat;
         } else {
           unreachable!();
@@ -339,20 +340,20 @@ fn num_parse(s: &str) -> Result<lit::Literal, String> {
     it.next();
   }
   let base: u8 = if hex { 2 } else { 10 };
-  let mut exponent = exp_sign * exp as i32;
-  exponent -= frac_digits as i32 * if hex { 4 } else { 1 };
-  let lit = if exponent >= 0 {
-    lit::Literal::Nat(lit::Nat {
-      coeff,
-      base,
-      exponent: exponent as u32,
-    })
-  } else {
-    lit::Literal::Rat(lit::Rat {
+  let coeff = BigNat::from_vec(coeff, nat_base);
+  let mut exponent = BigInt::from_nat(exp_negative, BigNat::from_vec(exp, 10));
+  exponent.subtract(frac_digits as u32 * if hex { 4 } else { 1 });
+  let lit = match exponent.into_inner() {
+    (false, exponent) => lit::Literal::Nat(lit::Nat {
       coeff,
       base,
       exponent,
-    })
+    }),
+    (true, negative_exponent) => lit::Literal::Rat(lit::Rat {
+      coeff,
+      base,
+      negative_exponent,
+    }),
   };
   Ok(lit)
 }
