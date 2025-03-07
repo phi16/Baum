@@ -5,7 +5,6 @@ use std::rc::Rc;
 
 #[derive(Debug, Clone)]
 pub struct PTag {
-  pub vis: Vis,
   pub is_mod_param: bool,
 }
 
@@ -13,6 +12,15 @@ pub struct PTag {
 pub struct STag {
   pub is_tuple: bool,
   pub is_mod: bool,
+}
+
+impl From<Vis> for core::Vis {
+  fn from(v: Vis) -> Self {
+    match v {
+      Vis::Explicit => core::Vis::Explicit,
+      Vis::Implicit => core::Vis::Implicit,
+    }
+  }
 }
 
 type CoreExpr = core::Expr<PTag, STag>;
@@ -260,7 +268,6 @@ impl Builder {
 
       PiE(i, ty, e) => {
         let tag = PTag {
-          vis: Vis::Explicit,
           is_mod_param: false,
         };
         self.envs.push(Env::new());
@@ -268,11 +275,10 @@ impl Builder {
         let i = i.map(|i| self.add_local_bind(&i));
         let e = Rc::new(self.e(&e));
         self.envs.pop();
-        core::ExprF::Pi(tag, i, ty, e)
+        core::ExprF::Pi(tag, core::Vis::Explicit, i, ty, e)
       }
       LamE(i, ty, e) => {
         let tag = PTag {
-          vis: Vis::Explicit,
           is_mod_param: false,
         };
         self.envs.push(Env::new());
@@ -280,21 +286,19 @@ impl Builder {
         let i = self.add_local_bind(i);
         let e = Rc::new(self.e(&e));
         self.envs.pop();
-        core::ExprF::Lam(tag, i, ty, e)
+        core::ExprF::Lam(tag, core::Vis::Explicit, i, ty, e)
       }
       AppE(e1, e2) => {
         let tag = PTag {
-          vis: Vis::Explicit,
           is_mod_param: false,
         };
         let e1 = Rc::new(self.e(&e1));
         let e2 = Rc::new(self.e(&e2));
-        core::ExprF::App(tag, e1, e2)
+        core::ExprF::App(tag, core::Vis::Explicit, e1, e2)
       }
 
       PiI(i, ty, e) => {
         let tag = PTag {
-          vis: Vis::Implicit,
           is_mod_param: false,
         };
         self.envs.push(Env::new());
@@ -302,11 +306,10 @@ impl Builder {
         let i = i.map(|i| self.add_local_bind(&i));
         let e = Rc::new(self.e(&e));
         self.envs.pop();
-        core::ExprF::Pi(tag, i, ty, e)
+        core::ExprF::Pi(tag, core::Vis::Implicit, i, ty, e)
       }
       LamI(i, ty, e) => {
         let tag = PTag {
-          vis: Vis::Implicit,
           is_mod_param: false,
         };
         self.envs.push(Env::new());
@@ -314,16 +317,15 @@ impl Builder {
         let i = self.add_local_bind(i);
         let e = Rc::new(self.e(&e));
         self.envs.pop();
-        core::ExprF::Lam(tag, i, ty, e)
+        core::ExprF::Lam(tag, core::Vis::Implicit, i, ty, e)
       }
       AppI(e1, e2) => {
         let tag = PTag {
-          vis: Vis::Implicit,
           is_mod_param: false,
         };
         let e1 = Rc::new(self.e(&e1));
         let e2 = Rc::new(self.e(&e2));
-        core::ExprF::App(tag, e1, e2)
+        core::ExprF::App(tag, core::Vis::Implicit, e1, e2)
       }
 
       TupleTy(elems) => {
@@ -459,16 +461,10 @@ impl Builder {
                 );
               }
               for (vis, arg) in args {
-                let vis = match vis {
-                  Vis::Explicit => Vis::Explicit,
-                  Vis::Implicit => Vis::Implicit,
-                };
                 let arg = self.e(arg);
                 e = core::ExprF::App(
-                  PTag {
-                    vis,
-                    is_mod_param: true,
-                  },
+                  PTag { is_mod_param: true },
+                  core::Vis::from(vis.clone()),
                   wrap(e),
                   Rc::new(arg),
                 );
@@ -487,14 +483,8 @@ impl Builder {
         let mut e = e;
         for p in ps.into_iter().rev() {
           let (vis, i, ty) = p;
-          let tag = PTag {
-            vis: match vis {
-              Vis::Explicit => Vis::Explicit,
-              Vis::Implicit => Vis::Implicit,
-            },
-            is_mod_param: true,
-          };
-          e = core::ExprF::Lam(tag, i, ty, wrap(e));
+          let tag = PTag { is_mod_param: true };
+          e = core::ExprF::Lam(tag, core::Vis::from(vis.clone()), i, ty, wrap(e));
         }
         let e = core::ExprF::Synth(wrap(e));
         let bind = self.add_bind_ty(name, BindType::Mod);

@@ -35,9 +35,9 @@ pub enum ExprF<PTag, STag, E> {
 
   Let(Vec<(BindId, E)>, E),
 
-  Pi(PTag, Option<BindId>, E, E),
-  Lam(PTag, BindId, E, E),
-  App(PTag, E, E),
+  Pi(PTag, Vis, Option<BindId>, E, E),
+  Lam(PTag, Vis, BindId, E, E),
+  App(PTag, Vis, E, E),
 
   Sigma(STag, Vec<(NameId, Option<BindId>, E)>),
   Obj(STag, Vec<(NameId, E)>),
