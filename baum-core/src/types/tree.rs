@@ -30,7 +30,7 @@ pub enum ExprF<PTag, STag, E> {
   Hole,
   Bind(BindId),
   Ann(E, E),
-  Synth(E),
+  Def(E),
   Uni,
 
   Let(Vec<(BindId, E)>, E),

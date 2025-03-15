@@ -70,7 +70,7 @@ impl<'a> Pretty<'a> {
       ExprF::Hole => self.s("_"),
       ExprF::Bind(i) => self.i(i),
       ExprF::Ann(v, t) => self.e(v).s(" of ").e(t),
-      ExprF::Synth(e) => self.s("synth ").e(e),
+      ExprF::Def(e) => self.s("def ").e(e),
       ExprF::Uni => self.s("𝒰"),
       ExprF::Let(defs, e) => self.s("let").open().defs(defs).close().s("in ").e(e),
 
