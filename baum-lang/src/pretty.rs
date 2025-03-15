@@ -104,7 +104,7 @@ impl Pretty {
   }
 
   fn mb(&mut self, m: &ModBody) -> &mut Self {
-    match &m {
+    match &m.0 {
       ModBodyF::Decls(ds) => self.s("{").open().ds(ds).close().s("}").ln(),
       ModBodyF::Ref(mr) => self.mr(mr),
     }

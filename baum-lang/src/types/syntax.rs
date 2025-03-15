@@ -1,5 +1,6 @@
 use crate::types::precedence::Precedence;
 use crate::types::regex::{Regex, Terminal};
+use crate::types::token::TokenRange;
 use std::collections::HashMap;
 use std::rc::Rc;
 
@@ -168,8 +169,13 @@ pub enum LookupId {
   General(front::Id),
 }
 
+pub type ElemTag = TokenRange;
+
 #[derive(Debug, Clone)]
-pub struct SyntaxExpr(pub front::ExprF<LookupId, Rc<SyntaxExpr>>);
+pub struct SyntaxExpr(
+  pub front::ExprF<ElemTag, LookupId, Rc<SyntaxExpr>>,
+  pub ElemTag,
+);
 
 fn dependency_from(e: &SyntaxExpr) -> HashMap<ElemId, Vec<ElemId>> {
   fn add(id: &LookupId, env: &mut Vec<ElemId>) {
@@ -207,6 +213,9 @@ fn dependency_from(e: &SyntaxExpr) -> HashMap<ElemId, Vec<ElemId>> {
         rec(&e2, env, map);
       }
       Uni => {}
+      Wrap(e) => {
+        rec(&e, env, map);
+      }
 
       Ext(_, _, _) => {}
       Let(_, _) => {}

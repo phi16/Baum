@@ -1,5 +1,6 @@
 use crate::types::env::SyntaxTable;
 use crate::types::regex::{Regex, Terminal};
+use crate::types::token::TokenRange;
 use crate::types::tree::{SynElemInternal, SyntaxId};
 use crate::types::tree_base::SynElemF;
 use std::collections::HashMap;
@@ -118,7 +119,7 @@ pub fn builtin_syntax_table<'a>() -> SyntaxTable {
 }
 
 use crate::types::syntax::{
-  ElemId, ElemToken, LookupId, SyntaxExpr, SyntaxHandler, SyntaxInterpret,
+  ElemId, ElemTag, ElemToken, LookupId, SyntaxExpr, SyntaxHandler, SyntaxInterpret,
 };
 use crate::types::tree::SynElem;
 use baum_front::types::literal as lit;
@@ -137,6 +138,7 @@ struct MiniParser<'a, 'b> {
   index: usize,
   next_elem_id: u16,
   tokens: Vec<ElemToken>,
+  tag: ElemTag,
 }
 
 enum LitType {
@@ -157,12 +159,13 @@ fn match_lit(e: &SynElemInternal, ty: LitType) -> bool {
 }
 
 impl<'a, 'b> MiniParser<'a, 'b> {
-  fn new(input: &'b Vec<SynElem<'a>>) -> Self {
+  fn new(input: &'b Vec<SynElem<'a>>, tag: ElemTag) -> Self {
     Self {
       input,
       index: 0,
       next_elem_id: 0,
       tokens: Vec::new(),
+      tag,
     }
   }
 
@@ -172,6 +175,10 @@ impl<'a, 'b> MiniParser<'a, 'b> {
     } else {
       None
     }
+  }
+
+  fn get_tag(&self) -> ElemTag {
+    self.tag.clone()
   }
 
   fn peek_token(&self, s: &'a str) -> Option<()> {
@@ -214,7 +221,8 @@ impl<'a, 'b> MiniParser<'a, 'b> {
     if !match_lit(&e.0, ty) {
       return None;
     }
-    let (s, token) = match self.input.get(self.index).unwrap().0 {
+    let elem = self.input.get(self.index).unwrap();
+    let (s, token) = match elem.0 {
       SynElemF::Token(_) => panic!(),
       SynElemF::Ident(_) => panic!(),
       SynElemF::Dec(s) => (s, ElemToken::Dec),
@@ -235,7 +243,10 @@ impl<'a, 'b> MiniParser<'a, 'b> {
       let id = ElemId(self.next_elem_id);
       self.next_elem_id += 1;
       self.tokens.push(ElemToken::Expr(id));
-      return Some(SyntaxExpr(front::ExprF::Bind(LookupId::InSyntax(id))));
+      return Some(SyntaxExpr(
+        front::ExprF::Bind(LookupId::InSyntax(id)),
+        e.1.clone(),
+      ));
     }
     None
   }
@@ -360,13 +371,23 @@ fn num_parse(s: &str) -> Result<lit::Literal, String> {
 
 pub fn builtin_syntax_handlers<'a>() -> HashMap<SyntaxId, SyntaxHandler<'a>> {
   let mut handlers: HashMap<SyntaxId, SyntaxHandler> = HashMap::new();
+  type SyntaxExprInternal = front::ExprF<ElemTag, LookupId, Rc<SyntaxExpr>>;
 
   fn make_handler<'a>(
-    f: impl for<'b> Fn(&mut MiniParser<'a, 'b>) -> Result<SyntaxExpr, String> + 'static,
+    f: impl for<'b> Fn(&mut MiniParser<'a, 'b>) -> Result<SyntaxExprInternal, String> + 'static,
   ) -> SyntaxHandler<'a> {
     Rc::new(move |elems: &Vec<SynElem<'a>>| {
-      let mut p = MiniParser::new(elems);
+      let begin = elems.get(0).unwrap().1.begin.clone();
+      let end = elems.last().unwrap().1.end.clone();
+      let tag = TokenRange {
+        begin_pos: (0, 0),
+        begin,
+        end,
+      };
+
+      let mut p = MiniParser::new(elems, tag.clone());
       let e = f(&mut p)?;
+      let e = SyntaxExpr(e, tag);
       let tokens = p.done().unwrap();
       Ok(SyntaxInterpret::new(tokens, e))
     })
@@ -377,7 +398,7 @@ pub fn builtin_syntax_handlers<'a>() -> HashMap<SyntaxId, SyntaxHandler<'a>> {
     make_handler(|p| {
       let s = p.take_lit(LitType::Num).unwrap();
       let n = num_parse(s)?;
-      Ok(SyntaxExpr(front::ExprF::Lit(n)))
+      Ok(front::ExprF::Lit(n))
     }),
   );
   handlers.insert(
@@ -386,7 +407,7 @@ pub fn builtin_syntax_handlers<'a>() -> HashMap<SyntaxId, SyntaxHandler<'a>> {
       let s = p.take_lit(LitType::Chr).unwrap();
       let c = s.parse().map_err(|e: ParseCharError| e.to_string())?;
       let c = lit::Literal::Chr(c);
-      Ok(SyntaxExpr(front::ExprF::Lit(c)))
+      Ok(front::ExprF::Lit(c))
     }),
   );
   handlers.insert(
@@ -395,7 +416,7 @@ pub fn builtin_syntax_handlers<'a>() -> HashMap<SyntaxId, SyntaxHandler<'a>> {
       let s = p.take_lit(LitType::Str).unwrap();
       // TODO: process escape
       let s = lit::Literal::Str(s.to_string());
-      Ok(SyntaxExpr(front::ExprF::Lit(s)))
+      Ok(front::ExprF::Lit(s))
     }),
   );
 
@@ -403,14 +424,14 @@ pub fn builtin_syntax_handlers<'a>() -> HashMap<SyntaxId, SyntaxHandler<'a>> {
     SyntaxId::Hole,
     make_handler(|p| {
       p.take_token("_").unwrap();
-      Ok(SyntaxExpr(front::ExprF::Hole))
+      Ok(front::ExprF::Hole)
     }),
   );
   handlers.insert(
     SyntaxId::Uni,
     make_handler(|p| {
       p.take_token("U").unwrap();
-      Ok(SyntaxExpr(front::ExprF::Uni))
+      Ok(front::ExprF::Uni)
     }),
   );
 
@@ -431,7 +452,7 @@ pub fn builtin_syntax_handlers<'a>() -> HashMap<SyntaxId, SyntaxHandler<'a>> {
         let ty = if let Some(_) = p.take_token(":") {
           p.take_expr().unwrap()
         } else {
-          SyntaxExpr(front::ExprF::Hole)
+          SyntaxExpr(front::ExprF::Hole, p.get_tag())
         };
         let ty = Rc::new(ty);
         for id in ids {
@@ -442,9 +463,9 @@ pub fn builtin_syntax_handlers<'a>() -> HashMap<SyntaxId, SyntaxHandler<'a>> {
       let body = p.take_expr().unwrap();
       let mut e = body;
       for (id, ty) in args.into_iter().rev() {
-        e = SyntaxExpr(front::ExprF::LamE(id, ty, Rc::new(e)));
+        e = SyntaxExpr(front::ExprF::LamE(id, ty, Rc::new(e)), p.get_tag());
       }
-      Ok(e)
+      Ok(e.0)
     }),
   );
   handlers.insert(
@@ -479,9 +500,9 @@ pub fn builtin_syntax_handlers<'a>() -> HashMap<SyntaxId, SyntaxHandler<'a>> {
       let body = p.take_expr().unwrap();
       let mut e = body;
       for (id, ty) in args.into_iter().rev() {
-        e = SyntaxExpr(front::ExprF::PiE(id, ty, Rc::new(e)));
+        e = SyntaxExpr(front::ExprF::PiE(id, ty, Rc::new(e)), p.get_tag());
       }
-      Ok(e)
+      Ok(e.0)
     }),
   );
   handlers.insert(
@@ -489,7 +510,7 @@ pub fn builtin_syntax_handlers<'a>() -> HashMap<SyntaxId, SyntaxHandler<'a>> {
     make_handler(|p| {
       let e1 = p.take_expr().unwrap();
       let e2 = p.take_expr().unwrap();
-      Ok(SyntaxExpr(front::ExprF::AppE(Rc::new(e1), Rc::new(e2))))
+      Ok(front::ExprF::AppE(Rc::new(e1), Rc::new(e2)))
     }),
   );
 
@@ -510,7 +531,7 @@ pub fn builtin_syntax_handlers<'a>() -> HashMap<SyntaxId, SyntaxHandler<'a>> {
         let ty = if let Some(_) = p.take_token(":") {
           p.take_expr().unwrap()
         } else {
-          SyntaxExpr(front::ExprF::Hole)
+          SyntaxExpr(front::ExprF::Hole, p.get_tag())
         };
         let ty = Rc::new(ty);
         for id in ids {
@@ -521,9 +542,9 @@ pub fn builtin_syntax_handlers<'a>() -> HashMap<SyntaxId, SyntaxHandler<'a>> {
       let body = p.take_expr().unwrap();
       let mut e = body;
       for (id, ty) in args.into_iter().rev() {
-        e = SyntaxExpr(front::ExprF::LamI(id, ty, Rc::new(e)));
+        e = SyntaxExpr(front::ExprF::LamI(id, ty, Rc::new(e)), p.get_tag());
       }
-      Ok(e)
+      Ok(e.0)
     }),
   );
   handlers.insert(
@@ -558,9 +579,9 @@ pub fn builtin_syntax_handlers<'a>() -> HashMap<SyntaxId, SyntaxHandler<'a>> {
       let body = p.take_expr().unwrap();
       let mut e = body;
       for (id, ty) in args.into_iter().rev() {
-        e = SyntaxExpr(front::ExprF::PiI(id, ty, Rc::new(e)));
+        e = SyntaxExpr(front::ExprF::PiI(id, ty, Rc::new(e)), p.get_tag());
       }
-      Ok(e)
+      Ok(e.0)
     }),
   );
   handlers.insert(
@@ -570,7 +591,7 @@ pub fn builtin_syntax_handlers<'a>() -> HashMap<SyntaxId, SyntaxHandler<'a>> {
       p.take_token("{").unwrap();
       let e2 = p.take_expr().unwrap();
       p.take_token("}").unwrap();
-      Ok(SyntaxExpr(front::ExprF::AppI(Rc::new(e1), Rc::new(e2))))
+      Ok(front::ExprF::AppI(Rc::new(e1), Rc::new(e2)))
     }),
   );
 
@@ -603,7 +624,7 @@ pub fn builtin_syntax_handlers<'a>() -> HashMap<SyntaxId, SyntaxHandler<'a>> {
         }
         p.take_token(",");
       }
-      Ok(SyntaxExpr(front::ExprF::TupleTy(v)))
+      Ok(front::ExprF::TupleTy(v))
     }),
   );
   handlers.insert(
@@ -619,7 +640,7 @@ pub fn builtin_syntax_handlers<'a>() -> HashMap<SyntaxId, SyntaxHandler<'a>> {
         v.push(Rc::new(e.clone()));
         p.take_token(",");
       }
-      Ok(SyntaxExpr(front::ExprF::TupleCon(v)))
+      Ok(front::ExprF::TupleCon(v))
     }),
   );
   handlers.insert(
@@ -638,7 +659,7 @@ pub fn builtin_syntax_handlers<'a>() -> HashMap<SyntaxId, SyntaxHandler<'a>> {
         (s, e)
       };
       let n = s.parse().map_err(|e: ParseIntError| e.to_string())?;
-      Ok(SyntaxExpr(front::ExprF::Proj(n, Rc::new(e))))
+      Ok(front::ExprF::Proj(n, Rc::new(e)))
     }),
   );
 
@@ -663,7 +684,7 @@ pub fn builtin_syntax_handlers<'a>() -> HashMap<SyntaxId, SyntaxHandler<'a>> {
         }
         p.take_token(",");
       }
-      Ok(SyntaxExpr(front::ExprF::ObjTy(v)))
+      Ok(front::ExprF::ObjTy(v))
     }),
   );
   handlers.insert(
@@ -682,7 +703,11 @@ pub fn builtin_syntax_handlers<'a>() -> HashMap<SyntaxId, SyntaxHandler<'a>> {
             break;
           }
           if let Some(i) = p.take_id() {
-            args.push((Vis::Explicit, i, Rc::new(SyntaxExpr(front::ExprF::Hole))));
+            args.push((
+              Vis::Explicit,
+              i,
+              Rc::new(SyntaxExpr(front::ExprF::Hole, p.get_tag())),
+            ));
           } else {
             let explicit = p.peek_token("(").is_some();
             let implicit = p.peek_token("{").is_some();
@@ -702,7 +727,7 @@ pub fn builtin_syntax_handlers<'a>() -> HashMap<SyntaxId, SyntaxHandler<'a>> {
             let ty = if let Some(_) = p.take_token(":") {
               p.take_expr().unwrap()
             } else {
-              SyntaxExpr(front::ExprF::Hole)
+              SyntaxExpr(front::ExprF::Hole, p.get_tag())
             };
             p.take_token(match vis {
               Vis::Explicit => ")",
@@ -722,20 +747,20 @@ pub fn builtin_syntax_handlers<'a>() -> HashMap<SyntaxId, SyntaxHandler<'a>> {
         p.take_token("=");
         let e = p.take_expr().unwrap();
         let e = match ty {
-          Some(ty) => SyntaxExpr(front::ExprF::Ann(Rc::new(e), Rc::new(ty))),
+          Some(ty) => SyntaxExpr(front::ExprF::Ann(Rc::new(e), Rc::new(ty)), p.get_tag()),
           None => e,
         };
         let mut e = e;
         for (vis, id, ty) in args.into_iter().rev() {
           match vis {
-            Vis::Explicit => e = SyntaxExpr(front::ExprF::LamE(id, ty, Rc::new(e))),
-            Vis::Implicit => e = SyntaxExpr(front::ExprF::LamI(id, ty, Rc::new(e))),
+            Vis::Explicit => e = SyntaxExpr(front::ExprF::LamE(id, ty, Rc::new(e)), p.get_tag()),
+            Vis::Implicit => e = SyntaxExpr(front::ExprF::LamI(id, ty, Rc::new(e)), p.get_tag()),
           }
         }
         v.push((id, Rc::new(e)));
         p.take_token(",");
       }
-      Ok(SyntaxExpr(front::ExprF::ObjCon(v)))
+      Ok(front::ExprF::ObjCon(v))
     }),
   );
   handlers.insert(
@@ -753,7 +778,7 @@ pub fn builtin_syntax_handlers<'a>() -> HashMap<SyntaxId, SyntaxHandler<'a>> {
         let i = p.take_id().unwrap();
         (i, e)
       };
-      Ok(SyntaxExpr(front::ExprF::Prop(i, Rc::new(e))))
+      Ok(front::ExprF::Prop(i, Rc::new(e)))
     }),
   );
 

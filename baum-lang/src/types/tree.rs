@@ -39,11 +39,11 @@ pub enum SyntaxId {
 }
 
 pub type ModDef<'a> = ModDefF<Id<'a>, Arg<'a>>;
-pub type ModBody<'a> = ModBodyF<Vec<Decl<'a>>, ModRef<'a>>;
 pub type Def<'a> = DefF<Id<'a>, Arg<'a>, Box<Expr<'a>>>;
 
 pub type ArgInternal<'a> = ArgF<Id<'a>, Box<Expr<'a>>>;
 pub type ModRefInternal<'a> = ModRefF<&'a str, Id<'a>, Box<Expr<'a>>>;
+pub type ModBodyInternal<'a> = ModBodyF<Vec<Decl<'a>>, ModRef<'a>>;
 pub type SynDefInternal<'a> = SynDefF<&'a str, Id<'a>>;
 pub type SynElemInternal<'a> = SynElemF<&'a str, Id<'a>, Box<Expr<'a>>>;
 pub type DeclInternal<'a> = DeclF<
@@ -54,6 +54,7 @@ pub type DeclInternal<'a> = DeclF<
   Box<Expr<'a>>,
   SyntaxId,
   Vec<SynDef<'a>>,
+  ModBody<'a>,
   ModRef<'a>,
 >;
 pub type ExprInternal<'a> = ExprF<Id<'a>, Vec<Decl<'a>>, Box<Expr<'a>>, SyntaxId, Vec<SynElem<'a>>>;
@@ -72,6 +73,9 @@ pub struct SynDef<'a>(pub SynDefInternal<'a>, pub TokenLoc);
 
 #[derive(Debug, Clone)]
 pub struct SynElem<'a>(pub SynElemInternal<'a>, pub TokenRange);
+
+#[derive(Debug, Clone)]
+pub struct ModBody<'a>(pub ModBodyInternal<'a>, pub TokenRange);
 
 #[derive(Debug, Clone)]
 pub struct ModRef<'a>(pub ModRefInternal<'a>, pub TokenRange);

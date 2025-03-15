@@ -15,14 +15,15 @@ pub type ModDepth = u8;
 pub type ModLevel = i8;
 
 #[derive(Debug, Clone)]
-pub enum ExprF<I, E> {
+pub enum ExprF<T, I, E> {
   Hole,
   Bind(I),
   Ann(E, E),
   Uni,
+  Wrap(E),
 
   Ext(ModLevel, Vec<I>, I),
-  Let(Vec<Decl>, E),
+  Let(Vec<Decl<T>>, E),
   Lit(Literal),
 
   PiE(Option<I>, E, E),
@@ -42,11 +43,10 @@ pub enum ExprF<I, E> {
   Prop(I, E),
 }
 
-#[derive(Debug, Clone)]
-pub struct Expr(pub ExprF<Id, Rc<Expr>>);
+pub type ExprInternal<T> = ExprF<T, Id, Rc<Expr<T>>>;
 
-type I = Id;
-type E = Expr;
+#[derive(Debug, Clone)]
+pub struct Expr<T>(pub ExprInternal<T>, pub T);
 
 #[derive(Debug, Clone)]
 pub enum Vis {
@@ -55,20 +55,26 @@ pub enum Vis {
 }
 
 #[derive(Debug, Clone)]
-pub enum ModBody {
-  Decls(Vec<Decl>),
+pub enum ModBodyF<T> {
+  Decls(Vec<Decl<T>>),
   Import(String),
-  App(ModLevel, Vec<I>, Vec<(Vis, E)>),
+  App(ModLevel, Vec<Id>, Vec<(Vis, Expr<T>)>),
 }
 
 #[derive(Debug, Clone)]
-pub enum Decl {
-  Mod(I, Vec<(Vis, I, Rc<E>)>, ModBody),
-  Def(I, E),
+pub struct ModBody<T>(pub ModBodyF<T>, pub T);
+
+#[derive(Debug, Clone)]
+pub enum DeclF<T> {
+  Mod(Id, Vec<(Vis, Id, Rc<Expr<T>>)>, ModBody<T>),
+  Def(Id, Expr<T>),
 }
 
 #[derive(Debug, Clone)]
-pub struct Program {
-  pub decls: Vec<Decl>,
-  pub symbols: HashMap<I, String>,
+pub struct Decl<T>(pub DeclF<T>, pub T);
+
+#[derive(Debug, Clone)]
+pub struct Program<T> {
+  pub decls: Vec<Decl<T>>,
+  pub symbols: HashMap<Id, String>,
 }

@@ -38,9 +38,9 @@ pub enum SynDefF<S, I> {
 }
 
 #[derive(Debug, Clone)]
-pub enum DeclF<S, I, Ds, A, E, X, Sy, Mr> {
+pub enum DeclF<S, I, Ds, A, E, X, Sy, Mb, Mr> {
   Local(Ds),
-  Mod(ModDefF<I, A>, ModBodyF<Ds, Mr>),
+  Mod(ModDefF<I, A>, Mb),
   Open(Mr),
   Use(Mr),
   Def(DefF<I, A, E>),

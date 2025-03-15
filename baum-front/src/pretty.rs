@@ -61,11 +61,11 @@ impl<'a> Pretty<'a> {
     self
   }
 
-  fn mb(&mut self, m: &ModBody) -> &mut Self {
-    match &m {
-      ModBody::Decls(ds) => self.s("{").open().ds(ds).close().s("}").ln(),
-      ModBody::Import(path) => self.s("import ").s(path).ln(),
-      ModBody::App(l, mod_name, args) => {
+  fn mb<T>(&mut self, m: &ModBody<T>) -> &mut Self {
+    match &m.0 {
+      ModBodyF::Decls(ds) => self.s("{").open().ds(ds).close().s("}").ln(),
+      ModBodyF::Import(path) => self.s("import ").s(path).ln(),
+      ModBodyF::App(l, mod_name, args) => {
         self.s(&format!("[{}]", l)).is(mod_name, ".");
         for (vis, e) in args {
           self.s(" ");
@@ -79,9 +79,9 @@ impl<'a> Pretty<'a> {
     }
   }
 
-  fn d(&mut self, d: &Decl) -> &mut Self {
-    match d {
-      Decl::Mod(name, params, body) => {
+  fn d<T>(&mut self, d: &Decl<T>) -> &mut Self {
+    match &d.0 {
+      DeclF::Mod(name, params, body) => {
         self.s("module ").i(&name);
         for (vis, id, ty) in params {
           match vis {
@@ -91,23 +91,24 @@ impl<'a> Pretty<'a> {
         }
         self.s(" = ").mb(body)
       }
-      Decl::Def(i, e) => self.i(i).s(" = ").e(e).ln(),
+      DeclF::Def(i, e) => self.i(i).s(" = ").e(e).ln(),
     }
   }
 
-  fn ds(&mut self, ds: &Vec<Decl>) -> &mut Self {
+  fn ds<T>(&mut self, ds: &Vec<Decl<T>>) -> &mut Self {
     for d in ds {
       self.d(d);
     }
     self
   }
 
-  fn e(&mut self, e: &Expr) -> &mut Self {
+  fn e<T>(&mut self, e: &Expr<T>) -> &mut Self {
     match &e.0 {
       ExprF::Hole => self.s("_"),
       ExprF::Bind(i) => self.i(i),
       ExprF::Ann(v, t) => self.e(v).s(" of ").e(t),
       ExprF::Uni => self.s("𝒰"),
+      ExprF::Wrap(e) => self.e(e),
       ExprF::Ext(l, m, i) => {
         self.s(&format!("[{}]", l));
         if m.is_empty() {
@@ -186,7 +187,7 @@ impl<'a> Pretty<'a> {
   }
 }
 
-pub fn pretty(program: &Program) -> String {
+pub fn pretty<T>(program: &Program<T>) -> String {
   let mut p = Pretty::new(&program.symbols);
   p.ds(&program.decls);
   p.str.join("\n")

@@ -191,7 +191,7 @@ impl Builder {
     }
   }
 
-  fn e(&mut self, e: &Expr) -> CoreExpr {
+  fn e<T>(&mut self, e: &Expr<T>) -> CoreExpr {
     use ExprF::*;
     core::Expr(match &e.0 {
       Hole => core::ExprF::Hole,
@@ -210,6 +210,7 @@ impl Builder {
       },
       Ann(e, ty) => core::ExprF::Ann(Rc::new(self.e(&e)), Rc::new(self.e(&ty))),
       Uni => core::ExprF::Uni,
+      Wrap(e) => return self.e(&e),
 
       Ext(_, mod_name, i) => {
         if mod_name.is_empty() {
@@ -410,9 +411,9 @@ impl Builder {
     })
   }
 
-  fn d(&mut self, d: &Decl, decls: &mut Decls) {
-    match d {
-      Decl::Mod(name, params, body) => {
+  fn d<T>(&mut self, d: &Decl<T>, decls: &mut Decls) {
+    match &d.0 {
+      DeclF::Mod(name, params, body) => {
         self.envs.push(Env::new());
         let mut ps = Vec::new();
         for (vis, i, ty) in params {
@@ -420,8 +421,8 @@ impl Builder {
           let i = self.add_local_bind(i);
           ps.push((vis.clone(), i, Rc::new(ty)));
         }
-        let e = match body {
-          ModBody::Decls(ds) => {
+        let e = match &body.0 {
+          ModBodyF::Decls(ds) => {
             self.envs.push(Env::new());
             let decls = self.ds(ds);
             let env = self.envs.pop().unwrap();
@@ -443,11 +444,11 @@ impl Builder {
             );
             core::ExprF::Let(decls.defs, wrap(obj))
           }
-          ModBody::Import(_) => {
+          ModBodyF::Import(_) => {
             self.errors.push("Import not yet supported".to_string());
             core::ExprF::Hole
           }
-          ModBody::App(_, mod_name, args) => match self.lookup_mod(&mod_name[0]) {
+          ModBodyF::App(_, mod_name, args) => match self.lookup_mod(&mod_name[0]) {
             Some(bind) => {
               let mut e = core::ExprF::Bind(bind);
               for m in mod_name.iter().skip(1) {
@@ -496,7 +497,7 @@ impl Builder {
           .lookup
           .insert(name.clone(), Entity::Mod(bind));
       }
-      Decl::Def(i, e) => {
+      DeclF::Def(i, e) => {
         let e = self.e(&e);
         let bind = self.add_bind_ty(&i, BindType::Def);
         let synth = core::Expr(core::ExprF::Def(Rc::new(e)));
@@ -511,7 +512,7 @@ impl Builder {
     };
   }
 
-  fn ds(&mut self, ds: &Vec<Decl>) -> Decls {
+  fn ds<T>(&mut self, ds: &Vec<Decl<T>>) -> Decls {
     let mut decls = Decls { defs: Vec::new() };
     for d in ds {
       self.d(d, &mut decls);
@@ -520,7 +521,7 @@ impl Builder {
   }
 }
 
-pub fn convert(p: Program) -> (core::Program<PTag, STag>, Vec<String>) {
+pub fn convert<T>(p: Program<T>) -> (core::Program<PTag, STag>, Vec<String>) {
   let mut b = Builder::new(p.symbols);
   let defs = b.ds(&p.decls).defs;
   (

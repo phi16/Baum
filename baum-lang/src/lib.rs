@@ -8,9 +8,9 @@ pub mod tokenize;
 pub mod types;
 
 use baum_front::types::tree as front;
-use types::token::ErrorPos;
+use types::token::{ErrorPos, TokenRange};
 
-pub fn run(code: &str) -> Result<front::Program, Vec<(ErrorPos, String)>> {
+pub fn run(code: &str) -> Result<front::Program<TokenRange>, Vec<(ErrorPos, String)>> {
   let (tokens, _, errors) = tokenize::tokenize(code);
   if !errors.is_empty() {
     return Err(errors);

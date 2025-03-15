@@ -537,6 +537,7 @@ impl<'a> DeclParser<'a> {
         let (mb, env) = match self.tracker.peek_str() {
           None => return self.err_here("expected module body"),
           Some("{") => {
+            let loc = self.tracker.get_location();
             // declarations
             self.tracker.next();
             let env = self.env.clone();
@@ -544,17 +545,21 @@ impl<'a> DeclParser<'a> {
             let ds = self.decls(&mut mod_env);
             self.env = env;
             self.expect_str("}")?;
-            (ModBody::Decls(ds), Rc::new(mod_env))
+            (
+              ModBody(ModBodyF::Decls(ds), self.tracker.range_from(loc)),
+              Rc::new(mod_env),
+            )
           }
           Some(_) => {
             // module reference
             let pos = self.tracker.epos();
             let mr = self.modref(mod_indent)?;
+            let range = mr.1.clone();
             let e = match self.resolve_modref(&mr) {
               Some(e) => e.clone(),
               None => return Err((pos, "module not found".to_string())),
             };
-            (ModBody::Ref(mr), e)
+            (ModBody(ModBodyF::Ref(mr), range), e)
           }
         };
         let name = md.name.clone();

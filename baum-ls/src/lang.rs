@@ -182,7 +182,7 @@ impl Context {
             self.e(e);
           }
         }
-        match &body {
+        match &body.0 {
           ModBodyF::Decls(ds) => {
             self.ds(ds);
           }
