@@ -83,7 +83,7 @@ where
 
   fn unify(&self, t1: &Type<P, S>, t2: &Type<P, S>) -> Result<Type<P, S>> {
     // prioritize t2
-    eprintln!("unify: {} =?= {}", self.ppv(t1), self.ppv(t2));
+    eprintln!("unify: {} ≟ {}", self.ppv(t1), self.ppv(t2));
     match (&t1.0, &t2.0) {
       (ValF::Hole, _) => Ok(t2.clone()),
       (_, ValF::Hole) => Ok(t1.clone()),
