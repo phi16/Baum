@@ -1,3 +1,4 @@
+use crate::pretty::{pretty_expr, pretty_val};
 use crate::types::common::*;
 use crate::types::tree::*;
 use crate::types::val::*;
@@ -28,6 +29,7 @@ struct Checker<P, S> {
   bind_symbols: HashMap<BindId, String>,
   name_symbols: HashMap<NameId, String>,
   envs: Vec<Env<P, S>>,
+  next_bind_id: u32,
   errors: Vec<String>,
 }
 
@@ -37,10 +39,12 @@ where
   S: Tag,
 {
   fn new(bind_symbols: HashMap<BindId, String>, name_symbols: HashMap<NameId, String>) -> Self {
+    let next_bind_id = bind_symbols.keys().map(|i| i.0).max().map_or(0, |i| i + 1);
     Checker {
       bind_symbols,
       name_symbols,
       envs: vec![Env::new()],
+      next_bind_id,
       errors: Vec::new(),
     }
   }
@@ -53,6 +57,13 @@ where
     self.envs.last_mut().unwrap()
   }
 
+  fn fresh_id(&mut self) -> BindId {
+    let id = BindId(self.next_bind_id);
+    self.next_bind_id += 1;
+    self.bind_symbols.insert(id, format!("%%{}", id.0));
+    id
+  }
+
   fn lookup(&self, bind: BindId) -> Option<&Type<P, S>> {
     for env in self.envs.iter().rev() {
       if let Some(ty) = env.lookup.get(&bind) {
@@ -62,9 +73,17 @@ where
     None
   }
 
+  fn ppv(&self, t: &Type<P, S>) -> String {
+    pretty_val(&self.bind_symbols, &self.name_symbols, t)
+  }
+
+  fn ppe(&self, e: &Expr<P, S>) -> String {
+    pretty_expr(&self.bind_symbols, &self.name_symbols, e)
+  }
+
   fn unify(&self, t1: &Type<P, S>, t2: &Type<P, S>) -> Result<Type<P, S>> {
     // prioritize t2
-    eprintln!("unify: {:?} =?= {:?}", t1, t2);
+    eprintln!("unify: {} =?= {}", self.ppv(t1), self.ppv(t2));
     match (&t1.0, &t2.0) {
       (ValF::Hole, _) => Ok(t2.clone()),
       (_, ValF::Hole) => Ok(t1.clone()),
@@ -172,7 +191,7 @@ where
   }
 
   fn subst(&mut self, i: BindId, e: &Term<P, S>, ty: &Type<P, S>) -> Type<P, S> {
-    eprintln!("subst: {:?} with {:?} in {:?}", i, e, ty);
+    eprintln!("subst: {:?} with {} in {}", i, self.ppv(e), self.ppv(ty));
     let v = match &ty.0 {
       ValF::Hole => ValF::Hole,
       ValF::Bind(j) => {
@@ -385,7 +404,7 @@ where
         self.envs.push(Env::new());
         for (name, e) in props {
           let ty = self.synth(e)?;
-          let i = unimplemented!();
+          let i = self.fresh_id();
           tys.push((name.clone(), i, Rc::new(ty.clone())));
         }
         self.envs.pop();
@@ -415,7 +434,6 @@ where
           _ => Err("synth: prop".to_string()),
         }
       }
-      _ => Err(format!("synth: unimplemented ({:?})", e.0)),
     }
   }
 
@@ -423,7 +441,10 @@ where
     let mut def_terms = Vec::new();
     for (id, expr) in defs {
       let ty = self.synth(&*expr);
-      eprintln!("{}: {:?}", self.bind_symbols[&id], ty);
+      match &ty {
+        Ok(ty) => eprintln!("{}: Ok({})", self.bind_symbols[&id], self.ppv(ty)),
+        Err(e) => eprintln!("{}: Err({})", self.bind_symbols[&id], e),
+      }
       let (tm, ty) = match ty {
         Ok(ty) => match self.eval(&expr) {
           Ok(tm) => (tm, ty),
@@ -451,5 +472,9 @@ where
 {
   let mut c = Checker::new(p.bind_symbols, p.name_symbols);
   c.defs(&p.defs);
-  Ok(())
+  if c.errors.is_empty() {
+    Ok(())
+  } else {
+    Err(c.errors)
+  }
 }
