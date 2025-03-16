@@ -1,29 +1,6 @@
+pub use crate::types::common::*;
 use std::collections::HashMap;
 use std::rc::Rc;
-
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
-pub struct BindId(pub u32);
-
-impl std::fmt::Debug for BindId {
-  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    write!(f, "%{}", self.0)
-  }
-}
-
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
-pub struct NameId(pub u32);
-
-impl std::fmt::Debug for NameId {
-  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    write!(f, "#{}", self.0)
-  }
-}
-
-#[derive(Debug, Clone)]
-pub enum Vis {
-  Explicit,
-  Implicit,
-}
 
 #[derive(Debug, Clone)]
 pub enum ExprF<PTag, STag, E> {

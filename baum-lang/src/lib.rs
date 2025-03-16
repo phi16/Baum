@@ -15,24 +15,21 @@ pub fn run(code: &str) -> Result<front::Program<TokenRange>, Vec<(ErrorPos, Stri
   if !errors.is_empty() {
     return Err(errors);
   }
+  eprintln!("--------");
   let (tree, errors) = parse::parse(tokens);
   if !errors.is_empty() {
     return Err(errors);
   }
-  eprintln!("--------");
   eprintln!("{}", pretty::pretty(&tree));
   eprintln!("--------");
   let (front, errors) = convert::convert(&tree);
   if !errors.is_empty() {
     return Err(errors);
   }
-  eprintln!("--------");
   eprintln!("{}", baum_front::pretty::pretty(&front));
   eprintln!("--------");
   let (core, errors) = baum_front::convert::convert(front.clone());
-  eprintln!("--------");
   eprintln!("{}", baum_core::pretty::pretty(&core));
-  eprintln!("--------");
   if !errors.is_empty() {
     return Err(
       errors
@@ -44,13 +41,31 @@ pub fn run(code: &str) -> Result<front::Program<TokenRange>, Vec<(ErrorPos, Stri
         .collect(),
     );
   }
+  eprintln!("--------");
+  let errors = baum_core::check::check(core.clone());
+  match errors {
+    Ok(_) => {
+      eprintln!("[Passed]");
+      eprintln!("--------");
+    }
+    Err(es) => {
+      return Err(
+        es.iter()
+          .map(|e| {
+            let pos = ErrorPos::EoF;
+            (pos, e.clone())
+          })
+          .collect(),
+      );
+    }
+  }
   Ok(front)
 }
 
 #[cfg(test)]
 #[test]
 fn test_dev() {
-  let code = include_str!("../examples/test15.baum");
+  let code = include_str!("../examples/try.baum");
   match run(code) {
     Ok(_) => {}
     Err(es) => {

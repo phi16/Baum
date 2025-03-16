@@ -3,16 +3,19 @@ use baum_core::types::tree as core;
 use std::collections::HashMap;
 use std::rc::Rc;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PTag {
   pub is_mod_param: bool,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct STag {
   pub is_tuple: bool,
   pub is_mod: bool,
 }
+
+impl baum_core::check::Tag for PTag {}
+impl baum_core::check::Tag for STag {}
 
 impl From<Vis> for core::Vis {
   fn from(v: Vis) -> Self {

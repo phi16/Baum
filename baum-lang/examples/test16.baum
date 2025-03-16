@@ -1,0 +1,15 @@
+mul = _
+bang = _
+module A = {
+  syntax 2.2< a * b = mul a b
+  syntax 2.4> ! a = bang a
+}
+a = _
+b = _
+-- z = A.! a A.* b
+syntax | i | x = λ(i) x
+f x y = 1
+k = (λ(a) a) a
+
+syntax [x] = {j = 1, x = 1}
+a = [j]
