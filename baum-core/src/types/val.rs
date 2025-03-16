@@ -7,13 +7,13 @@ pub enum ValF<PTag, STag, V> {
   Bind(BindId),
   Uni,
 
-  Pi(PTag, Vis, Option<BindId>, V, V),
+  Pi(PTag, Vis, BindId, V, V),
   Lam(PTag, Vis, BindId, V, V),
   App(PTag, Vis, BindId, V),
 
-  Sigma(STag, Vec<(NameId, Option<BindId>, V)>),
+  Sigma(STag, Vec<(NameId, BindId, V)>),
   Obj(STag, Vec<(NameId, V)>),
-  Prop(STag, NameId, BindId),
+  Prop(STag, BindId, NameId),
 }
 
 #[derive(Debug, Clone)]

@@ -75,10 +75,7 @@ impl<'a> Pretty<'a> {
       ExprF::Uni => self.s("𝒰"),
       ExprF::Let(defs, e) => self.s("let").open().defs(defs).close().s("in ").e(e),
 
-      ExprF::Pi(_, Vis::Explicit, i, t, e) => match i {
-        Some(i) => self.s("Π(").i(i).s(": ").e(t).s(") ").e(e),
-        None => self.s("Π(").e(t).s(") ").e(e),
-      },
+      ExprF::Pi(_, Vis::Explicit, i, t, e) => self.s("Π(").i(i).s(": ").e(t).s(") ").e(e),
       ExprF::Lam(_, Vis::Explicit, i, t, e) => self.s("λ(").i(i).s(": ").e(t).s(") ").e(e),
       ExprF::App(_, Vis::Explicit, e1, e2) => match e2.0 {
         ExprF::Hole | ExprF::Bind(_) | ExprF::Uni | ExprF::Sigma(_, _) | ExprF::Obj(_, _) => {
@@ -87,21 +84,14 @@ impl<'a> Pretty<'a> {
         _ => self.e(e1).s(" (").e(e2).s(")"),
       },
 
-      ExprF::Pi(_, Vis::Implicit, i, t, e) => match i {
-        Some(i) => self.s("Π{").i(i).s(": ").e(t).s("} ").e(e),
-        None => self.s("Π{").e(t).s("} ").e(e),
-      },
+      ExprF::Pi(_, Vis::Implicit, i, t, e) => self.s("Π{").i(i).s(": ").e(t).s("} ").e(e),
       ExprF::Lam(_, Vis::Implicit, i, t, e) => self.s("λ{").i(i).s(": ").e(t).s("} ").e(e),
       ExprF::App(_, Vis::Implicit, e1, e2) => self.e(e1).s(" {").e(e2).s("}"),
 
       ExprF::Sigma(_, es) => {
         self.s("Σ{");
         for (name, bind, t) in es {
-          if let Some(bind) = bind {
-            self.name(name).s("~").i(bind).s(": ").e(t).s(", ");
-          } else {
-            self.name(name).s(": ").e(t).s(", ");
-          }
+          self.name(name).s("~").i(bind).s(": ").e(t).s(", ");
         }
         self.s("}")
       }

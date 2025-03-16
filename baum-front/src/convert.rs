@@ -129,6 +129,27 @@ impl Builder {
     self.add_bind_ty(i, BindType::Bind)
   }
 
+  fn fresh_bind(&mut self) -> core::BindId {
+    let id = core::BindId(self.next_bind_id);
+    self.next_bind_id += 1;
+    self.bind_symbols.insert(
+      id,
+      Bind {
+        name: None,
+        ty: BindType::Bind,
+      },
+    );
+    id
+  }
+
+  fn add_local_bind_maybe(&mut self, i: &Option<Id>) -> core::BindId {
+    if let Some(i) = i {
+      self.add_local_bind(i)
+    } else {
+      self.fresh_bind()
+    }
+  }
+
   fn lookup_bind(&mut self, i: &Id) -> Option<core::BindId> {
     for env in self.envs.iter().rev() {
       if let Some(e) = env.lookup.get(i) {
@@ -276,7 +297,7 @@ impl Builder {
         };
         self.envs.push(Env::new());
         let ty = Rc::new(self.e(&ty));
-        let i = i.map(|i| self.add_local_bind(&i));
+        let i = self.add_local_bind_maybe(i);
         let e = Rc::new(self.e(&e));
         self.envs.pop();
         core::ExprF::Pi(tag, core::Vis::Explicit, i, ty, e)
@@ -307,7 +328,7 @@ impl Builder {
         };
         self.envs.push(Env::new());
         let ty = Rc::new(self.e(&ty));
-        let i = i.map(|i| self.add_local_bind(&i));
+        let i = self.add_local_bind_maybe(i);
         let e = Rc::new(self.e(&e));
         self.envs.pop();
         core::ExprF::Pi(tag, core::Vis::Implicit, i, ty, e)
@@ -342,7 +363,7 @@ impl Builder {
         for (ix, (bind, e)) in elems.iter().enumerate() {
           let ix = ix as u8;
           let name = self.name_from_index(&ix);
-          let bind = bind.map(|i| self.add_local_bind(&i));
+          let bind = self.add_local_bind_maybe(bind);
           let e = Rc::new(self.e(&e));
           es.push((name, bind, e));
         }
@@ -384,7 +405,7 @@ impl Builder {
           let name = self.name_from_id(i);
           let bind = self.add_local_bind(i);
           let e = Rc::new(self.e(&e));
-          es.push((name, Some(bind), e));
+          es.push((name, bind, e));
         }
         self.envs.pop();
         core::ExprF::Sigma(tag, es)
