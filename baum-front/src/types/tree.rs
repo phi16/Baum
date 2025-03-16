@@ -36,11 +36,11 @@ pub enum ExprF<T, I, E> {
 
   TupleTy(Vec<(Option<I>, E)>),
   TupleCon(Vec<E>),
-  Proj(u8, E),
+  Proj(E, u8),
 
   ObjTy(Vec<(I, E)>),
   ObjCon(Vec<(I, E)>),
-  Prop(I, E),
+  Prop(E, I),
 }
 
 pub type ExprInternal<T> = ExprF<T, Id, Rc<Expr<T>>>;

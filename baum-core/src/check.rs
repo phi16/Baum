@@ -226,7 +226,7 @@ where
         self.envs.pop();
         Ok(Val(ValF::Sigma(tag.clone(), tys)))
       }
-      Prop(tag, name, e) => {
+      Prop(tag, e, name) => {
         let ty = self.synth(e)?;
         match ty.0 {
           ValF::Sigma(etag, props) => {

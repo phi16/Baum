@@ -112,7 +112,7 @@ impl<'a> Pretty<'a> {
         }
         self.s("}")
       }
-      ExprF::Prop(_, name, e) => self.e(e).s(".").name(name),
+      ExprF::Prop(_, e, name) => self.e(e).s(".").name(name),
     }
   }
 }

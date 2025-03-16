@@ -234,8 +234,8 @@ impl Builder {
                     is_tuple: false,
                     is_mod: true,
                   },
-                  self.name_from_def(m),
                   wrap(e),
+                  self.name_from_def(m),
                 );
               }
               core::ExprF::Prop(
@@ -243,8 +243,8 @@ impl Builder {
                   is_tuple: false,
                   is_mod: true,
                 },
-                self.name_from_def(i),
                 wrap(e),
+                self.name_from_def(i),
               )
             }
             None => {
@@ -363,14 +363,14 @@ impl Builder {
         }
         core::ExprF::Obj(tag, es)
       }
-      Proj(i, e) => {
+      Proj(e, i) => {
         let tag = STag {
           is_tuple: true,
           is_mod: false,
         };
         let i = self.name_from_index(i);
         let e = Rc::new(self.e(&e));
-        core::ExprF::Prop(tag, i, e)
+        core::ExprF::Prop(tag, e, i)
       }
 
       ObjTy(elems) => {
@@ -402,14 +402,14 @@ impl Builder {
         }
         core::ExprF::Obj(tag, es)
       }
-      Prop(i, e) => {
+      Prop(e, i) => {
         let tag = STag {
           is_tuple: false,
           is_mod: false,
         };
         let name = self.name_from_id(i);
         let e = Rc::new(self.e(&e));
-        core::ExprF::Prop(tag, name, e)
+        core::ExprF::Prop(tag, e, name)
       }
     })
   }
@@ -460,8 +460,8 @@ impl Builder {
                     is_tuple: false,
                     is_mod: true,
                   },
-                  self.name_from_def(m),
                   wrap(e),
+                  self.name_from_def(m),
                 );
               }
               for (vis, arg) in args {

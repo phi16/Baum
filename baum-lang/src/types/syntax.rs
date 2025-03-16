@@ -273,7 +273,7 @@ fn dependency_from(e: &SyntaxExpr) -> HashMap<ElemId, Vec<ElemId>> {
           rec(&e, env, map);
         }
       }
-      Proj(_, e) => {
+      Proj(e, _) => {
         rec(&e, env, map);
       }
 
@@ -289,7 +289,7 @@ fn dependency_from(e: &SyntaxExpr) -> HashMap<ElemId, Vec<ElemId>> {
           rec(&e, env, map);
         }
       }
-      Prop(_, e) => {
+      Prop(e, _) => {
         rec(&e, env, map);
       }
     }

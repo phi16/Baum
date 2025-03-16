@@ -166,7 +166,7 @@ impl<'a> Pretty<'a> {
         }
         self.s(")")
       }
-      ExprF::Proj(i, e) => self.s("π(").s(&format!("{}", i)).s(") ").e(e),
+      ExprF::Proj(e, i) => self.s("π(").s(&format!("{}", i)).s(") ").e(e),
 
       ExprF::ObjTy(es) => {
         self.s("Σ{");
@@ -182,7 +182,7 @@ impl<'a> Pretty<'a> {
         }
         self.s("}")
       }
-      ExprF::Prop(i, e) => self.s("π{").i(i).s("} ").e(e),
+      ExprF::Prop(e, i) => self.s("π{").i(i).s("} ").e(e),
     }
   }
 }

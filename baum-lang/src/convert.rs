@@ -413,7 +413,7 @@ impl<'a> Builder<'a> {
                 .collect(),
             ),
             TupleCon(es) => TupleCon(es.into_iter().map(|e| Rc::new(replace(&e, env))).collect()),
-            Proj(i, e) => Proj(*i, Rc::new(replace(&e, env))),
+            Proj(e, i) => Proj(Rc::new(replace(&e, env)), *i),
 
             ObjTy(es) => ObjTy(
               es.into_iter()
@@ -425,7 +425,7 @@ impl<'a> Builder<'a> {
                 .map(|(i, e)| (replace_id(i, env), Rc::new(replace(&e, env))))
                 .collect(),
             ),
-            Prop(i, e) => Prop(replace_id(i, env), Rc::new(replace(&e, env))),
+            Prop(e, i) => Prop(Rc::new(replace(&e, env)), replace_id(i, env)),
           };
           front::Expr(ei, e.1.clone())
         }
@@ -785,7 +785,7 @@ impl<'a> Builder<'a> {
                 .collect(),
             ),
             TupleCon(es) => TupleCon(es.into_iter().map(|e| Rc::new(replace(&e, env))).collect()),
-            Proj(i, e) => Proj(*i, Rc::new(replace(&e, env))),
+            Proj(e, i) => Proj(Rc::new(replace(&e, env)), *i),
 
             ObjTy(es) => ObjTy(
               es.into_iter()
@@ -797,7 +797,7 @@ impl<'a> Builder<'a> {
                 .map(|(i, e)| (replace_id(i, env), Rc::new(replace(&e, env))))
                 .collect(),
             ),
-            Prop(i, e) => Prop(replace_id(i, env), Rc::new(replace(&e, env))),
+            Prop(e, i) => Prop(Rc::new(replace(&e, env)), replace_id(i, env)),
           };
           SyntaxExpr(se, e.1.clone())
         }

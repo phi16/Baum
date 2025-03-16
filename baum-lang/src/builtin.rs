@@ -659,7 +659,7 @@ pub fn builtin_syntax_handlers<'a>() -> HashMap<SyntaxId, SyntaxHandler<'a>> {
         (s, e)
       };
       let n = s.parse().map_err(|e: ParseIntError| e.to_string())?;
-      Ok(front::ExprF::Proj(n, Rc::new(e)))
+      Ok(front::ExprF::Proj(Rc::new(e), n))
     }),
   );
 
@@ -778,7 +778,7 @@ pub fn builtin_syntax_handlers<'a>() -> HashMap<SyntaxId, SyntaxHandler<'a>> {
         let i = p.take_id().unwrap();
         (i, e)
       };
-      Ok(front::ExprF::Prop(i, Rc::new(e)))
+      Ok(front::ExprF::Prop(Rc::new(e), i))
     }),
   );
 

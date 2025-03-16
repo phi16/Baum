@@ -18,7 +18,7 @@ pub enum ExprF<PTag, STag, E> {
 
   Sigma(STag, Vec<(NameId, Option<BindId>, E)>),
   Obj(STag, Vec<(NameId, E)>),
-  Prop(STag, NameId, E),
+  Prop(STag, E, NameId),
 }
 
 #[derive(Debug, Clone)]
