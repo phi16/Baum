@@ -11,21 +11,28 @@ pub trait Tag: Clone + std::fmt::Debug + PartialEq + Eq {}
 
 struct Env<P, S> {
   lookup: HashMap<BindId, Type<P, S>>,
+  define: HashMap<DefId, Type<P, S>>,
 }
 
 impl<P, S> Env<P, S> {
   fn new() -> Self {
     Env {
       lookup: HashMap::new(),
+      define: HashMap::new(),
     }
   }
 
   fn add(&mut self, bind: BindId, ty: Type<P, S>) {
     self.lookup.insert(bind, ty);
   }
+
+  fn def(&mut self, def: DefId, ty: Type<P, S>) {
+    self.define.insert(def, ty);
+  }
 }
 
 struct Checker<P, S> {
+  def_symbols: HashMap<DefId, String>,
   bind_symbols: HashMap<BindId, String>,
   name_symbols: HashMap<NameId, String>,
   envs: Vec<Env<P, S>>,
@@ -38,9 +45,14 @@ where
   P: Tag,
   S: Tag,
 {
-  fn new(bind_symbols: HashMap<BindId, String>, name_symbols: HashMap<NameId, String>) -> Self {
+  fn new(
+    def_symbols: HashMap<DefId, String>,
+    bind_symbols: HashMap<BindId, String>,
+    name_symbols: HashMap<NameId, String>,
+  ) -> Self {
     let next_bind_id = bind_symbols.keys().map(|i| i.0).max().map_or(0, |i| i + 1);
     Checker {
+      def_symbols,
       bind_symbols,
       name_symbols,
       envs: vec![Env::new()],
@@ -64,7 +76,7 @@ where
     id
   }
 
-  fn lookup(&self, bind: BindId) -> Option<&Type<P, S>> {
+  fn lookup_bind(&self, bind: BindId) -> Option<&Type<P, S>> {
     for env in self.envs.iter().rev() {
       if let Some(ty) = env.lookup.get(&bind) {
         return Some(ty);
@@ -73,12 +85,21 @@ where
     None
   }
 
+  fn lookup_def(&self, def: DefId) -> Option<&Type<P, S>> {
+    for env in self.envs.iter().rev() {
+      if let Some(ty) = env.define.get(&def) {
+        return Some(ty);
+      }
+    }
+    None
+  }
+
   fn ppv(&self, t: &Type<P, S>) -> String {
-    pretty_val(&self.bind_symbols, &self.name_symbols, t)
+    pretty_val(&self.def_symbols, &self.bind_symbols, &self.name_symbols, t)
   }
 
   fn ppe(&self, e: &Expr<P, S>) -> String {
-    pretty_expr(&self.bind_symbols, &self.name_symbols, e)
+    pretty_expr(&self.def_symbols, &self.bind_symbols, &self.name_symbols, e)
   }
 
   fn unify(&self, t1: &Type<P, S>, t2: &Type<P, S>) -> Result<Type<P, S>> {
@@ -105,8 +126,9 @@ where
     let v = match &e.0 {
       Hole => ValF::Hole,
       Bind(i) => ValF::Bind(*i),
+      Def(i) => ValF::Def(*i),
       Ann(t, _) => self.eval(t)?.0,
-      Def(e) => self.eval(e)?.0,
+      Synth(e) => self.eval(e)?.0,
       Uni => ValF::Uni,
       Let(defs, body) => {
         self.envs.push(Env::new());
@@ -186,7 +208,12 @@ where
     Ok(Val(v))
   }
 
-  fn let_binding(&mut self, defs: Vec<(BindId, Rc<Term<P, S>>)>, e: Term<P, S>) -> Term<P, S> {
+  fn let_binding(&mut self, defs: Vec<(DefId, Rc<Term<P, S>>)>, e: Term<P, S>) -> Term<P, S> {
+    eprintln!(
+      "let_binding: escaping {:?} from {}",
+      defs.iter().map(|(k, _)| *k).collect::<Vec<_>>(),
+      self.ppv(&e)
+    );
     unimplemented!()
   }
 
@@ -201,6 +228,7 @@ where
           ValF::Bind(*j)
         }
       }
+      ValF::Def(i) => ValF::Def(*i),
       ValF::Uni => ValF::Uni,
 
       ValF::Pi(tag, vis, ti, ty, body) => {
@@ -311,9 +339,31 @@ where
         }
         _ => Err("check: lam".to_string()),
       },
-      /* Obj(tag, props) => {
-        unimplemented!()
-      } */
+      Obj(tag, props) => match &check_ty.0 {
+        ValF::Sigma(ttag, tprops) => {
+          if tag != ttag {
+            return Err("check: obj 1".to_string());
+          }
+          let mut ps = Vec::new();
+          self.envs.push(Env::new());
+          eprintln!("match {} ~ {}", self.ppe(e), self.ppv(check_ty));
+          for ((n, e), (tn, ti, ty)) in props.iter().zip(tprops.iter()) {
+            if n != tn {
+              eprintln!("{:?} != {:?}", n, tn);
+              return Err("check: obj 2".to_string());
+            }
+            let ty = self.check(&e, &ty)?;
+            self.here().add(*ti, ty.clone());
+            ps.push((n.clone(), *ti, Rc::new(ty)));
+          }
+          if props.len() != tprops.len() {
+            return Err("check: obj 3".to_string());
+          }
+          self.envs.pop();
+          Ok(Val(ValF::Sigma(tag.clone(), ps)))
+        }
+        _ => return Err("check: obj 4".to_string()),
+      },
       _ => {
         let ty = self.synth(e)?;
         self.unify(&ty, check_ty)
@@ -325,9 +375,13 @@ where
     use ExprF::*;
     match &e.0 {
       Hole => Err("synth: hole".to_string()),
-      Bind(id) => match self.lookup(*id) {
+      Bind(i) => match self.lookup_bind(*i) {
         Some(ty) => Ok(ty.clone()),
         None => Err("synth: bind".to_string()),
+      },
+      Def(i) => match self.lookup_def(*i) {
+        Some(ty) => Ok(ty.clone()),
+        None => Err("synth: def".to_string()),
       },
       Ann(t, ty) => {
         let tyty = self.synth(ty)?;
@@ -336,7 +390,7 @@ where
         self.check(t, &ty)?;
         Ok(ty)
       }
-      Def(e) => {
+      Synth(e) => {
         let ty = self.synth(e)?;
         // TODO: universe polymorphism
         Ok(ty)
@@ -437,28 +491,28 @@ where
     }
   }
 
-  fn defs(&mut self, defs: &Vec<(BindId, Rc<Expr<P, S>>)>) -> Vec<(BindId, Rc<Term<P, S>>)> {
+  fn defs(&mut self, defs: &Vec<(DefId, Rc<Expr<P, S>>)>) -> Vec<(DefId, Rc<Term<P, S>>)> {
     let mut def_terms = Vec::new();
     for (id, expr) in defs {
       let ty = self.synth(&*expr);
       match &ty {
-        Ok(ty) => eprintln!("{}: Ok({})", self.bind_symbols[&id], self.ppv(ty)),
-        Err(e) => eprintln!("{}: Err({})", self.bind_symbols[&id], e),
+        Ok(ty) => eprintln!("{}: Ok({})", self.def_symbols[&id], self.ppv(ty)),
+        Err(e) => eprintln!("{}: Err({})", self.def_symbols[&id], e),
       }
       let (tm, ty) = match ty {
         Ok(ty) => match self.eval(&expr) {
           Ok(tm) => (tm, ty),
           Err(e) => {
-            self.add_error(&format!("{}: {}", self.bind_symbols[&id], e));
+            self.add_error(&format!("{}: {}", self.def_symbols[&id], e));
             (Val(ValF::Hole), ty)
           }
         },
         Err(e) => {
-          self.add_error(&format!("{}: {}", self.bind_symbols[&id], e));
+          self.add_error(&format!("{}: {}", self.def_symbols[&id], e));
           (Val(ValF::Hole), Val(ValF::Hole))
         }
       };
-      self.here().add(*id, ty);
+      self.here().def(*id, ty);
       def_terms.push((*id, Rc::new(tm)));
     }
     def_terms
@@ -470,7 +524,7 @@ where
   P: Tag,
   S: Tag,
 {
-  let mut c = Checker::new(p.bind_symbols, p.name_symbols);
+  let mut c = Checker::new(p.def_symbols, p.bind_symbols, p.name_symbols);
   c.defs(&p.defs);
   if c.errors.is_empty() {
     Ok(())

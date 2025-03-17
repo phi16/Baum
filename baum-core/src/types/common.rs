@@ -1,4 +1,13 @@
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
+pub struct DefId(pub u32);
+
+impl std::fmt::Debug for DefId {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    write!(f, "@{}", self.0)
+  }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct BindId(pub u32);
 
 impl std::fmt::Debug for BindId {
@@ -21,7 +30,7 @@ pub struct LevelId(pub u32);
 
 impl std::fmt::Debug for LevelId {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    write!(f, "{}", self.0)
+    write!(f, "_{}", self.0)
   }
 }
 

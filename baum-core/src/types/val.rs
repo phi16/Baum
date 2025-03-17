@@ -5,6 +5,7 @@ use std::rc::Rc;
 pub enum ValF<PTag, STag, V> {
   Hole,
   Bind(BindId),
+  Def(DefId),
   Uni,
 
   Pi(PTag, Vis, BindId, V, V),

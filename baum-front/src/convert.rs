@@ -35,7 +35,8 @@ fn wrap(e: core::ExprF<PTag, STag, Rc<CoreExpr>>) -> Rc<CoreExpr> {
 #[derive(Debug, Clone)]
 enum Entity {
   Bind(core::BindId),
-  Mod(core::BindId),
+  Def(core::DefId),
+  Mod(core::DefId),
 }
 
 #[derive(Debug, Clone)]
@@ -52,15 +53,18 @@ impl Env {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-enum BindType {
-  Bind,
+enum DefType {
   Def,
   Mod,
 }
 
+struct Def {
+  name: Option<String>,
+  ty: DefType,
+}
+
 struct Bind {
   name: Option<String>,
-  ty: BindType,
 }
 
 enum Name {
@@ -70,17 +74,20 @@ enum Name {
 }
 
 struct Decls {
-  defs: Vec<(core::BindId, Rc<CoreExpr>)>,
+  defs: Vec<(core::DefId, Rc<CoreExpr>)>,
 }
 
 struct Builder {
   symbols: HashMap<Id, String>,
   envs: Vec<Env>,
   names_id: HashMap<Id, core::NameId>,
+  names_id_str: HashMap<String, core::NameId>,
   names_ix: HashMap<u8, core::NameId>,
   names_def: HashMap<u32, core::NameId>,
+  def_symbols: HashMap<core::DefId, Def>,
   bind_symbols: HashMap<core::BindId, Bind>,
   name_symbols: HashMap<core::NameId, Name>,
+  next_def_id: u32,
   next_bind_id: u32,
   next_name_id: u32,
   errors: Vec<String>,
@@ -92,17 +99,20 @@ impl Builder {
       symbols,
       envs: vec![Env::new()],
       names_id: HashMap::new(),
+      names_id_str: HashMap::new(),
       names_ix: HashMap::new(),
       names_def: HashMap::new(),
+      def_symbols: HashMap::new(),
       bind_symbols: HashMap::new(),
       name_symbols: HashMap::new(),
+      next_def_id: 0,
       next_bind_id: 0,
       next_name_id: 0,
       errors: Vec::new(),
     }
   }
 
-  fn add_bind(&mut self, i: &Id, b: Bind) -> core::BindId {
+  fn add_bind(&mut self, i: &Id) -> core::BindId {
     let id = core::BindId(self.next_bind_id);
     self.next_bind_id += 1;
     self
@@ -111,83 +121,70 @@ impl Builder {
       .unwrap()
       .lookup
       .insert(i.clone(), Entity::Bind(id));
+    let b = Bind {
+      name: self.symbols.get(i).cloned(),
+    };
     self.bind_symbols.insert(id, b);
     id
-  }
-
-  fn add_bind_ty(&mut self, i: &Id, ty: BindType) -> core::BindId {
-    self.add_bind(
-      i,
-      Bind {
-        name: self.symbols.get(i).cloned(),
-        ty,
-      },
-    )
-  }
-
-  fn add_local_bind(&mut self, i: &Id) -> core::BindId {
-    self.add_bind_ty(i, BindType::Bind)
   }
 
   fn fresh_bind(&mut self) -> core::BindId {
     let id = core::BindId(self.next_bind_id);
     self.next_bind_id += 1;
-    self.bind_symbols.insert(
-      id,
-      Bind {
-        name: None,
-        ty: BindType::Bind,
-      },
-    );
+    self.bind_symbols.insert(id, Bind { name: None });
     id
   }
 
-  fn add_local_bind_maybe(&mut self, i: &Option<Id>) -> core::BindId {
+  fn add_bind_maybe(&mut self, i: &Option<Id>) -> core::BindId {
     if let Some(i) = i {
-      self.add_local_bind(i)
+      self.add_bind(i)
     } else {
       self.fresh_bind()
     }
   }
 
-  fn lookup_bind(&mut self, i: &Id) -> Option<core::BindId> {
-    for env in self.envs.iter().rev() {
-      if let Some(e) = env.lookup.get(i) {
-        if let Entity::Bind(id) = e {
-          return Some(*id);
-        } else {
-          self.errors.push(format!("Expected bind, found {:?}", e));
-          return None;
-        }
-      }
-    }
-    None
+  fn add_def(&mut self, i: &Id, ty: DefType) -> core::DefId {
+    let id = core::DefId(self.next_def_id);
+    self.next_def_id += 1;
+    self
+      .envs
+      .last_mut()
+      .unwrap()
+      .lookup
+      .insert(i.clone(), Entity::Def(id));
+    let d = Def {
+      name: self.symbols.get(i).cloned(),
+      ty,
+    };
+    self.def_symbols.insert(id, d);
+    id
   }
 
-  fn lookup_mod(&mut self, m: &Id) -> Option<core::BindId> {
+  fn lookup(&mut self, i: &Id) -> Option<&Entity> {
     for env in self.envs.iter().rev() {
-      if let Some(e) = env.lookup.get(m) {
-        if let Entity::Mod(bind) = e {
-          return Some(*bind);
-        } else {
-          self.errors.push(format!("Expected mod, found {:?}", e));
-          return None;
-        }
+      if let Some(e) = env.lookup.get(i) {
+        return Some(e);
       }
     }
     None
   }
 
   fn name_from_id(&mut self, i: &Id) -> core::NameId {
-    if let Some(i) = self.names_id.get(i) {
-      return *i;
+    if let Some(id) = self.names_id.get(i) {
+      return *id;
     } else {
-      let id = core::NameId(self.next_name_id);
-      self.next_name_id += 1;
-      self.names_id.insert(i.clone(), id);
       let s = self.symbols.get(i).unwrap();
-      self.name_symbols.insert(id, Name::Str(s.clone()));
-      id
+      if let Some(id) = self.names_id_str.get(s) {
+        self.names_id.insert(i.clone(), *id);
+        return *id;
+      } else {
+        let id = core::NameId(self.next_name_id);
+        self.next_name_id += 1;
+        self.names_id.insert(i.clone(), id);
+        self.names_id_str.insert(s.clone(), id);
+        self.name_symbols.insert(id, Name::Str(s.clone()));
+        id
+      }
     }
   }
 
@@ -219,15 +216,15 @@ impl Builder {
     use ExprF::*;
     core::Expr(match &e.0 {
       Hole => core::ExprF::Hole,
-      Bind(i) => match self.lookup_bind(i) {
-        Some(i) => {
-          assert_eq!(
-            self.bind_symbols.get(&i).map(|b| &b.ty).unwrap(),
-            &BindType::Bind
-          );
-          core::ExprF::Bind(i)
+      Bind(i) => match self.lookup(i) {
+        Some(Entity::Bind(i)) => core::ExprF::Bind(*i),
+        Some(Entity::Def(i)) => core::ExprF::Def(*i),
+        Some(Entity::Mod(_)) => {
+          self.errors.push(format!("Expected bind/def, found module"));
+          core::ExprF::Hole
         }
         None => {
+          // TODO: definition?
           self.errors.push(format!("Unbound identifier: {:?}", i));
           core::ExprF::Hole
         }
@@ -238,17 +235,22 @@ impl Builder {
 
       Ext(_, mod_name, i) => {
         if mod_name.is_empty() {
-          match self.lookup_bind(i) {
-            Some(i) => core::ExprF::Bind(i),
+          match self.lookup(i) {
+            Some(Entity::Bind(i)) => core::ExprF::Bind(*i),
+            Some(Entity::Def(i)) => core::ExprF::Def(*i),
+            Some(Entity::Mod(_)) => {
+              self.errors.push(format!("Expected bind/def, found module"));
+              core::ExprF::Hole
+            }
             None => {
               self.errors.push(format!("Variable not found: {:?}", i));
               core::ExprF::Hole
             }
           }
         } else {
-          match self.lookup_mod(&mod_name[0]) {
-            Some(bind) => {
-              let mut e = core::ExprF::Bind(bind);
+          match self.lookup(&mod_name[0]) {
+            Some(Entity::Mod(def)) => {
+              let mut e = core::ExprF::Def(*def);
               for m in mod_name.iter().skip(1) {
                 e = core::ExprF::Prop(
                   STag {
@@ -268,7 +270,7 @@ impl Builder {
                 self.name_from_def(i),
               )
             }
-            None => {
+            _ => {
               self
                 .errors
                 .push(format!("Module not found: {:?}", mod_name[0]));
@@ -297,7 +299,7 @@ impl Builder {
         };
         self.envs.push(Env::new());
         let ty = Rc::new(self.e(&ty));
-        let i = self.add_local_bind_maybe(i);
+        let i = self.add_bind_maybe(i);
         let e = Rc::new(self.e(&e));
         self.envs.pop();
         core::ExprF::Pi(tag, core::Vis::Explicit, i, ty, e)
@@ -308,7 +310,7 @@ impl Builder {
         };
         self.envs.push(Env::new());
         let ty = Rc::new(self.e(&ty));
-        let i = self.add_local_bind(i);
+        let i = self.add_bind(i);
         let e = Rc::new(self.e(&e));
         self.envs.pop();
         core::ExprF::Lam(tag, core::Vis::Explicit, i, ty, e)
@@ -328,7 +330,7 @@ impl Builder {
         };
         self.envs.push(Env::new());
         let ty = Rc::new(self.e(&ty));
-        let i = self.add_local_bind_maybe(i);
+        let i = self.add_bind_maybe(i);
         let e = Rc::new(self.e(&e));
         self.envs.pop();
         core::ExprF::Pi(tag, core::Vis::Implicit, i, ty, e)
@@ -339,7 +341,7 @@ impl Builder {
         };
         self.envs.push(Env::new());
         let ty = Rc::new(self.e(&ty));
-        let i = self.add_local_bind(i);
+        let i = self.add_bind(i);
         let e = Rc::new(self.e(&e));
         self.envs.pop();
         core::ExprF::Lam(tag, core::Vis::Implicit, i, ty, e)
@@ -363,7 +365,7 @@ impl Builder {
         for (ix, (bind, e)) in elems.iter().enumerate() {
           let ix = ix as u8;
           let name = self.name_from_index(&ix);
-          let bind = self.add_local_bind_maybe(bind);
+          let bind = self.add_bind_maybe(bind);
           let e = Rc::new(self.e(&e));
           es.push((name, bind, e));
         }
@@ -403,7 +405,7 @@ impl Builder {
         let mut es = Vec::new();
         for (i, e) in elems {
           let name = self.name_from_id(i);
-          let bind = self.add_local_bind(i);
+          let bind = self.add_bind(i);
           let e = Rc::new(self.e(&e));
           es.push((name, bind, e));
         }
@@ -442,7 +444,7 @@ impl Builder {
         let mut ps = Vec::new();
         for (vis, i, ty) in params {
           let ty = self.e(ty);
-          let i = self.add_local_bind(i);
+          let i = self.add_bind(i);
           ps.push((vis.clone(), i, Rc::new(ty)));
         }
         let e = match &body.0 {
@@ -453,11 +455,12 @@ impl Builder {
             let mut defs = Vec::new();
             for (i, e) in env.lookup {
               let name = self.name_from_def(&i);
-              let bind = match e {
-                Entity::Bind(bind) => bind,
-                Entity::Mod(bind) => bind,
+              let e = match e {
+                Entity::Bind(i) => core::ExprF::Bind(i),
+                Entity::Def(i) => core::ExprF::Def(i),
+                Entity::Mod(i) => core::ExprF::Def(i),
               };
-              defs.push((name, wrap(core::ExprF::Bind(bind))));
+              defs.push((name, wrap(e)));
             }
             let obj = core::ExprF::Obj(
               STag {
@@ -472,9 +475,9 @@ impl Builder {
             self.errors.push("Import not yet supported".to_string());
             core::ExprF::Hole
           }
-          ModBodyF::App(_, mod_name, args) => match self.lookup_mod(&mod_name[0]) {
-            Some(bind) => {
-              let mut e = core::ExprF::Bind(bind);
+          ModBodyF::App(_, mod_name, args) => match self.lookup(&mod_name[0]) {
+            Some(Entity::Mod(def)) => {
+              let mut e = core::ExprF::Def(*def);
               for m in mod_name.iter().skip(1) {
                 e = core::ExprF::Prop(
                   STag {
@@ -496,7 +499,7 @@ impl Builder {
               }
               e
             }
-            None => {
+            _ => {
               self
                 .errors
                 .push(format!("Module not found: {:?}", mod_name[0]));
@@ -511,27 +514,27 @@ impl Builder {
           let tag = PTag { is_mod_param: true };
           e = core::ExprF::Lam(tag, core::Vis::from(vis.clone()), i, ty, wrap(e));
         }
-        let e = core::ExprF::Def(wrap(e));
-        let bind = self.add_bind_ty(name, BindType::Mod);
-        decls.defs.push((bind, wrap(e)));
+        let e = core::ExprF::Synth(wrap(e));
+        let def = self.add_def(name, DefType::Mod);
+        decls.defs.push((def, wrap(e)));
         self
           .envs
           .last_mut()
           .unwrap()
           .lookup
-          .insert(name.clone(), Entity::Mod(bind));
+          .insert(name.clone(), Entity::Mod(def));
       }
       DeclF::Def(i, e) => {
         let e = self.e(&e);
-        let bind = self.add_bind_ty(&i, BindType::Def);
-        let synth = core::Expr(core::ExprF::Def(Rc::new(e)));
-        decls.defs.push((bind, Rc::new(synth)));
+        let def = self.add_def(&i, DefType::Def);
+        let synth = core::Expr(core::ExprF::Synth(Rc::new(e)));
+        decls.defs.push((def, Rc::new(synth)));
         self
           .envs
           .last_mut()
           .unwrap()
           .lookup
-          .insert(i.clone(), Entity::Bind(bind));
+          .insert(i.clone(), Entity::Def(def));
       }
     };
   }
@@ -551,6 +554,19 @@ pub fn convert<T>(p: Program<T>) -> (core::Program<PTag, STag>, Vec<String>) {
   (
     core::Program {
       defs,
+      def_symbols: b
+        .def_symbols
+        .iter()
+        .map(|(k, v)| {
+          (
+            *k,
+            match v.name {
+              Some(ref s) => format!("{}{:?}", s, k),
+              None => format!("{:?}", k),
+            },
+          )
+        })
+        .collect(),
       bind_symbols: b
         .bind_symbols
         .iter()
@@ -578,8 +594,8 @@ pub fn convert<T>(p: Program<T>) -> (core::Program<PTag, STag>, Vec<String>) {
                   format!("@{}", i)
                 }
               }
-              Name::Str(s) => format!("#{}", s),
-              Name::Ix(i) => format!("#{}", i),
+              Name::Str(s) => format!("{}#{}", k.0, s),
+              Name::Ix(i) => format!("{}#{}", k.0, i),
             },
           )
         })

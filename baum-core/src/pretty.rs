@@ -5,6 +5,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 struct Pretty<'a> {
+  def_symbols: &'a HashMap<DefId, String>,
   bind_symbols: &'a HashMap<BindId, String>,
   name_symbols: &'a HashMap<NameId, String>,
   indent: u32,
@@ -14,10 +15,12 @@ struct Pretty<'a> {
 
 impl<'a> Pretty<'a> {
   fn new(
+    def_symbols: &'a HashMap<DefId, String>,
     bind_symbols: &'a HashMap<BindId, String>,
     name_symbols: &'a HashMap<NameId, String>,
   ) -> Self {
     Pretty {
+      def_symbols,
       bind_symbols,
       name_symbols,
       indent: 0,
@@ -28,6 +31,11 @@ impl<'a> Pretty<'a> {
 
   fn i(&mut self, bind: &BindId) -> &mut Self {
     self.line.push(self.bind_symbols.get(bind).unwrap().clone());
+    self
+  }
+
+  fn di(&mut self, def: &DefId) -> &mut Self {
+    self.line.push(self.def_symbols.get(def).unwrap().clone());
     self
   }
 
@@ -60,9 +68,9 @@ impl<'a> Pretty<'a> {
     self
   }
 
-  fn defs<P, S>(&mut self, ds: &Vec<(BindId, Rc<Expr<P, S>>)>) -> &mut Self {
+  fn defs<P, S>(&mut self, ds: &Vec<(DefId, Rc<Expr<P, S>>)>) -> &mut Self {
     for (i, e) in ds {
-      self.i(i).s(" = ").e(e).ln();
+      self.di(i).s(" = ").e(e).ln();
     }
     self
   }
@@ -71,8 +79,9 @@ impl<'a> Pretty<'a> {
     match &e.0 {
       ExprF::Hole => self.s("_"),
       ExprF::Bind(i) => self.i(i),
+      ExprF::Def(i) => self.di(i),
       ExprF::Ann(v, t) => self.e(v).s(" of ").e(t),
-      ExprF::Def(e) => self.s("def ").e(e),
+      ExprF::Synth(e) => self.s("def ").e(e),
       ExprF::Uni => self.s("𝒰"),
       ExprF::Let(defs, e) => self.s("let").open().defs(defs).close().s("in ").e(e),
 
@@ -111,6 +120,7 @@ impl<'a> Pretty<'a> {
     match &v.0 {
       ValF::Hole => self.s("_"),
       ValF::Bind(i) => self.i(i),
+      ValF::Def(i) => self.di(i),
       ValF::Uni => self.s("𝒰"),
 
       ValF::Pi(_, Vis::Explicit, i, t, e) => self.s("Π(").i(i).s(": ").v(t).s(") ").v(e),
@@ -146,27 +156,33 @@ impl<'a> Pretty<'a> {
 }
 
 pub fn pretty<P, S>(program: &Program<P, S>) -> String {
-  let mut p = Pretty::new(&program.bind_symbols, &program.name_symbols);
+  let mut p = Pretty::new(
+    &program.def_symbols,
+    &program.bind_symbols,
+    &program.name_symbols,
+  );
   p.defs(&program.defs);
   p.str.join("\n")
 }
 
 pub fn pretty_expr<P, S>(
+  def_symbols: &HashMap<DefId, String>,
   bind_symbols: &HashMap<BindId, String>,
   name_symbols: &HashMap<NameId, String>,
   e: &Expr<P, S>,
 ) -> String {
-  let mut p = Pretty::new(bind_symbols, name_symbols);
+  let mut p = Pretty::new(def_symbols, bind_symbols, name_symbols);
   p.e(e).ln();
   p.str.join("\n")
 }
 
 pub fn pretty_val<P, S>(
+  def_symbols: &HashMap<DefId, String>,
   bind_symbols: &HashMap<BindId, String>,
   name_symbols: &HashMap<NameId, String>,
   v: &Val<P, S>,
 ) -> String {
-  let mut p = Pretty::new(bind_symbols, name_symbols);
+  let mut p = Pretty::new(def_symbols, bind_symbols, name_symbols);
   p.v(v).ln();
   p.str.join("\n")
 }

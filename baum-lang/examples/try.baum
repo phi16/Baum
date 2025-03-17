@@ -6,3 +6,9 @@ y (a: U) (v: a): Σ{x: U, y: a, z: U} = {x = a, y = v, z = U}
 app (A B: U) (f: Π(A) B) (x: A) = f x
 app2 (A B: U) (f: Π(a: A) B) (x: A): B = f x
 g x = x
+
+module A = {
+  x = g
+  y = U
+  u: y = x
+}

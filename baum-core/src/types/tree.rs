@@ -6,10 +6,11 @@ use std::rc::Rc;
 pub enum ExprF<PTag, STag, E> {
   Hole,
   Bind(BindId),
+  Def(DefId),
   Ann(E, E),
-  Def(E),
+  Synth(E),
   Uni,
-  Let(Vec<(BindId, E)>, E),
+  Let(Vec<(DefId, E)>, E),
 
   Pi(PTag, Vis, BindId, E, E),
   Lam(PTag, Vis, BindId, E, E),
@@ -25,7 +26,8 @@ pub struct Expr<PTag, STag>(pub ExprF<PTag, STag, Rc<Expr<PTag, STag>>>);
 
 #[derive(Debug, Clone)]
 pub struct Program<PTag, STag> {
-  pub defs: Vec<(BindId, Rc<Expr<PTag, STag>>)>,
+  pub defs: Vec<(DefId, Rc<Expr<PTag, STag>>)>,
+  pub def_symbols: HashMap<DefId, String>,
   pub bind_symbols: HashMap<BindId, String>,
   pub name_symbols: HashMap<NameId, String>,
 }
