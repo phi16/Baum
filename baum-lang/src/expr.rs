@@ -379,7 +379,7 @@ impl<'a, 'b> ExprParser<'a, 'b> {
                 let id = Id::new(s);
                 self.tracker.next();
                 return Some(Expr(
-                  ExprF::Ext(mod_name, id),
+                  ExprF::Def(mod_name, id),
                   self.tracker.range_from(begin_pos),
                 ));
               }
@@ -395,7 +395,7 @@ impl<'a, 'b> ExprParser<'a, 'b> {
         // identifier
         let id = Id::new(s);
         self.tracker.next();
-        return Some(Expr(ExprF::Var(id), self.tracker.range_from(begin_pos)));
+        return Some(Expr(ExprF::Bind(id), self.tracker.range_from(begin_pos)));
       }
       _ => {
         // leading op
@@ -458,7 +458,7 @@ impl<'a, 'b> ExprParser<'a, 'b> {
             let mut elems = match skip[..] {
               [deriv::SkipToken::Expr] => vec![SynElem(SynElemF::Expr(Box::new(e)), range)],
               [deriv::SkipToken::Id] => match e {
-                Expr(ExprF::Var(id), _) => vec![SynElem(SynElemF::Ident(id), range)],
+                Expr(ExprF::Bind(id), _) => vec![SynElem(SynElemF::Ident(id), range)],
                 _ => {
                   self.add_error(range.clone().into(), "expected identifier for syntax");
                   vec![SynElem(SynElemF::Ident(Id::new("_")), range)]

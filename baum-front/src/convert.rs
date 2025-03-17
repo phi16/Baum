@@ -216,7 +216,7 @@ impl Builder {
     use ExprF::*;
     core::Expr(match &e.0 {
       Hole => core::ExprF::Hole,
-      Bind(i) => match self.lookup(i) {
+      Ref(i) => match self.lookup(i) {
         Some(Entity::Bind(i)) => core::ExprF::Bind(*i),
         Some(Entity::Def(i)) => core::ExprF::Def(*i),
         Some(Entity::Mod(_)) => {

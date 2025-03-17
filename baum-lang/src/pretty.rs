@@ -151,9 +151,9 @@ impl Pretty {
   fn e(&mut self, e: &Expr) -> &mut Self {
     match &e.0 {
       ExprF::Hole => self.s("_"),
-      ExprF::Var(i) => self.i(i),
+      ExprF::Bind(i) => self.i(i),
       ExprF::Mod(m) => self.s("module ").is(m, "."),
-      ExprF::Ext(m, i) => self.is(m, ".").s(".").i(i),
+      ExprF::Def(m, i) => self.is(m, ".").s(".").i(i),
       ExprF::Let(ds, e) => self.s("let").open().ds(ds).close().s("in ").e(e),
       ExprF::Syntax(mod_name, _, se) => {
         let mut qualified = !mod_name.is_empty();

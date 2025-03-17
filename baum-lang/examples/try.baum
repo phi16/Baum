@@ -9,6 +9,6 @@ g x = x
 
 module A = {
   x = g
-  y = U
-  u: y = x
+  y = Π(x: U) x
+  u: y = _
 }

@@ -61,9 +61,9 @@ pub enum SynElemF<S, I, E> {
 #[derive(Debug, Clone)]
 pub enum ExprF<I, Ds, E, X, Se> {
   Hole,
-  Var(I),
+  Bind(I),
   Mod(Vec<I>),
-  Ext(Vec<I>, I),
+  Def(Vec<I>, I),
   Let(Ds, E),
   Syntax(Vec<I>, X, Se),
 }

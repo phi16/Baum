@@ -67,7 +67,7 @@ impl Context {
       ExprF::Hole => {
         self.mark_as(loc, 0, TokenType::BuiltinSyntax);
       }
-      ExprF::Var(_) => {
+      ExprF::Bind(_) => {
         self.mark_as(loc, 0, TokenType::Unknown);
       }
       ExprF::Mod(mod_name) => {
@@ -75,7 +75,7 @@ impl Context {
           self.mark_as(loc, i as i32 * 2, TokenType::Module);
         }
       }
-      ExprF::Ext(mod_name, _) => {
+      ExprF::Def(mod_name, _) => {
         for i in 0..mod_name.len() {
           self.mark_as(loc, i as i32 * 2, TokenType::Module);
         }

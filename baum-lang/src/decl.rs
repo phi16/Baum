@@ -20,7 +20,7 @@ pub enum Role {
 fn fv<'a>(e: &Expr<'a>) -> Option<Vec<(Id<'a>, Role)>> {
   fn fv_internal<'a>(e: &Expr<'a>, v: &mut Vec<(Id<'a>, Role)>, invalid: &mut bool) {
     match e.0 {
-      ExprF::Var(ref id) => {
+      ExprF::Bind(ref id) => {
         v.push((id.clone(), Role::Expr));
       }
       ExprF::Syntax(_, _, ref elems) => {

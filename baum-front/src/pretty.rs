@@ -105,7 +105,7 @@ impl<'a> Pretty<'a> {
   fn e<T>(&mut self, e: &Expr<T>) -> &mut Self {
     match &e.0 {
       ExprF::Hole => self.s("_"),
-      ExprF::Bind(i) => self.i(i),
+      ExprF::Ref(i) => self.i(i),
       ExprF::Ann(v, t) => self.e(v).s(" of ").e(t),
       ExprF::Uni => self.s("𝒰"),
       ExprF::Wrap(e) => self.e(e),
@@ -130,7 +130,7 @@ impl<'a> Pretty<'a> {
       ExprF::LamE(i, t, e) => self.s("λ(").i(i).s(": ").e(t).s(") ").e(e),
       ExprF::AppE(e1, e2) => match e2.0 {
         ExprF::Hole
-        | ExprF::Bind(_)
+        | ExprF::Ref(_)
         | ExprF::Uni
         | ExprF::Ext(_, _, _)
         | ExprF::Lit(_)

@@ -17,7 +17,7 @@ pub type ModLevel = i8;
 #[derive(Debug, Clone)]
 pub enum ExprF<T, I, E> {
   Hole,
-  Bind(I),
+  Ref(I),
   Ann(E, E),
   Uni,
   Wrap(E),

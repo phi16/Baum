@@ -244,7 +244,7 @@ impl<'a, 'b> MiniParser<'a, 'b> {
       self.next_elem_id += 1;
       self.tokens.push(ElemToken::Expr(id));
       return Some(SyntaxExpr(
-        front::ExprF::Bind(LookupId::InSyntax(id)),
+        front::ExprF::Ref(LookupId::InSyntax(id)),
         e.1.clone(),
       ));
     }

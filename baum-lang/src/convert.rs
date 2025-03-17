@@ -190,13 +190,13 @@ impl<'a> Builder<'a> {
     let epos: ErrorPos = e.1.clone().into();
     match &e.0 {
       ExprF::Hole => Ok(front::ExprF::Hole),
-      ExprF::Var(i) => {
+      ExprF::Bind(i) => {
         for env in self.envs.iter().rev() {
           match env.1.lookup.get(i) {
             Some((Entity::Def(i), _)) => {
               return Ok(front::ExprF::Ext(self.level_from(env.0), vec![], *i))
             }
-            Some((Entity::Bind(i), _)) => return Ok(front::ExprF::Bind(*i)),
+            Some((Entity::Bind(i), _)) => return Ok(front::ExprF::Ref(*i)),
             _ => {}
           }
         }
@@ -206,7 +206,7 @@ impl<'a> Builder<'a> {
         epos,
         "module reference is not allowed in expression".to_string(),
       )),
-      ExprF::Ext(mod_name, i) => {
+      ExprF::Def(mod_name, i) => {
         let (depth, m, env) = self
           .lookup_mod(mod_name)
           .ok_or((epos, format!("module not found: {}", ext_name(mod_name, i))))?;
@@ -368,8 +368,8 @@ impl<'a> Builder<'a> {
           use front::ExprF::*;
           let ei = match &e.0 {
             Hole => Hole,
-            Bind(LookupId::General(i)) => Bind(i.clone()),
-            Bind(LookupId::InSyntax(i)) => env.e_map.get(i).unwrap().0.clone(), // expr
+            Ref(LookupId::General(i)) => Ref(i.clone()),
+            Ref(LookupId::InSyntax(i)) => env.e_map.get(i).unwrap().0.clone(), // expr
             Ann(e1, e2) => Ann(Rc::new(replace(&e1, env)), Rc::new(replace(&e2, env))),
             Uni => Uni,
             Wrap(e) => Wrap(Rc::new(replace(&e, env))),
@@ -738,9 +738,9 @@ impl<'a> Builder<'a> {
           use front::ExprF::*;
           let se = match &e.0 {
             Hole => Hole,
-            Bind(i) => match env.exprs.get(i) {
-              Some(eid) => Bind(LookupId::InSyntax(*eid)),
-              None => Bind(LookupId::General(*i)),
+            Ref(i) => match env.exprs.get(i) {
+              Some(eid) => Ref(LookupId::InSyntax(*eid)),
+              None => Ref(LookupId::General(*i)),
             },
             Ann(e1, e2) => Ann(Rc::new(replace(&e1, env)), Rc::new(replace(&e2, env))),
             Uni => Uni,

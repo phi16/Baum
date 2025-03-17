@@ -198,8 +198,8 @@ fn dependency_from(e: &SyntaxExpr) -> HashMap<ElemId, Vec<ElemId>> {
     use front::ExprF::*;
     match &e.0 {
       Hole => {}
-      Bind(LookupId::General(_)) => {}
-      Bind(LookupId::InSyntax(eid)) => {
+      Ref(LookupId::General(_)) => {}
+      Ref(LookupId::InSyntax(eid)) => {
         if map.contains_key(eid) {
           // take intersection
           let map_env = map.get_mut(eid).unwrap();
