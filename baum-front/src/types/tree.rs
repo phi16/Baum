@@ -17,12 +17,12 @@ pub type ModLevel = i8;
 #[derive(Debug, Clone)]
 pub enum ExprF<T, I, E> {
   Hole,
-  Ref(I),
+  Bind(I),
   Ann(E, E),
   Uni,
   Wrap(E),
 
-  Ext(ModLevel, Vec<I>, I),
+  Def(ModLevel, Vec<I>, I),
   Let(Vec<Decl<T>>, E),
   Lit(Literal),
 

@@ -105,11 +105,11 @@ impl<'a> Pretty<'a> {
   fn e<T>(&mut self, e: &Expr<T>) -> &mut Self {
     match &e.0 {
       ExprF::Hole => self.s("_"),
-      ExprF::Ref(i) => self.i(i),
+      ExprF::Bind(i) => self.i(i),
       ExprF::Ann(v, t) => self.e(v).s(" of ").e(t),
       ExprF::Uni => self.s("𝒰"),
       ExprF::Wrap(e) => self.e(e),
-      ExprF::Ext(l, m, i) => {
+      ExprF::Def(l, m, i) => {
         self.s(&format!("[{}]", l));
         if m.is_empty() {
           self.is(m, ".").s(".").i(i)
@@ -130,9 +130,9 @@ impl<'a> Pretty<'a> {
       ExprF::LamE(i, t, e) => self.s("λ(").i(i).s(": ").e(t).s(") ").e(e),
       ExprF::AppE(e1, e2) => match e2.0 {
         ExprF::Hole
-        | ExprF::Ref(_)
+        | ExprF::Bind(_)
         | ExprF::Uni
-        | ExprF::Ext(_, _, _)
+        | ExprF::Def(_, _, _)
         | ExprF::Lit(_)
         | ExprF::TupleTy(_)
         | ExprF::TupleCon(_)

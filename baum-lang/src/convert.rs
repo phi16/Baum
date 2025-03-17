@@ -194,9 +194,9 @@ impl<'a> Builder<'a> {
         for env in self.envs.iter().rev() {
           match env.1.lookup.get(i) {
             Some((Entity::Def(i), _)) => {
-              return Ok(front::ExprF::Ext(self.level_from(env.0), vec![], *i))
+              return Ok(front::ExprF::Def(self.level_from(env.0), vec![], *i))
             }
-            Some((Entity::Bind(i), _)) => return Ok(front::ExprF::Ref(*i)),
+            Some((Entity::Bind(i), _)) => return Ok(front::ExprF::Bind(*i)),
             _ => {}
           }
         }
@@ -213,7 +213,7 @@ impl<'a> Builder<'a> {
         let i = self
           .lookup_def(i, &env)
           .ok_or((epos, format!("symbol not found: {}", ext_name(mod_name, i))))?;
-        Ok(front::ExprF::Ext(self.level_from(depth), m, i.clone()))
+        Ok(front::ExprF::Def(self.level_from(depth), m, i.clone()))
       }
       ExprF::Let(ds, e) => {
         self.envs.push((self.cur_depth, Env::new()));
@@ -361,20 +361,20 @@ impl<'a> Builder<'a> {
           let mut mod_name = relative;
           mod_name.extend(base_mod_name);
 
-          front::ExprF::Ext(level, mod_name, *i)
+          front::ExprF::Def(level, mod_name, *i)
         }
 
         fn replace(e: &SyntaxExpr, env: &E) -> FExpr {
           use front::ExprF::*;
           let ei = match &e.0 {
             Hole => Hole,
-            Ref(LookupId::General(i)) => Ref(i.clone()),
-            Ref(LookupId::InSyntax(i)) => env.e_map.get(i).unwrap().0.clone(), // expr
+            Bind(LookupId::General(i)) => Bind(i.clone()),
+            Bind(LookupId::InSyntax(i)) => env.e_map.get(i).unwrap().0.clone(), // expr
             Ann(e1, e2) => Ann(Rc::new(replace(&e1, env)), Rc::new(replace(&e2, env))),
             Uni => Uni,
             Wrap(e) => Wrap(Rc::new(replace(&e, env))),
-            Ext(l, mod_name, LookupId::General(i)) => resolve_ext(l, mod_name, i, env),
-            Ext(_, _, LookupId::InSyntax(_)) => unreachable!(),
+            Def(l, mod_name, LookupId::General(i)) => resolve_ext(l, mod_name, i, env),
+            Def(_, _, LookupId::InSyntax(_)) => unreachable!(),
             Let(_, _) => unreachable!(),
             Lit(lit) => Lit(lit.clone()),
 
@@ -482,7 +482,7 @@ impl<'a> Builder<'a> {
         // overwrite the module parameter name references to actual definitions
         for ((_, i, _), (name, loc)) in params.iter().zip(param_infos.into_iter()) {
           let j = self.new_id(name);
-          let def_i = front::Expr(front::ExprF::Ext(0, vec![], i.clone()), range_at(&loc));
+          let def_i = front::Expr(front::ExprF::Def(0, vec![], i.clone()), range_at(&loc));
           mod_decls.push(front::Decl(front::DeclF::Def(j, def_i), range_at(&loc)));
           self
             .here()
@@ -586,7 +586,7 @@ impl<'a> Builder<'a> {
             match entity {
               Entity::Def(i) => front::DeclF::Def(
                 i,
-                front::Expr(front::ExprF::Ext(0, vec![mod_id], i), tag.clone()),
+                front::Expr(front::ExprF::Def(0, vec![mod_id], i), tag.clone()),
               ),
               Entity::Bind(_) => unreachable!(),
               Entity::Mod(i, _) => {
@@ -738,15 +738,15 @@ impl<'a> Builder<'a> {
           use front::ExprF::*;
           let se = match &e.0 {
             Hole => Hole,
-            Ref(i) => match env.exprs.get(i) {
-              Some(eid) => Ref(LookupId::InSyntax(*eid)),
-              None => Ref(LookupId::General(*i)),
+            Bind(i) => match env.exprs.get(i) {
+              Some(eid) => Bind(LookupId::InSyntax(*eid)),
+              None => Bind(LookupId::General(*i)),
             },
             Ann(e1, e2) => Ann(Rc::new(replace(&e1, env)), Rc::new(replace(&e2, env))),
             Uni => Uni,
             Wrap(e) => Wrap(Rc::new(replace(&e, env))),
 
-            Ext(l, mod_name, i) => Ext(
+            Def(l, mod_name, i) => Def(
               l.clone(),
               mod_name.iter().map(|i| LookupId::General(*i)).collect(),
               LookupId::General(*i),
