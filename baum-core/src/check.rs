@@ -102,6 +102,15 @@ where
     pretty_expr(&self.def_symbols, &self.bind_symbols, &self.name_symbols, e)
   }
 
+  fn resolve_let(&mut self, defs: Vec<(DefId, Rc<Term<P, S>>)>, e: Term<P, S>) -> Term<P, S> {
+    eprintln!(
+      "let_binding: escaping {:?} from {}",
+      defs.iter().map(|(k, _)| *k).collect::<Vec<_>>(),
+      self.ppv(&e)
+    );
+    unimplemented!()
+  }
+
   fn unify(&self, t1: &Type<P, S>, t2: &Type<P, S>) -> Result<Type<P, S>> {
     // prioritize t2
     eprintln!("unify: {} ≟ {}", self.ppv(t1), self.ppv(t2));
@@ -135,7 +144,7 @@ where
         let defs = self.defs(defs);
         let body = self.eval(body)?;
         self.envs.pop();
-        self.let_binding(defs, body).0
+        self.resolve_let(defs, body).0
       }
 
       Pi(tag, vis, i, ty, body) => {
@@ -206,15 +215,6 @@ where
       }
     };
     Ok(Val(v))
-  }
-
-  fn let_binding(&mut self, defs: Vec<(DefId, Rc<Term<P, S>>)>, e: Term<P, S>) -> Term<P, S> {
-    eprintln!(
-      "let_binding: escaping {:?} from {}",
-      defs.iter().map(|(k, _)| *k).collect::<Vec<_>>(),
-      self.ppv(&e)
-    );
-    unimplemented!()
   }
 
   fn subst(&mut self, i: BindId, e: &Term<P, S>, ty: &Type<P, S>) -> Type<P, S> {
@@ -314,7 +314,7 @@ where
         let defs = self.defs(defs);
         let bty = self.check(body, check_ty)?;
         self.envs.pop();
-        Ok(self.let_binding(defs, bty))
+        Ok(self.resolve_let(defs, bty))
       }
       Lam(tag, vis, i, ty, body) => match &check_ty.0 {
         ValF::Pi(ttag, tvis, ti, tty, bty) => {
@@ -402,7 +402,7 @@ where
         let defs = self.defs(defs);
         let bty = self.synth(body)?;
         self.envs.pop();
-        Ok(self.let_binding(defs, bty))
+        Ok(self.resolve_let(defs, bty))
       }
 
       Pi(_, _, i, ty, body) => {
