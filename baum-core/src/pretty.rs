@@ -2,7 +2,6 @@ use crate::types::common::*;
 use crate::types::tree::*;
 use crate::types::val::*;
 use std::collections::HashMap;
-use std::rc::Rc;
 
 struct Pretty<'a> {
   def_symbols: &'a HashMap<DefId, String>,

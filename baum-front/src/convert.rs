@@ -1,7 +1,6 @@
 use crate::types::tree::*;
 use baum_core::types::tree as core;
 use std::collections::HashMap;
-use std::rc::Rc;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PTag {
