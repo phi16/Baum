@@ -94,12 +94,12 @@ where
     None
   }
 
-  fn ppv(&self, t: &Type<P, S>) -> String {
-    pretty_val(&self.def_symbols, &self.bind_symbols, &self.name_symbols, t)
-  }
-
   fn ppe(&self, e: &Expr<P, S>) -> String {
     pretty_expr(&self.def_symbols, &self.bind_symbols, &self.name_symbols, e)
+  }
+
+  fn ppv(&self, v: &Val<P, S>) -> String {
+    pretty_val(&self.def_symbols, &self.bind_symbols, &self.name_symbols, v)
   }
 
   fn resolve_let(&mut self, defs: Vec<(DefId, Rc<Term<P, S>>)>, e: Term<P, S>) -> Term<P, S> {
@@ -111,26 +111,27 @@ where
     unimplemented!()
   }
 
-  fn unify(&self, t1: &Type<P, S>, t2: &Type<P, S>) -> Result<Type<P, S>> {
+  fn unify(&self, v1: &Val<P, S>, v2: &Val<P, S>) -> Result<Val<P, S>> {
     // prioritize t2
-    eprintln!("unify: {} ≟ {}", self.ppv(t1), self.ppv(t2));
-    match (&t1.0, &t2.0) {
-      (ValF::Hole, _) => Ok(t2.clone()),
-      (_, ValF::Hole) => Ok(t1.clone()),
+    eprintln!("unify: {} ≟ {}", self.ppv(v1), self.ppv(v2));
+    match (&v1.0, &v2.0) {
+      (ValF::Hole, _) => Ok(v2.clone()),
+      (_, ValF::Hole) => Ok(v1.clone()),
       (ValF::Bind(i1), ValF::Bind(i2)) => {
         if i1 == i2 {
-          Ok(t2.clone())
+          Ok(v2.clone())
         } else {
-          // TODO...?
+          // TODO...
           Err("unify: bind".to_string())
         }
       }
-      (ValF::Uni, ValF::Uni) => Ok(t1.clone()),
+      (ValF::Uni, ValF::Uni) => Ok(v1.clone()),
       _ => Err("unify: unimplemented".to_string()),
     }
   }
 
   fn eval(&mut self, e: &Expr<P, S>) -> Result<Term<P, S>> {
+    // Note: e may contain unresolved bindings
     use ExprF::*;
     let v = match &e.0 {
       Hole => ValF::Hole,
@@ -168,6 +169,7 @@ where
         let x = self.eval(x)?;
         match f.0 {
           ValF::Bind(i) => ValF::App(tag.clone(), vis.clone(), i, Rc::new(x)),
+          ValF::Def(i) => unimplemented!(),
           ValF::Lam(ftag, fvis, i, ty, body) => {
             if *tag != ftag || *vis != fvis {
               return Err("eval: app".to_string());
@@ -199,6 +201,7 @@ where
         let e = self.eval(e)?;
         match e.0 {
           ValF::Bind(i) => ValF::Prop(tag.clone(), i, *name),
+          ValF::Def(i) => unimplemented!(),
           ValF::Obj(otag, props) => {
             if *tag != otag {
               return Err("eval: prop".to_string());
@@ -217,9 +220,10 @@ where
     Ok(Val(v))
   }
 
-  fn subst(&mut self, i: BindId, e: &Term<P, S>, ty: &Type<P, S>) -> Type<P, S> {
-    eprintln!("subst: {:?} with {} in {}", i, self.ppv(e), self.ppv(ty));
-    let v = match &ty.0 {
+  fn subst(&mut self, i: BindId, e: &Term<P, S>, v: &Val<P, S>) -> Val<P, S> {
+    // TODO: escaping
+    eprintln!("subst: {:?} with {} in {}", i, self.ppv(e), self.ppv(v));
+    let v = match &v.0 {
       ValF::Hole => ValF::Hole,
       ValF::Bind(j) => {
         if i == *j {
@@ -384,8 +388,7 @@ where
         None => Err("synth: def".to_string()),
       },
       Ann(t, ty) => {
-        let tyty = self.synth(ty)?;
-        self.unify(&tyty, &Val(ValF::Uni))?;
+        self.check(&ty, &Val(ValF::Uni))?;
         let ty = self.eval(ty)?;
         self.check(t, &ty)?;
         Ok(ty)
@@ -477,7 +480,7 @@ where
                 let mut ty = (**ty).clone();
                 // ty may depend on previous props
                 for (n, i, _) in props.iter().take(index).rev() {
-                  let p = self.valprop(tag, &e, n)?;
+                  let p = self.valprop(tag, &e, n)?; // e.n
                   ty = self.subst(*i, &p, &ty);
                 }
                 return Ok(ty);
