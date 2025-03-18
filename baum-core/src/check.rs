@@ -121,22 +121,32 @@ where
     unimplemented!()
   }
 
-  fn unify(&self, v1: &Val<P, S>, v2: &Val<P, S>) -> Result<Val<P, S>> {
+  fn add_constraint(&mut self, h: &HoleId, v: &Val<P, S>) {
+    unimplemented!()
+  }
+
+  fn unify(&mut self, v1: &Val<P, S>, v2: &Val<P, S>) -> Result<()> {
     // prioritize t2
     eprintln!("- unify: {} ≟ {}", self.ppv(v1), self.ppv(v2));
     match (&v1.0, &v2.0) {
       (ValF::Fail, _) => Err("unify: fail".to_string()),
       (_, ValF::Fail) => Err("unify: fail".to_string()),
-      (ValF::Hole(h), _) => Ok(v2.clone()), // TODO
-      (_, ValF::Hole(h)) => Ok(v1.clone()), // TODO
+      (ValF::Hole(h), _) => {
+        self.add_constraint(h, v2);
+        Ok(())
+      }
+      (_, ValF::Hole(h)) => {
+        self.add_constraint(h, v1);
+        Ok(())
+      }
       (ValF::Bind(i1), ValF::Bind(i2)) => {
         if i1 == i2 {
-          Ok(v2.clone())
+          Ok(())
         } else {
           Err("unify: bind".to_string())
         }
       }
-      (ValF::Uni, ValF::Uni) => Ok(v1.clone()),
+      (ValF::Uni, ValF::Uni) => Ok(()),
       _ => Err("unify: unimplemented".to_string()),
     }
   }
@@ -326,16 +336,17 @@ where
     Ok(Val(v))
   }
 
-  fn check(&mut self, e: &Expr<P, S>, check_ty: &Type<P, S>) -> Result<Type<P, S>> {
+  fn check(&mut self, e: &Expr<P, S>, check_ty: &Type<P, S>) -> Result<()> {
     use ExprF::*;
     match &e.0 {
-      Hole => Ok(check_ty.clone()),
+      Hole => Ok(()),
       Let(defs, body) => {
         self.envs.push(Env::new());
         let defs = self.defs(defs);
-        let bty = self.check(body, check_ty)?;
+        self.check(body, check_ty)?;
         self.envs.pop();
-        Ok(self.resolve_let(defs, bty))
+        // TODO: resolve let?
+        Ok(())
       }
       Lam(tag, vis, i, ty, body) => match &check_ty.0 {
         ValF::Pi(ttag, tvis, ti, tty, bty) => {
@@ -343,20 +354,14 @@ where
             return Err("check: lam".to_string());
           }
           let ty = self.eval(ty)?;
-          let ty = self.unify(&ty, tty)?;
+          self.unify(&ty, tty)?;
           self.envs.push(Env::new());
           self.here().add(*i, ty.clone());
           // Note: bty should not depend on i
           let tbody = self.subst(*ti, &Val(ValF::Bind(*i)), bty);
           let bty = self.check(body, &tbody)?;
           self.envs.pop();
-          Ok(Val(ValF::Pi(
-            ttag.clone(),
-            tvis.clone(),
-            *i, // hmm...
-            Rc::new(ty),
-            Rc::new(bty),
-          )))
+          Ok(())
         }
         _ => Err("check: lam".to_string()),
       },
@@ -373,21 +378,22 @@ where
               eprintln!("{:?} != {:?}", n, tn);
               return Err("check: obj 2".to_string());
             }
-            let ty = self.check(&e, &ty)?;
-            self.here().add(*ti, ty.clone());
+            self.check(&e, &ty)?;
+            self.here().add(*ti, (**ty).clone());
             ps.push((n.clone(), *ti, Rc::new(ty)));
           }
           if props.len() != tprops.len() {
             return Err("check: obj 3".to_string());
           }
           self.envs.pop();
-          Ok(Val(ValF::Sigma(tag.clone(), ps)))
+          Ok(())
         }
         _ => return Err("check: obj 4".to_string()),
       },
       _ => {
         let ty = self.synth(e)?;
-        self.unify(&ty, check_ty)
+        self.unify(&ty, check_ty)?;
+        Ok(())
       }
     }
   }
