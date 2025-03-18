@@ -274,7 +274,19 @@ where
         }
       }
       ValF::App(tag, vis, ti, x) => {
-        unimplemented!()
+        let x_s = self.subst(i, e, x);
+        if i == *ti {
+          Subst::Changed(self.app(tag.clone(), vis.clone(), e.clone(), x_s.into()))
+        } else if x_s.is_changed() {
+          Subst::Changed(Rc::new(Val(ValF::App(
+            tag.clone(),
+            vis.clone(),
+            *ti,
+            x_s.into(),
+          ))))
+        } else {
+          Subst::Unchanged(v)
+        }
       }
 
       ValF::Sigma(tag, props) => {
