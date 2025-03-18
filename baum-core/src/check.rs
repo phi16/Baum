@@ -213,11 +213,15 @@ where
         if i1 == i2 {
           Ok(())
         } else {
-          Err("unify: bind".to_string())
+          Err(format!("unify: bind / {:?} != {:?}", i1, i2))
         }
       }
       (ValF::Uni, ValF::Uni) => Ok(()),
-      _ => Err("unify: unimplemented".to_string()),
+      _ => Err(format!(
+        "unify: unimplemented / {:?} ~ {:?}",
+        self.ppv(v1),
+        self.ppv(v2)
+      )),
     }
   }
 

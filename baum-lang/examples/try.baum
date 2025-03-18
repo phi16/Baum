@@ -15,15 +15,19 @@ const {a b: U}: a → b → a = λ(x: a, y: b) x
 --   {a b: U} {c: Σ(a, b) → U}
 --   (f: (p: Σ(x: a, b(x))) → c(p))
 --   : (x: a) → (y: b(x)) → c(x, y) = λ(x: a) λ(y: b(x)) f(x, y)
+-- curry
+--   {a: U} {b: a → U} {c: Σ(a, b) → U}
+--   (f: (p: Σ(x: a, b(x))) → c(p))
+--   : (x: a) → (y: b(x)) → c(x, y) = λ(x: a) λ(y: b(x)) f(x, y)
 -- flip {a b c: U} (f: (x: a) → (y: b) → c(x, y)): (y: b) → (x: a) → c(x, y) = λ(y: b) λ(x: a) f y x
 
 u = id id id id
 
 curry
-  {a: U} {b: a → U} {c: Σ(a, b) → U}
+  {a: U} {b: a → U} {c: Σ(x: a, b(x)) → U}
   (f: (p: Σ(x: a, b(x))) → c(p))
   : (x: a) → (y: b(x)) → c(x, y) = λ(x: a) λ(y: b(x)) f(x, y)
-flip {a b: U} {c: Σ(a, b) → U} (f: (x: a) → (y: b) → c(x, y)): (y: b) → (x: a) → c(x, y) = λ(y: b) λ(x: a) f y x
+flip {a b: U} {c: Σ(a, b) → U} (f: (x: a) → (y: b) → c(x, y)): (y: b) → (x: a) → c(x, y) = λ(y: b) λ(x: a) f x y
 fst {a: U} {b: a → U} (p: Σ(x: a, b(x))): a = p.0
 snd {a: U} {b: a → U} (p: Σ(x: a, b(x))): b(p.0) = p.1
 two {a: U} (f: a → a) (x: a): a = f (f x)
