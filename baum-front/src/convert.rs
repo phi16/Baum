@@ -28,8 +28,8 @@ impl From<Vis> for core::Vis {
 
 type CoreExpr = core::Expr<PTag, STag>;
 
-fn wrap(e: core::ExprF<PTag, STag, Rc<CoreExpr>>) -> Rc<CoreExpr> {
-  Rc::new(core::Expr(e))
+fn wrap(e: core::ExprF<PTag, STag, Box<CoreExpr>>) -> Box<CoreExpr> {
+  Box::new(core::Expr(e))
 }
 
 #[derive(Debug, Clone)]
@@ -74,7 +74,7 @@ enum Name {
 }
 
 struct Decls {
-  defs: Vec<(core::DefId, Rc<CoreExpr>)>,
+  defs: Vec<(core::DefId, Box<CoreExpr>)>,
 }
 
 struct Builder {
@@ -229,7 +229,7 @@ impl Builder {
           core::ExprF::Hole
         }
       },
-      Ann(e, ty) => core::ExprF::Ann(Rc::new(self.e(&e)), Rc::new(self.e(&ty))),
+      Ann(e, ty) => core::ExprF::Ann(Box::new(self.e(&e)), Box::new(self.e(&ty))),
       Uni => core::ExprF::Uni,
       Wrap(e) => return self.e(&e),
 
@@ -282,7 +282,7 @@ impl Builder {
       Let(ds, e) => {
         self.envs.push(Env::new());
         let decls = self.ds(ds);
-        let e = Rc::new(self.e(e));
+        let e = Box::new(self.e(e));
         self.envs.pop();
         core::ExprF::Let(decls.defs, e)
       }
@@ -298,9 +298,9 @@ impl Builder {
           is_mod_param: false,
         };
         self.envs.push(Env::new());
-        let ty = Rc::new(self.e(&ty));
+        let ty = Box::new(self.e(&ty));
         let i = self.add_bind_maybe(i);
-        let e = Rc::new(self.e(&e));
+        let e = Box::new(self.e(&e));
         self.envs.pop();
         core::ExprF::Pi(tag, core::Vis::Explicit, i, ty, e)
       }
@@ -309,9 +309,9 @@ impl Builder {
           is_mod_param: false,
         };
         self.envs.push(Env::new());
-        let ty = Rc::new(self.e(&ty));
+        let ty = Box::new(self.e(&ty));
         let i = self.add_bind(i);
-        let e = Rc::new(self.e(&e));
+        let e = Box::new(self.e(&e));
         self.envs.pop();
         core::ExprF::Lam(tag, core::Vis::Explicit, i, ty, e)
       }
@@ -319,8 +319,8 @@ impl Builder {
         let tag = PTag {
           is_mod_param: false,
         };
-        let e1 = Rc::new(self.e(&e1));
-        let e2 = Rc::new(self.e(&e2));
+        let e1 = Box::new(self.e(&e1));
+        let e2 = Box::new(self.e(&e2));
         core::ExprF::App(tag, core::Vis::Explicit, e1, e2)
       }
 
@@ -329,9 +329,9 @@ impl Builder {
           is_mod_param: false,
         };
         self.envs.push(Env::new());
-        let ty = Rc::new(self.e(&ty));
+        let ty = Box::new(self.e(&ty));
         let i = self.add_bind_maybe(i);
-        let e = Rc::new(self.e(&e));
+        let e = Box::new(self.e(&e));
         self.envs.pop();
         core::ExprF::Pi(tag, core::Vis::Implicit, i, ty, e)
       }
@@ -340,9 +340,9 @@ impl Builder {
           is_mod_param: false,
         };
         self.envs.push(Env::new());
-        let ty = Rc::new(self.e(&ty));
+        let ty = Box::new(self.e(&ty));
         let i = self.add_bind(i);
-        let e = Rc::new(self.e(&e));
+        let e = Box::new(self.e(&e));
         self.envs.pop();
         core::ExprF::Lam(tag, core::Vis::Implicit, i, ty, e)
       }
@@ -350,8 +350,8 @@ impl Builder {
         let tag = PTag {
           is_mod_param: false,
         };
-        let e1 = Rc::new(self.e(&e1));
-        let e2 = Rc::new(self.e(&e2));
+        let e1 = Box::new(self.e(&e1));
+        let e2 = Box::new(self.e(&e2));
         core::ExprF::App(tag, core::Vis::Implicit, e1, e2)
       }
 
@@ -366,7 +366,7 @@ impl Builder {
           let ix = ix as u8;
           let name = self.name_from_index(&ix);
           let bind = self.add_bind_maybe(bind);
-          let e = Rc::new(self.e(&e));
+          let e = Box::new(self.e(&e));
           es.push((name, bind, e));
         }
         self.envs.pop();
@@ -381,7 +381,7 @@ impl Builder {
         for (ix, e) in elems.iter().enumerate() {
           let ix = ix as u8;
           let name = self.name_from_index(&ix);
-          let e = Rc::new(self.e(&e));
+          let e = Box::new(self.e(&e));
           es.push((name, e));
         }
         core::ExprF::Obj(tag, es)
@@ -392,7 +392,7 @@ impl Builder {
           is_mod: false,
         };
         let i = self.name_from_index(i);
-        let e = Rc::new(self.e(&e));
+        let e = Box::new(self.e(&e));
         core::ExprF::Prop(tag, e, i)
       }
 
@@ -406,7 +406,7 @@ impl Builder {
         for (i, e) in elems {
           let name = self.name_from_id(i);
           let bind = self.add_bind(i);
-          let e = Rc::new(self.e(&e));
+          let e = Box::new(self.e(&e));
           es.push((name, bind, e));
         }
         self.envs.pop();
@@ -420,7 +420,7 @@ impl Builder {
         let mut es = Vec::new();
         for (i, e) in elems {
           let name = self.name_from_id(i);
-          let e = Rc::new(self.e(&e));
+          let e = Box::new(self.e(&e));
           es.push((name, e));
         }
         core::ExprF::Obj(tag, es)
@@ -431,7 +431,7 @@ impl Builder {
           is_mod: false,
         };
         let name = self.name_from_id(i);
-        let e = Rc::new(self.e(&e));
+        let e = Box::new(self.e(&e));
         core::ExprF::Prop(tag, e, name)
       }
     })
@@ -445,7 +445,7 @@ impl Builder {
         for (vis, i, ty) in params {
           let ty = self.e(ty);
           let i = self.add_bind(i);
-          ps.push((vis.clone(), i, Rc::new(ty)));
+          ps.push((vis.clone(), i, Box::new(ty)));
         }
         let e = match &body.0 {
           ModBodyF::Decls(ds) => {
@@ -494,7 +494,7 @@ impl Builder {
                   PTag { is_mod_param: true },
                   core::Vis::from(vis.clone()),
                   wrap(e),
-                  Rc::new(arg),
+                  Box::new(arg),
                 );
               }
               e
@@ -526,7 +526,7 @@ impl Builder {
       DeclF::Def(i, e) => {
         let e = self.e(&e);
         let def = self.add_def(&i, DefType::Def);
-        decls.defs.push((def, Rc::new(e)));
+        decls.defs.push((def, Box::new(e)));
         self
           .envs
           .last_mut()

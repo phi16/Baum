@@ -11,6 +11,10 @@ type RV<P, S> = Rc<Val<P, S>>;
 type Term<P, S> = RV<P, S>;
 type Type<P, S> = RV<P, S>;
 
+// Checked Expr
+#[derive(Debug, Clone)]
+struct CE<PTag, STag>(pub ExprF<PTag, STag, Box<CE<PTag, STag>>>);
+
 enum Subst<'a, T> {
   Unchanged(&'a T),
   Changed(T),
@@ -103,8 +107,8 @@ where
       def_symbols,
       bind_symbols,
       name_symbols,
-      envs: vec![Env::new()],
-      solves: vec![Solve::new()],
+      envs: Vec::new(),
+      solves: Vec::new(),
       next_bind_id,
       next_hole_id: 0,
       errors: Vec::new(),
@@ -217,17 +221,16 @@ where
     }
   }
 
-  fn subst<'a>(&mut self, i: BindId, e: &Term<P, S>, v: &'a RV<P, S>) -> Subst<'a, RV<P, S>> {
+  fn subst<'a>(&mut self, i: BindId, e: &RV<P, S>, v: &'a RV<P, S>) -> Subst<'a, RV<P, S>> {
     // TODO: escaping
     eprintln!("- subst: {:?} with {} in {}", i, self.ppv(e), self.ppv(v));
-    let u = Subst::Unchanged(v);
     match &v.0 {
-      ValF::Bind(j) => {
-        if i == *j {
+      ValF::Bind(ti) => {
+        if i == *ti {
           // TODO: e may contain "bounded" variables...
           Subst::Changed(e.clone())
         } else {
-          u
+          Subst::Unchanged(v)
         }
       }
       ValF::Def(di) => unimplemented!(),
@@ -316,20 +319,37 @@ where
         }
       }
       ValF::Prop(tag, ti, name) => {
-        unimplemented!()
+        if i == *ti {
+          Subst::Changed(self.prop(tag.clone(), e.clone(), *name))
+        } else {
+          Subst::Unchanged(v)
+        }
       }
       _ => Subst::Unchanged(v),
     }
   }
 
-  fn prop(&mut self, tag: &S, e: &Term<P, S>, name: &NameId) -> Term<P, S> {
+  fn app(&mut self, tag: P, vis: Vis, f: Term<P, S>, x: Term<P, S>) -> Term<P, S> {
+    match &f.0 {
+      ValF::Bind(i) => Rc::new(Val(ValF::App(tag, vis, *i, x))),
+      ValF::Def(i) => unimplemented!(),
+      ValF::Lam(ftag, fvis, i, _, body) => {
+        assert_eq!(tag, *ftag);
+        assert_eq!(vis, *fvis);
+        self.subst(*i, &x, &body).into()
+      }
+      _ => unreachable!(),
+    }
+  }
+
+  fn prop(&mut self, tag: S, e: Term<P, S>, name: NameId) -> Term<P, S> {
     match &e.0 {
-      ValF::Bind(i) => Rc::new(Val(ValF::Prop(tag.clone(), *i, *name))),
+      ValF::Bind(i) => Rc::new(Val(ValF::Prop(tag, *i, name))),
       ValF::Def(i) => unimplemented!(),
       ValF::Obj(otag, props) => {
-        assert_eq!(tag, otag);
+        assert_eq!(tag, *otag);
         for (n, e) in props {
-          if n == name {
+          if name == *n {
             return e.clone();
           }
         }
@@ -339,7 +359,7 @@ where
     }
   }
 
-  fn eval(&mut self, e: &Expr<P, S>) -> Result<Term<P, S>> {
+  fn eval(&mut self, e: &CE<P, S>) -> Term<P, S> {
     // Note: e may contain unresolved bindings
     use ExprF::*;
     let v = match &e.0 {
@@ -355,245 +375,234 @@ where
       Ann(t, _) => return self.eval(t),
       Uni => ValF::Uni,
       Let(defs, body) => {
-        self.envs.push(Env::new());
-        let defs = self.defs(defs);
-        let body = self.eval(body)?;
-        self.envs.pop();
-        return Ok(self.resolve_let(defs, body));
+        unimplemented!()
       }
 
       Pi(tag, vis, i, ty, body) => {
-        let ty = self.eval(ty)?;
-        let body = self.eval(body)?;
-        ValF::Pi(tag.clone(), vis.clone(), i.clone(), ty, body)
+        let ty = self.eval(ty);
+        let body = self.eval(body);
+        ValF::Pi(tag.clone(), vis.clone(), *i, ty, body)
       }
       Lam(tag, vis, i, ty, body) => {
-        let ty = self.eval(ty)?;
-        let body = self.eval(body)?;
+        let ty = self.eval(ty);
+        let body = self.eval(body);
         ValF::Lam(tag.clone(), vis.clone(), *i, ty, body)
       }
       App(tag, vis, f, x) => {
-        let f = self.eval(f)?;
-        let x = self.eval(x)?;
-        match &f.0 {
-          ValF::Bind(i) => ValF::App(tag.clone(), vis.clone(), *i, x),
-          ValF::Def(i) => unimplemented!(),
-          ValF::Lam(ftag, fvis, i, ty, body) => {
-            if tag != ftag || vis != fvis {
-              return Err("eval: app".to_string());
-            }
-            let body = self.subst(*i, &x, &body).into();
-            ValF::Lam(tag.clone(), vis.clone(), *i, ty.clone(), body)
-          }
-          _ => return Err("eval: app".to_string()),
-        }
+        let f = self.eval(f);
+        let x = self.eval(x);
+        return self.app(tag.clone(), vis.clone(), f, x);
       }
 
       Sigma(tag, props) => {
         let mut ps = Vec::new();
         for (name, i, ty) in props {
-          let ty = self.eval(ty)?;
-          ps.push((name.clone(), i.clone(), ty));
+          let ty = self.eval(ty);
+          ps.push((*name, *i, ty));
         }
         ValF::Sigma(tag.clone(), ps)
       }
       Obj(tag, props) => {
         let mut ps = Vec::new();
         for (name, e) in props {
-          let e = self.eval(e)?;
-          ps.push((name.clone(), e));
+          let e = self.eval(e);
+          ps.push((*name, e));
         }
         ValF::Obj(tag.clone(), ps)
       }
       Prop(tag, e, name) => {
-        let e = self.eval(e)?;
-        match &e.0 {
-          ValF::Bind(i) => ValF::Prop(tag.clone(), *i, *name),
-          ValF::Def(i) => unimplemented!(),
-          ValF::Obj(otag, props) => {
-            if tag != otag {
-              return Err("eval: prop".to_string());
-            }
-            for (n, e) in props {
-              if n == name {
-                return Ok(e.clone());
-              }
-            }
-            return Err("eval: prop".to_string());
-          }
-          _ => return Err("eval: prop".to_string()),
-        }
+        let e = self.eval(e);
+        return self.prop(tag.clone(), e, *name);
       }
     };
-    Ok(Rc::new(Val(v)))
+    Rc::new(Val(v))
   }
 
-  fn check(&mut self, e: &Expr<P, S>, check_ty: &Type<P, S>) -> Result<()> {
+  fn check(&mut self, e: Expr<P, S>, check_ty: &Type<P, S>) -> Result<CE<P, S>> {
     use ExprF::*;
-    match &e.0 {
-      Hole => Ok(()),
+    match e.0 {
+      Hole => Ok(CE(Hole)),
       Let(defs, body) => {
-        self.envs.push(Env::new());
-        let defs = self.defs(defs);
-        self.check(body, check_ty)?;
-        self.envs.pop();
-        // TODO: resolve let?
-        Ok(())
+        unimplemented!()
       }
       Lam(tag, vis, i, ty, body) => match &check_ty.0 {
         ValF::Pi(ttag, tvis, ti, tty, bty) => {
-          if tag != ttag || vis != tvis {
+          if tag != *ttag || vis != *tvis {
             return Err("check: lam".to_string());
           }
-          let ty = self.eval(ty)?;
+          let c_ty = self.check(*ty, &Rc::new(Val(ValF::Uni)))?;
+          let ty = self.eval(&c_ty);
           self.unify(&ty, tty)?;
           self.envs.push(Env::new());
-          self.here().add(*i, ty.clone());
-          // Note: bty should not depend on i
-          let tbody = self.subst(*ti, &Rc::new(Val(ValF::Bind(*i))), bty).into();
-          let bty = self.check(body, &tbody)?;
+          self.here().add(i, tty.clone());
+          // Note: bty should not depend on i...
+          // ^ need to check
+          let tbody = self.subst(*ti, &Rc::new(Val(ValF::Bind(i))), bty).into();
+          let c_body = self.check(*body, &tbody)?;
           self.envs.pop();
-          Ok(())
+          Ok(CE(Lam(tag, vis, i, Box::new(c_ty), Box::new(c_body))))
         }
         _ => Err("check: lam".to_string()),
       },
       Obj(tag, props) => match &check_ty.0 {
         ValF::Sigma(ttag, tprops) => {
-          if tag != ttag {
+          if tag != *ttag {
             return Err("check: obj 1".to_string());
           }
-          let mut ps = Vec::new();
+          let len_match = props.len() == tprops.len();
           self.envs.push(Env::new());
-          eprintln!("- object match {}: {}", self.ppe(e), self.ppv(check_ty));
-          for ((n, e), (tn, ti, ty)) in props.iter().zip(tprops.iter()) {
-            if n != tn {
+          let mut ps = Vec::new();
+          let mut c_ps = Vec::new();
+          for ((n, e), (tn, ti, ty)) in props.into_iter().zip(tprops.iter()) {
+            if n != *tn {
               eprintln!("{:?} != {:?}", n, tn);
               return Err("check: obj 2".to_string());
             }
-            self.check(&e, &ty)?;
+            let c_e = self.check(*e, &ty)?;
             self.here().add(*ti, ty.clone());
-            ps.push((n.clone(), *ti, Rc::new(ty)));
+            ps.push((n, *ti, Rc::new(ty)));
+            c_ps.push((n, Box::new(c_e)));
           }
-          if props.len() != tprops.len() {
+          if !len_match {
+            // we defer this error to check the existing props as much as possible
             return Err("check: obj 3".to_string());
           }
           self.envs.pop();
-          Ok(())
+          Ok(CE(Obj(tag, c_ps)))
         }
         _ => return Err("check: obj 4".to_string()),
       },
       _ => {
-        let ty = self.synth(e)?;
+        let (c_e, ty) = self.synth(e)?;
         self.unify(&ty, check_ty)?;
-        Ok(())
+        Ok(c_e)
       }
     }
   }
 
-  fn synth(&mut self, e: &Expr<P, S>) -> Result<Type<P, S>> {
+  fn check_ty(&mut self, e: Expr<P, S>) -> Result<CE<P, S>> {
+    self.check(e, &Rc::new(Val(ValF::Uni)))
+  }
+
+  fn synth(&mut self, e: Expr<P, S>) -> Result<(CE<P, S>, Type<P, S>)> {
     use ExprF::*;
-    match &e.0 {
+    match e.0 {
       Hole => Err("synth: hole".to_string()),
-      Bind(i) => match self.lookup_bind(*i) {
-        Some(ty) => Ok(ty.clone()),
+      Bind(i) => match self.lookup_bind(i) {
+        Some(ty) => Ok((CE(Bind(i)), ty.clone())),
         None => Err("synth: bind".to_string()),
       },
-      Def(i) => match self.lookup_def(*i) {
-        Some(ty) => Ok(ty.clone()),
+      Def(i) => match self.lookup_def(i) {
+        Some(ty) => Ok((CE(Def(i)), ty.clone())),
         None => Err("synth: def".to_string()),
       },
       Ann(t, ty) => {
-        self.check(&ty, &Rc::new(Val(ValF::Uni)))?;
-        let ty = self.eval(ty)?;
-        self.check(t, &ty)?;
-        Ok(ty)
+        let c_ty = self.check_ty(*ty)?;
+        let ty = self.eval(&c_ty);
+        let c_t = self.check(*t, &ty)?;
+        Ok((CE(Ann(Box::new(c_t), Box::new(c_ty))), ty))
       }
-      Uni => Ok(Rc::new(Val(ValF::Uni))),
+      Uni => Ok(((CE(Uni)), Rc::new(Val(ValF::Uni)))),
 
       Let(defs, body) => {
-        self.envs.push(Env::new());
-        let defs = self.defs(defs);
-        let bty = self.synth(body)?;
-        self.envs.pop();
-        Ok(self.resolve_let(defs, bty))
+        unimplemented!()
       }
 
-      Pi(_, _, i, ty, body) => {
-        let ty = self.synth(ty)?;
+      Pi(tag, vis, i, ty, bty) => {
+        let c_ty = self.check_ty(*ty)?;
+        let ty = self.eval(&c_ty);
         self.envs.push(Env::new());
-        self.here().add(*i, ty.clone());
-        self.synth(body)?;
+        self.here().add(i, ty.clone());
+        let c_bty = self.check_ty(*bty)?;
         self.envs.pop();
-        Ok(Rc::new(Val(ValF::Uni)))
+        Ok((
+          CE(Pi(tag, vis, i, Box::new(c_ty), Box::new(c_bty))),
+          Rc::new(Val(ValF::Uni)),
+        ))
       }
       Lam(tag, vis, i, ty, body) => {
-        let ty = self.eval(ty)?;
+        let c_ty = self.check_ty(*ty)?;
+        let ty = self.eval(&c_ty);
         self.envs.push(Env::new());
-        self.here().add(*i, ty.clone());
-        let bty = self.synth(body)?;
+        self.here().add(i, ty.clone());
+        let (c_body, bty) = self.synth(*body)?;
         self.envs.pop();
-        Ok(Rc::new(Val(ValF::Pi(
-          tag.clone(),
-          vis.clone(),
-          *i,
-          ty,
-          bty,
-        ))))
+        Ok((
+          (CE(Lam(
+            tag.clone(),
+            vis.clone(),
+            i,
+            Box::new(c_ty),
+            Box::new(c_body),
+          ))),
+          Rc::new(Val(ValF::Pi(tag, vis, i, ty, bty))),
+        ))
       }
       App(tag, vis, f, x) => {
-        let fty = self.synth(f)?;
+        let (c_f, fty) = self.synth(*f)?;
         match &fty.0 {
           ValF::Pi(ftag, fvis, i, ty, bty) => {
-            if tag != ftag || vis != fvis {
+            if tag != *ftag {
               return Err("synth: app".to_string());
             }
-            self.check(x, &ty)?;
-            let x = self.eval(x)?;
+            if vis != *fvis {
+              return Err("synth: app (may implicit app)".to_string());
+            }
+            let c_x = self.check(*x, &ty)?;
+            let x = self.eval(&c_x);
             // substitute i with x in bty
             let bty = self.subst(*i, &x, bty).into();
-            Ok(bty)
+            Ok((CE(App(tag, vis, Box::new(c_f), Box::new(c_x))), bty))
           }
-          _ => Err("synth: app".to_string()),
+          _ => Err(format!("synth: app / {:?}", fty)),
         }
       }
 
-      Sigma(_, props) => {
+      Sigma(tag, props) => {
         self.envs.push(Env::new());
-        for (_, i, ty) in props {
-          let ty = self.synth(ty)?;
-          self.here().add(*i, ty.clone());
+        let mut c_props = Vec::new();
+        for (name, i, ty) in props {
+          let c_ty = self.check_ty(*ty)?;
+          let ty = self.eval(&c_ty);
+          self.here().add(i, ty);
+          c_props.push((name, i, Box::new(c_ty)));
         }
         self.envs.pop();
-        Ok(Rc::new(Val(ValF::Uni)))
+        Ok((CE(Sigma(tag, c_props)), Rc::new(Val(ValF::Uni))))
       }
       Obj(tag, props) => {
-        let mut tys = Vec::new();
         self.envs.push(Env::new());
+        let mut tys = Vec::new();
+        let mut c_props = Vec::new();
         for (name, e) in props {
-          let ty = self.synth(e)?;
+          let (c_e, ty) = self.synth(*e)?;
           let i = self.fresh_id();
           tys.push((name.clone(), i, ty.clone()));
+          c_props.push((name, Box::new(c_e)));
         }
         self.envs.pop();
-        Ok(Rc::new(Val(ValF::Sigma(tag.clone(), tys))))
+        Ok((
+          CE(Obj(tag.clone(), c_props)),
+          Rc::new(Val(ValF::Sigma(tag, tys))),
+        ))
       }
       Prop(tag, e, name) => {
-        let ty = self.synth(e)?;
+        let (c_e, ty) = self.synth(*e)?;
         match &ty.0 {
           ValF::Sigma(etag, props) => {
-            if tag != etag {
+            if tag != *etag {
               return Err("synth: prop".to_string());
             }
             for (index, (n, _, ty)) in props.iter().enumerate() {
-              if n == name {
-                let e = self.eval(e)?;
+              if name == *n {
+                let e = self.eval(&c_e);
                 let mut ty = ty.clone();
                 // ty may depend on previous props
                 for (n, i, _) in props.iter().take(index).rev() {
-                  let p = self.prop(tag, &e, n); // e.n
+                  let p = self.prop(tag.clone(), e.clone(), *n); // e.n
                   ty = self.subst(*i, &p, &ty).into();
                 }
-                return Ok(ty);
+                return Ok((CE(Prop(tag, Box::new(c_e), name)), ty));
               }
             }
             Err("synth: prop".to_string())
@@ -604,31 +613,32 @@ where
     }
   }
 
-  fn defs(&mut self, defs: &Vec<(DefId, Rc<Expr<P, S>>)>) -> Vec<(DefId, Rc<Term<P, S>>)> {
+  fn defs(&mut self, defs: Vec<(DefId, Box<Expr<P, S>>)>) -> Vec<(DefId, Rc<Term<P, S>>)> {
+    self.envs.push(Env::new());
+    self.solves.push(Solve::new());
     let mut def_terms = Vec::new();
     let fail = Rc::new(Val(ValF::Fail));
     for (id, expr) in defs {
-      let ty = self.synth(&*expr);
-      match &ty {
-        Ok(ty) => eprintln!("[o] {}: {}", self.def_symbols[&id], self.ppv(ty)),
+      let res = self.synth(*expr);
+      match &res {
+        Ok((_, ty)) => eprintln!("[o] {}: {}", self.def_symbols[&id], self.ppv(ty)),
         Err(e) => eprintln!("[x] {}: {}", self.def_symbols[&id], e),
       }
-      let (tm, ty) = match ty {
-        Ok(ty) => match self.eval(&expr) {
-          Ok(tm) => (tm, ty),
-          Err(e) => {
-            self.add_error(&format!("{}: {}", self.def_symbols[&id], e));
-            (fail.clone(), ty)
-          }
-        },
+      let (c_expr, tm, ty) = match res {
+        Ok((c_expr, ty)) => {
+          let tm = self.eval(&c_expr);
+          (c_expr, tm, ty)
+        }
         Err(e) => {
           self.add_error(&format!("{}: {}", self.def_symbols[&id], e));
-          (fail.clone(), fail.clone())
+          (CE(ExprF::Hole), fail.clone(), fail.clone())
         }
       };
-      self.here().def(*id, ty);
-      def_terms.push((*id, Rc::new(tm)));
+      self.here().def(id, ty);
+      def_terms.push((id, Rc::new(tm)));
     }
+    self.solves.pop();
+    self.envs.pop();
     def_terms
   }
 }
@@ -639,7 +649,7 @@ where
   S: Tag,
 {
   let mut c = Checker::new(p.def_symbols, p.bind_symbols, p.name_symbols);
-  c.defs(&p.defs);
+  c.defs(p.defs);
   if c.errors.is_empty() {
     Ok(())
   } else {

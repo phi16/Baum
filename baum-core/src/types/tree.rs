@@ -1,6 +1,5 @@
 pub use crate::types::common::*;
 use std::collections::HashMap;
-use std::rc::Rc;
 
 #[derive(Debug, Clone)]
 pub enum ExprF<PTag, STag, E> {
@@ -21,11 +20,11 @@ pub enum ExprF<PTag, STag, E> {
 }
 
 #[derive(Debug, Clone)]
-pub struct Expr<PTag, STag>(pub ExprF<PTag, STag, Rc<Expr<PTag, STag>>>);
+pub struct Expr<PTag, STag>(pub ExprF<PTag, STag, Box<Expr<PTag, STag>>>);
 
 #[derive(Debug, Clone)]
 pub struct Program<PTag, STag> {
-  pub defs: Vec<(DefId, Rc<Expr<PTag, STag>>)>,
+  pub defs: Vec<(DefId, Box<Expr<PTag, STag>>)>,
   pub def_symbols: HashMap<DefId, String>,
   pub bind_symbols: HashMap<BindId, String>,
   pub name_symbols: HashMap<NameId, String>,

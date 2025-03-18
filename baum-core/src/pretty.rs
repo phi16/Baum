@@ -73,7 +73,7 @@ impl<'a> Pretty<'a> {
     self
   }
 
-  fn defs<P, S>(&mut self, ds: &Vec<(DefId, Rc<Expr<P, S>>)>) -> &mut Self {
+  fn defs<P, S>(&mut self, ds: &Vec<(DefId, Box<Expr<P, S>>)>) -> &mut Self {
     for (i, e) in ds {
       self.di(i).s(" = ").e(e).ln();
     }
