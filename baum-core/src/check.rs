@@ -7,12 +7,35 @@ use std::rc::Rc;
 
 type Result<T> = std::result::Result<T, String>;
 
+type RV<P, S> = Rc<Val<P, S>>;
+type Term<P, S> = RV<P, S>;
+type Type<P, S> = RV<P, S>;
+
+enum Subst<'a, T> {
+  Unchanged(&'a T),
+  Changed(T),
+}
+
+impl<'a, T: Clone> Subst<'a, T> {
+  fn is_changed(&self) -> bool {
+    match self {
+      Subst::Unchanged(_) => false,
+      Subst::Changed(_) => true,
+    }
+  }
+  fn into(self) -> T {
+    match self {
+      Subst::Unchanged(t) => t.clone(),
+      Subst::Changed(t) => t,
+    }
+  }
+}
+
 pub trait Tag: Clone + std::fmt::Debug + PartialEq + Eq {}
 
 struct Env<P, S> {
   lookup: HashMap<BindId, Type<P, S>>,
   define: HashMap<DefId, Type<P, S>>,
-  holes: HashMap<HoleId, Type<P, S>>,
 }
 
 impl<P, S> Env<P, S> {
@@ -20,7 +43,6 @@ impl<P, S> Env<P, S> {
     Env {
       lookup: HashMap::new(),
       define: HashMap::new(),
-      holes: HashMap::new(),
     }
   }
 
@@ -33,11 +55,34 @@ impl<P, S> Env<P, S> {
   }
 }
 
+struct Solve<P, S> {
+  holes: HashMap<HoleId, Type<P, S>>,
+  constraints: HashMap<HoleId, RV<P, S>>,
+}
+
+impl<P, S> Solve<P, S> {
+  fn new() -> Self {
+    Solve {
+      holes: HashMap::new(),
+      constraints: HashMap::new(),
+    }
+  }
+
+  fn add_hole(&mut self, hole: HoleId, ty: Type<P, S>) {
+    self.holes.insert(hole, ty);
+  }
+
+  fn add_constraint(&mut self, hole: HoleId, v: RV<P, S>) {
+    self.constraints.insert(hole, v);
+  }
+}
+
 struct Checker<P, S> {
   def_symbols: HashMap<DefId, String>,
   bind_symbols: HashMap<BindId, String>,
   name_symbols: HashMap<NameId, String>,
   envs: Vec<Env<P, S>>,
+  solves: Vec<Solve<P, S>>,
   next_bind_id: u32,
   next_hole_id: u32,
   errors: Vec<String>,
@@ -59,6 +104,7 @@ where
       bind_symbols,
       name_symbols,
       envs: vec![Env::new()],
+      solves: vec![Solve::new()],
       next_bind_id,
       next_hole_id: 0,
       errors: Vec::new(),
@@ -73,16 +119,14 @@ where
     self.envs.last_mut().unwrap()
   }
 
+  fn solve(&mut self) -> &mut Solve<P, S> {
+    self.solves.last_mut().unwrap()
+  }
+
   fn fresh_id(&mut self) -> BindId {
     let id = BindId(self.next_bind_id);
     self.next_bind_id += 1;
     self.bind_symbols.insert(id, format!("%%{}", id.0));
-    id
-  }
-
-  fn fresh_hole(&mut self) -> HoleId {
-    let id = HoleId(self.next_hole_id);
-    self.next_hole_id += 1;
     id
   }
 
@@ -104,6 +148,21 @@ where
     None
   }
 
+  fn lookup_constraint(&self, hole: HoleId) -> Option<&RV<P, S>> {
+    for env in self.solves.iter().rev() {
+      if let Some(v) = env.constraints.get(&hole) {
+        return Some(v);
+      }
+    }
+    None
+  }
+
+  fn fresh_hole(&mut self) -> HoleId {
+    let id = HoleId(self.next_hole_id);
+    self.next_hole_id += 1;
+    id
+  }
+
   fn ppe(&self, e: &Expr<P, S>) -> String {
     pretty_expr(&self.def_symbols, &self.bind_symbols, &self.name_symbols, e)
   }
@@ -121,23 +180,30 @@ where
     unimplemented!()
   }
 
-  fn add_constraint(&mut self, h: &HoleId, v: &Val<P, S>) {
-    unimplemented!()
-  }
-
-  fn unify(&mut self, v1: &Val<P, S>, v2: &Val<P, S>) -> Result<()> {
-    // prioritize t2
+  fn unify(&mut self, v1: &RV<P, S>, v2: &RV<P, S>) -> Result<()> {
+    if Rc::ptr_eq(v1, v2) {
+      return Ok(());
+    }
     eprintln!("- unify: {} ≟ {}", self.ppv(v1), self.ppv(v2));
     match (&v1.0, &v2.0) {
       (ValF::Fail, _) => Err("unify: fail".to_string()),
       (_, ValF::Fail) => Err("unify: fail".to_string()),
-      (ValF::Hole(h), _) => {
-        self.add_constraint(h, v2);
-        Ok(())
+      (ValF::Hole(h1), ValF::Hole(h2)) if h1.0 == h2.0 => Ok(()),
+      (ValF::Hole(h1), _) => {
+        if let Some(v1) = self.lookup_constraint(*h1) {
+          self.unify(&v1.clone(), v2)
+        } else {
+          self.solve().add_constraint(*h1, v2.clone());
+          Ok(())
+        }
       }
-      (_, ValF::Hole(h)) => {
-        self.add_constraint(h, v1);
-        Ok(())
+      (_, ValF::Hole(h2)) => {
+        if let Some(v2) = self.lookup_constraint(*h2) {
+          self.unify(v1, &v2.clone())
+        } else {
+          self.solve().add_constraint(*h2, v1.clone());
+          Ok(())
+        }
       }
       (ValF::Bind(i1), ValF::Bind(i2)) => {
         if i1 == i2 {
@@ -151,6 +217,128 @@ where
     }
   }
 
+  fn subst<'a>(&mut self, i: BindId, e: &Term<P, S>, v: &'a RV<P, S>) -> Subst<'a, RV<P, S>> {
+    // TODO: escaping
+    eprintln!("- subst: {:?} with {} in {}", i, self.ppv(e), self.ppv(v));
+    let u = Subst::Unchanged(v);
+    match &v.0 {
+      ValF::Bind(j) => {
+        if i == *j {
+          // TODO: e may contain "bounded" variables...
+          Subst::Changed(e.clone())
+        } else {
+          u
+        }
+      }
+      ValF::Def(di) => unimplemented!(),
+
+      ValF::Pi(tag, vis, ti, ty, body) => {
+        let ty_s = self.subst(i, e, ty);
+        let body_s = if i == *ti {
+          Subst::Unchanged(body)
+        } else {
+          self.subst(i, e, body)
+        };
+        if ty_s.is_changed() || body_s.is_changed() {
+          Subst::Changed(Rc::new(Val(ValF::Pi(
+            tag.clone(),
+            vis.clone(),
+            *ti,
+            ty_s.into(),
+            body_s.into(),
+          ))))
+        } else {
+          Subst::Unchanged(v)
+        }
+      }
+      ValF::Lam(tag, vis, ti, ty, body) => {
+        let ty_s = self.subst(i, e, ty);
+        let body_s = if i == *ti {
+          Subst::Unchanged(body)
+        } else {
+          self.subst(i, e, body)
+        };
+        if ty_s.is_changed() || body_s.is_changed() {
+          Subst::Changed(Rc::new(Val(ValF::Lam(
+            tag.clone(),
+            vis.clone(),
+            *ti,
+            ty_s.into(),
+            body_s.into(),
+          ))))
+        } else {
+          Subst::Unchanged(v)
+        }
+      }
+      ValF::App(tag, vis, ti, x) => {
+        unimplemented!()
+      }
+
+      ValF::Sigma(tag, props) => {
+        let mut changed = false;
+        let mut hidden = false;
+        let mut ps: Vec<(NameId, BindId, Rc<Val<P, S>>)> = Vec::new();
+        for (name, ti, ty) in props {
+          if hidden {
+            ps.push((name.clone(), ti.clone(), ty.clone()));
+            continue;
+          } else {
+            let ty_s = self.subst(i, e, ty);
+            if ty_s.is_changed() {
+              changed = true;
+            }
+            ps.push((name.clone(), ti.clone(), ty_s.into()));
+            if i == *ti {
+              hidden = true;
+            }
+          }
+        }
+        if changed {
+          Subst::Changed(Rc::new(Val(ValF::Sigma(tag.clone(), ps))))
+        } else {
+          Subst::Unchanged(v)
+        }
+      }
+      ValF::Obj(tag, props) => {
+        let mut changed = false;
+        let mut ps = Vec::new();
+        for (name, el) in props {
+          let el_s = self.subst(i, e, el);
+          if el_s.is_changed() {
+            changed = true;
+          }
+          ps.push((name.clone(), el_s.into()));
+        }
+        if changed {
+          Subst::Changed(Rc::new(Val(ValF::Obj(tag.clone(), ps))))
+        } else {
+          Subst::Unchanged(v)
+        }
+      }
+      ValF::Prop(tag, ti, name) => {
+        unimplemented!()
+      }
+      _ => Subst::Unchanged(v),
+    }
+  }
+
+  fn prop(&mut self, tag: &S, e: &Term<P, S>, name: &NameId) -> Term<P, S> {
+    match &e.0 {
+      ValF::Bind(i) => Rc::new(Val(ValF::Prop(tag.clone(), *i, *name))),
+      ValF::Def(i) => unimplemented!(),
+      ValF::Obj(otag, props) => {
+        assert_eq!(tag, otag);
+        for (n, e) in props {
+          if n == name {
+            return e.clone();
+          }
+        }
+        unreachable!()
+      }
+      _ => unreachable!(),
+    }
+  }
+
   fn eval(&mut self, e: &Expr<P, S>) -> Result<Term<P, S>> {
     // Note: e may contain unresolved bindings
     use ExprF::*;
@@ -158,50 +346,44 @@ where
       Hole => {
         let htm = self.fresh_hole();
         let hty = self.fresh_hole();
-        self.here().holes.insert(hty, Val(ValF::Uni));
-        self.here().holes.insert(htm, Val(ValF::Hole(hty)));
+        self.solve().add_hole(hty, Rc::new(Val(ValF::Uni)));
+        self.solve().add_hole(htm, Rc::new(Val(ValF::Hole(hty))));
         ValF::Hole(htm)
       }
       Bind(i) => ValF::Bind(*i),
       Def(i) => ValF::Def(*i),
-      Ann(t, _) => self.eval(t)?.0,
+      Ann(t, _) => return self.eval(t),
       Uni => ValF::Uni,
       Let(defs, body) => {
         self.envs.push(Env::new());
         let defs = self.defs(defs);
         let body = self.eval(body)?;
         self.envs.pop();
-        self.resolve_let(defs, body).0
+        return Ok(self.resolve_let(defs, body));
       }
 
       Pi(tag, vis, i, ty, body) => {
         let ty = self.eval(ty)?;
         let body = self.eval(body)?;
-        ValF::Pi(
-          tag.clone(),
-          vis.clone(),
-          i.clone(),
-          Rc::new(ty),
-          Rc::new(body),
-        )
+        ValF::Pi(tag.clone(), vis.clone(), i.clone(), ty, body)
       }
       Lam(tag, vis, i, ty, body) => {
         let ty = self.eval(ty)?;
         let body = self.eval(body)?;
-        ValF::Lam(tag.clone(), vis.clone(), *i, Rc::new(ty), Rc::new(body))
+        ValF::Lam(tag.clone(), vis.clone(), *i, ty, body)
       }
       App(tag, vis, f, x) => {
         let f = self.eval(f)?;
         let x = self.eval(x)?;
-        match f.0 {
-          ValF::Bind(i) => ValF::App(tag.clone(), vis.clone(), i, Rc::new(x)),
+        match &f.0 {
+          ValF::Bind(i) => ValF::App(tag.clone(), vis.clone(), *i, x),
           ValF::Def(i) => unimplemented!(),
           ValF::Lam(ftag, fvis, i, ty, body) => {
-            if *tag != ftag || *vis != fvis {
+            if tag != ftag || vis != fvis {
               return Err("eval: app".to_string());
             }
-            let body = self.subst(i, &x, &body);
-            ValF::Lam(tag.clone(), vis.clone(), i, ty.clone(), Rc::new(body))
+            let body = self.subst(*i, &x, &body).into();
+            ValF::Lam(tag.clone(), vis.clone(), *i, ty.clone(), body)
           }
           _ => return Err("eval: app".to_string()),
         }
@@ -211,7 +393,7 @@ where
         let mut ps = Vec::new();
         for (name, i, ty) in props {
           let ty = self.eval(ty)?;
-          ps.push((name.clone(), i.clone(), Rc::new(ty)));
+          ps.push((name.clone(), i.clone(), ty));
         }
         ValF::Sigma(tag.clone(), ps)
       }
@@ -219,22 +401,22 @@ where
         let mut ps = Vec::new();
         for (name, e) in props {
           let e = self.eval(e)?;
-          ps.push((name.clone(), Rc::new(e)));
+          ps.push((name.clone(), e));
         }
         ValF::Obj(tag.clone(), ps)
       }
       Prop(tag, e, name) => {
         let e = self.eval(e)?;
-        match e.0 {
-          ValF::Bind(i) => ValF::Prop(tag.clone(), i, *name),
+        match &e.0 {
+          ValF::Bind(i) => ValF::Prop(tag.clone(), *i, *name),
           ValF::Def(i) => unimplemented!(),
           ValF::Obj(otag, props) => {
-            if *tag != otag {
+            if tag != otag {
               return Err("eval: prop".to_string());
             }
             for (n, e) in props {
-              if n == *name {
-                return Ok((*e).clone());
+              if n == name {
+                return Ok(e.clone());
               }
             }
             return Err("eval: prop".to_string());
@@ -243,97 +425,7 @@ where
         }
       }
     };
-    Ok(Val(v))
-  }
-
-  fn subst(&mut self, i: BindId, e: &Term<P, S>, v: &Val<P, S>) -> Val<P, S> {
-    // TODO: escaping
-    eprintln!("- subst: {:?} with {} in {}", i, self.ppv(e), self.ppv(v));
-    let v = match &v.0 {
-      ValF::Fail => ValF::Fail,
-      ValF::Hole(h) => ValF::Hole(*h),
-      ValF::Bind(j) => {
-        if i == *j {
-          e.0.clone()
-        } else {
-          ValF::Bind(*j)
-        }
-      }
-      ValF::Def(i) => ValF::Def(*i),
-      ValF::Uni => ValF::Uni,
-
-      ValF::Pi(tag, vis, ti, ty, body) => {
-        if *ti == i {
-          ty.0.clone()
-        } else {
-          let ty = self.subst(i, e, ty);
-          let body = self.subst(i, e, body);
-          ValF::Pi(
-            tag.clone(),
-            vis.clone(),
-            ti.clone(),
-            Rc::new(ty),
-            Rc::new(body),
-          )
-        }
-      }
-      ValF::Lam(tag, vis, ti, ty, body) => {
-        if *ti == i {
-          ty.0.clone()
-        } else {
-          let ty = self.subst(i, e, ty);
-          let body = self.subst(i, e, body);
-          ValF::Lam(tag.clone(), vis.clone(), *ti, Rc::new(ty), Rc::new(body))
-        }
-      }
-      ValF::App(tag, vis, ti, x) => {
-        unimplemented!()
-      }
-
-      ValF::Sigma(tag, props) => {
-        let mut ps = Vec::new();
-        for (name, ti, ty) in props {
-          if *ti == i {
-            unimplemented!()
-          } else {
-            let ty = self.subst(i, e, ty);
-            ps.push((name.clone(), ti.clone(), Rc::new(ty)));
-          }
-        }
-        ValF::Sigma(tag.clone(), ps)
-      }
-      ValF::Obj(tag, props) => {
-        let mut ps = Vec::new();
-        for (name, el) in props {
-          let el = self.subst(i, e, el);
-          ps.push((name.clone(), Rc::new(el)));
-        }
-        ValF::Obj(tag.clone(), ps)
-      }
-      ValF::Prop(tag, ti, name) => {
-        unimplemented!()
-      }
-    };
-    Val(v)
-  }
-
-  fn valprop(&mut self, tag: &S, e: &Term<P, S>, name: &NameId) -> Result<Term<P, S>> {
-    let v = match &e.0 {
-      ValF::Bind(i) => ValF::Prop(tag.clone(), *i, *name),
-      ValF::Obj(otag, props) => {
-        if tag != otag {
-          return Err("valprop: obj".to_string());
-        }
-        for (n, e) in props {
-          if n == name {
-            return Ok((**e).clone());
-          }
-        }
-        return Err("valprop: obj".to_string());
-      }
-      _ => return Err("valprop".to_string()),
-    };
-    Ok(Val(v))
+    Ok(Rc::new(Val(v)))
   }
 
   fn check(&mut self, e: &Expr<P, S>, check_ty: &Type<P, S>) -> Result<()> {
@@ -358,7 +450,7 @@ where
           self.envs.push(Env::new());
           self.here().add(*i, ty.clone());
           // Note: bty should not depend on i
-          let tbody = self.subst(*ti, &Val(ValF::Bind(*i)), bty);
+          let tbody = self.subst(*ti, &Rc::new(Val(ValF::Bind(*i))), bty).into();
           let bty = self.check(body, &tbody)?;
           self.envs.pop();
           Ok(())
@@ -379,7 +471,7 @@ where
               return Err("check: obj 2".to_string());
             }
             self.check(&e, &ty)?;
-            self.here().add(*ti, (**ty).clone());
+            self.here().add(*ti, ty.clone());
             ps.push((n.clone(), *ti, Rc::new(ty)));
           }
           if props.len() != tprops.len() {
@@ -411,12 +503,12 @@ where
         None => Err("synth: def".to_string()),
       },
       Ann(t, ty) => {
-        self.check(&ty, &Val(ValF::Uni))?;
+        self.check(&ty, &Rc::new(Val(ValF::Uni)))?;
         let ty = self.eval(ty)?;
         self.check(t, &ty)?;
         Ok(ty)
       }
-      Uni => Ok(Val(ValF::Uni)),
+      Uni => Ok(Rc::new(Val(ValF::Uni))),
 
       Let(defs, body) => {
         self.envs.push(Env::new());
@@ -432,7 +524,7 @@ where
         self.here().add(*i, ty.clone());
         self.synth(body)?;
         self.envs.pop();
-        Ok(Val(ValF::Uni))
+        Ok(Rc::new(Val(ValF::Uni)))
       }
       Lam(tag, vis, i, ty, body) => {
         let ty = self.eval(ty)?;
@@ -440,13 +532,13 @@ where
         self.here().add(*i, ty.clone());
         let bty = self.synth(body)?;
         self.envs.pop();
-        Ok(Val(ValF::Pi(
+        Ok(Rc::new(Val(ValF::Pi(
           tag.clone(),
           vis.clone(),
           *i,
-          Rc::new(ty),
-          Rc::new(bty),
-        )))
+          ty,
+          bty,
+        ))))
       }
       App(tag, vis, f, x) => {
         let fty = self.synth(f)?;
@@ -458,7 +550,7 @@ where
             self.check(x, &ty)?;
             let x = self.eval(x)?;
             // substitute i with x in bty
-            let bty = self.subst(*i, &x, bty);
+            let bty = self.subst(*i, &x, bty).into();
             Ok(bty)
           }
           _ => Err("synth: app".to_string()),
@@ -472,7 +564,7 @@ where
           self.here().add(*i, ty.clone());
         }
         self.envs.pop();
-        Ok(Val(ValF::Uni))
+        Ok(Rc::new(Val(ValF::Uni)))
       }
       Obj(tag, props) => {
         let mut tys = Vec::new();
@@ -480,26 +572,26 @@ where
         for (name, e) in props {
           let ty = self.synth(e)?;
           let i = self.fresh_id();
-          tys.push((name.clone(), i, Rc::new(ty.clone())));
+          tys.push((name.clone(), i, ty.clone()));
         }
         self.envs.pop();
-        Ok(Val(ValF::Sigma(tag.clone(), tys)))
+        Ok(Rc::new(Val(ValF::Sigma(tag.clone(), tys))))
       }
       Prop(tag, e, name) => {
         let ty = self.synth(e)?;
-        match ty.0 {
+        match &ty.0 {
           ValF::Sigma(etag, props) => {
-            if *tag != etag {
+            if tag != etag {
               return Err("synth: prop".to_string());
             }
             for (index, (n, _, ty)) in props.iter().enumerate() {
               if n == name {
                 let e = self.eval(e)?;
-                let mut ty = (**ty).clone();
+                let mut ty = ty.clone();
                 // ty may depend on previous props
                 for (n, i, _) in props.iter().take(index).rev() {
-                  let p = self.valprop(tag, &e, n)?; // e.n
-                  ty = self.subst(*i, &p, &ty);
+                  let p = self.prop(tag, &e, n); // e.n
+                  ty = self.subst(*i, &p, &ty).into();
                 }
                 return Ok(ty);
               }
@@ -514,6 +606,7 @@ where
 
   fn defs(&mut self, defs: &Vec<(DefId, Rc<Expr<P, S>>)>) -> Vec<(DefId, Rc<Term<P, S>>)> {
     let mut def_terms = Vec::new();
+    let fail = Rc::new(Val(ValF::Fail));
     for (id, expr) in defs {
       let ty = self.synth(&*expr);
       match &ty {
@@ -525,12 +618,12 @@ where
           Ok(tm) => (tm, ty),
           Err(e) => {
             self.add_error(&format!("{}: {}", self.def_symbols[&id], e));
-            (Val(ValF::Fail), ty)
+            (fail.clone(), ty)
           }
         },
         Err(e) => {
           self.add_error(&format!("{}: {}", self.def_symbols[&id], e));
-          (Val(ValF::Fail), Val(ValF::Fail))
+          (fail.clone(), fail.clone())
         }
       };
       self.here().def(*id, ty);

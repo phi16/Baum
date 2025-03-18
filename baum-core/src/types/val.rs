@@ -20,6 +20,3 @@ pub enum ValF<PTag, STag, V> {
 
 #[derive(Debug, Clone)]
 pub struct Val<P, S>(pub ValF<P, S, Rc<Val<P, S>>>);
-
-pub type Term<P, S> = Val<P, S>;
-pub type Type<P, S> = Val<P, S>;
