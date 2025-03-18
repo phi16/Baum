@@ -102,6 +102,22 @@ impl<'a> Pretty<'a> {
     self
   }
 
+  fn is_simple<T>(&self, e: &Expr<T>) -> bool {
+    match &e.0 {
+      ExprF::Hole
+      | ExprF::Bind(_)
+      | ExprF::Uni
+      | ExprF::Def(_, _, _)
+      | ExprF::Lit(_)
+      | ExprF::TupleTy(_)
+      | ExprF::TupleCon(_)
+      | ExprF::ObjTy(_)
+      | ExprF::ObjCon(_) => true,
+      ExprF::Wrap(e) => self.is_simple(e),
+      _ => false,
+    }
+  }
+
   fn e<T>(&mut self, e: &Expr<T>) -> &mut Self {
     match &e.0 {
       ExprF::Hole => self.s("_"),
@@ -128,18 +144,13 @@ impl<'a> Pretty<'a> {
         None => self.s("Π(").e(t).s(") ").e(e),
       },
       ExprF::LamE(i, t, e) => self.s("λ(").i(i).s(": ").e(t).s(") ").e(e),
-      ExprF::AppE(e1, e2) => match e2.0 {
-        ExprF::Hole
-        | ExprF::Bind(_)
-        | ExprF::Uni
-        | ExprF::Def(_, _, _)
-        | ExprF::Lit(_)
-        | ExprF::TupleTy(_)
-        | ExprF::TupleCon(_)
-        | ExprF::ObjTy(_)
-        | ExprF::ObjCon(_) => self.e(e1).s(" ").e(e2),
-        _ => self.e(e1).s(" (").e(e2).s(")"),
-      },
+      ExprF::AppE(e1, e2) => {
+        if self.is_simple(e2) {
+          self.e(e1).s(" ").e(e2)
+        } else {
+          self.e(e1).s(" (").e(e2).s(")")
+        }
+      }
 
       ExprF::PiI(i, t, e) => match i {
         Some(i) => self.s("Π{").i(i).s(": ").e(t).s("} ").e(e),

@@ -12,6 +12,7 @@ pub trait Tag: Clone + std::fmt::Debug + PartialEq + Eq {}
 struct Env<P, S> {
   lookup: HashMap<BindId, Type<P, S>>,
   define: HashMap<DefId, Type<P, S>>,
+  holes: HashMap<HoleId, Type<P, S>>,
 }
 
 impl<P, S> Env<P, S> {
@@ -19,6 +20,7 @@ impl<P, S> Env<P, S> {
     Env {
       lookup: HashMap::new(),
       define: HashMap::new(),
+      holes: HashMap::new(),
     }
   }
 
@@ -37,6 +39,7 @@ struct Checker<P, S> {
   name_symbols: HashMap<NameId, String>,
   envs: Vec<Env<P, S>>,
   next_bind_id: u32,
+  next_hole_id: u32,
   errors: Vec<String>,
 }
 
@@ -57,6 +60,7 @@ where
       name_symbols,
       envs: vec![Env::new()],
       next_bind_id,
+      next_hole_id: 0,
       errors: Vec::new(),
     }
   }
@@ -73,6 +77,12 @@ where
     let id = BindId(self.next_bind_id);
     self.next_bind_id += 1;
     self.bind_symbols.insert(id, format!("%%{}", id.0));
+    id
+  }
+
+  fn fresh_hole(&mut self) -> HoleId {
+    let id = HoleId(self.next_hole_id);
+    self.next_hole_id += 1;
     id
   }
 
@@ -113,15 +123,16 @@ where
 
   fn unify(&self, v1: &Val<P, S>, v2: &Val<P, S>) -> Result<Val<P, S>> {
     // prioritize t2
-    eprintln!("unify: {} ≟ {}", self.ppv(v1), self.ppv(v2));
+    eprintln!("- unify: {} ≟ {}", self.ppv(v1), self.ppv(v2));
     match (&v1.0, &v2.0) {
-      (ValF::Hole, _) => Ok(v2.clone()),
-      (_, ValF::Hole) => Ok(v1.clone()),
+      (ValF::Fail, _) => Err("unify: fail".to_string()),
+      (_, ValF::Fail) => Err("unify: fail".to_string()),
+      (ValF::Hole(h), _) => Ok(v2.clone()), // TODO
+      (_, ValF::Hole(h)) => Ok(v1.clone()), // TODO
       (ValF::Bind(i1), ValF::Bind(i2)) => {
         if i1 == i2 {
           Ok(v2.clone())
         } else {
-          // TODO...
           Err("unify: bind".to_string())
         }
       }
@@ -134,11 +145,16 @@ where
     // Note: e may contain unresolved bindings
     use ExprF::*;
     let v = match &e.0 {
-      Hole => ValF::Hole,
+      Hole => {
+        let htm = self.fresh_hole();
+        let hty = self.fresh_hole();
+        self.here().holes.insert(hty, Val(ValF::Uni));
+        self.here().holes.insert(htm, Val(ValF::Hole(hty)));
+        ValF::Hole(htm)
+      }
       Bind(i) => ValF::Bind(*i),
       Def(i) => ValF::Def(*i),
       Ann(t, _) => self.eval(t)?.0,
-      Synth(e) => self.eval(e)?.0,
       Uni => ValF::Uni,
       Let(defs, body) => {
         self.envs.push(Env::new());
@@ -222,9 +238,10 @@ where
 
   fn subst(&mut self, i: BindId, e: &Term<P, S>, v: &Val<P, S>) -> Val<P, S> {
     // TODO: escaping
-    eprintln!("subst: {:?} with {} in {}", i, self.ppv(e), self.ppv(v));
+    eprintln!("- subst: {:?} with {} in {}", i, self.ppv(e), self.ppv(v));
     let v = match &v.0 {
-      ValF::Hole => ValF::Hole,
+      ValF::Fail => ValF::Fail,
+      ValF::Hole(h) => ValF::Hole(*h),
       ValF::Bind(j) => {
         if i == *j {
           e.0.clone()
@@ -350,7 +367,7 @@ where
           }
           let mut ps = Vec::new();
           self.envs.push(Env::new());
-          eprintln!("match {} ~ {}", self.ppe(e), self.ppv(check_ty));
+          eprintln!("- object match {}: {}", self.ppe(e), self.ppv(check_ty));
           for ((n, e), (tn, ti, ty)) in props.iter().zip(tprops.iter()) {
             if n != tn {
               eprintln!("{:?} != {:?}", n, tn);
@@ -391,11 +408,6 @@ where
         self.check(&ty, &Val(ValF::Uni))?;
         let ty = self.eval(ty)?;
         self.check(t, &ty)?;
-        Ok(ty)
-      }
-      Synth(e) => {
-        let ty = self.synth(e)?;
-        // TODO: universe polymorphism
         Ok(ty)
       }
       Uni => Ok(Val(ValF::Uni)),
@@ -499,20 +511,20 @@ where
     for (id, expr) in defs {
       let ty = self.synth(&*expr);
       match &ty {
-        Ok(ty) => eprintln!("{}: Ok({})", self.def_symbols[&id], self.ppv(ty)),
-        Err(e) => eprintln!("{}: Err({})", self.def_symbols[&id], e),
+        Ok(ty) => eprintln!("[o] {}: {}", self.def_symbols[&id], self.ppv(ty)),
+        Err(e) => eprintln!("[x] {}: {}", self.def_symbols[&id], e),
       }
       let (tm, ty) = match ty {
         Ok(ty) => match self.eval(&expr) {
           Ok(tm) => (tm, ty),
           Err(e) => {
             self.add_error(&format!("{}: {}", self.def_symbols[&id], e));
-            (Val(ValF::Hole), ty)
+            (Val(ValF::Fail), ty)
           }
         },
         Err(e) => {
           self.add_error(&format!("{}: {}", self.def_symbols[&id], e));
-          (Val(ValF::Hole), Val(ValF::Hole))
+          (Val(ValF::Fail), Val(ValF::Fail))
         }
       };
       self.here().def(*id, ty);

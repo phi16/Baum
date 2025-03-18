@@ -3,7 +3,8 @@ use std::rc::Rc;
 
 #[derive(Debug, Clone)]
 pub enum ValF<PTag, STag, V> {
-  Hole,
+  Fail,
+  Hole(HoleId),
   Bind(BindId),
   Def(DefId),
   Uni,

@@ -631,6 +631,7 @@ pub fn builtin_syntax_handlers<'a>() -> HashMap<SyntaxId, SyntaxHandler<'a>> {
     SyntaxId::TupleCon,
     make_handler(|p| {
       let mut v = Vec::new();
+      let mut has_comma = false;
       p.take_token("(").unwrap();
       loop {
         if let Some(_) = p.take_token(")") {
@@ -638,7 +639,10 @@ pub fn builtin_syntax_handlers<'a>() -> HashMap<SyntaxId, SyntaxHandler<'a>> {
         }
         let e = p.take_expr().unwrap();
         v.push(Rc::new(e.clone()));
-        p.take_token(",");
+        has_comma = p.take_token(",").is_some();
+      }
+      if v.len() == 1 && !has_comma {
+        return Ok(v[0].0.clone()); // parenthesis
       }
       Ok(front::ExprF::TupleCon(v))
     }),

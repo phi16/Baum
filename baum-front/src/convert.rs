@@ -514,7 +514,6 @@ impl Builder {
           let tag = PTag { is_mod_param: true };
           e = core::ExprF::Lam(tag, core::Vis::from(vis.clone()), i, ty, wrap(e));
         }
-        let e = core::ExprF::Synth(wrap(e));
         let def = self.add_def(name, DefType::Mod);
         decls.defs.push((def, wrap(e)));
         self
@@ -527,8 +526,7 @@ impl Builder {
       DeclF::Def(i, e) => {
         let e = self.e(&e);
         let def = self.add_def(&i, DefType::Def);
-        let synth = core::Expr(core::ExprF::Synth(Rc::new(e)));
-        decls.defs.push((def, Rc::new(synth)));
+        decls.defs.push((def, Rc::new(e)));
         self
           .envs
           .last_mut()

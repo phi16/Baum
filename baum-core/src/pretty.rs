@@ -39,6 +39,11 @@ impl<'a> Pretty<'a> {
     self
   }
 
+  fn hi(&mut self, hole: &HoleId) -> &mut Self {
+    self.line.push(hole.0.to_string());
+    self
+  }
+
   fn name(&mut self, name: &NameId) -> &mut Self {
     self.line.push(self.name_symbols.get(name).unwrap().clone());
     self
@@ -81,16 +86,18 @@ impl<'a> Pretty<'a> {
       ExprF::Bind(i) => self.i(i),
       ExprF::Def(i) => self.di(i),
       ExprF::Ann(v, t) => self.e(v).s(" of ").e(t),
-      ExprF::Synth(e) => self.s("def ").e(e),
       ExprF::Uni => self.s("𝒰"),
       ExprF::Let(defs, e) => self.s("let").open().defs(defs).close().s("in ").e(e),
 
       ExprF::Pi(_, Vis::Explicit, i, t, e) => self.s("Π(").i(i).s(": ").e(t).s(") ").e(e),
       ExprF::Lam(_, Vis::Explicit, i, t, e) => self.s("λ(").i(i).s(": ").e(t).s(") ").e(e),
       ExprF::App(_, Vis::Explicit, e1, e2) => match e2.0 {
-        ExprF::Hole | ExprF::Bind(_) | ExprF::Uni | ExprF::Sigma(_, _) | ExprF::Obj(_, _) => {
-          self.e(e1).s(" ").e(e2)
-        }
+        ExprF::Hole
+        | ExprF::Bind(_)
+        | ExprF::Def(_)
+        | ExprF::Uni
+        | ExprF::Sigma(_, _)
+        | ExprF::Obj(_, _) => self.e(e1).s(" ").e(e2),
         _ => self.e(e1).s(" (").e(e2).s(")"),
       },
 
@@ -118,7 +125,8 @@ impl<'a> Pretty<'a> {
 
   fn v<P, S>(&mut self, v: &Val<P, S>) -> &mut Self {
     match &v.0 {
-      ValF::Hole => self.s("_"),
+      ValF::Fail => self.s("[X]"),
+      ValF::Hole(h) => self.s("?").hi(h),
       ValF::Bind(i) => self.i(i),
       ValF::Def(i) => self.di(i),
       ValF::Uni => self.s("𝒰"),
@@ -126,7 +134,7 @@ impl<'a> Pretty<'a> {
       ValF::Pi(_, Vis::Explicit, i, t, e) => self.s("Π(").i(i).s(": ").v(t).s(") ").v(e),
       ValF::Lam(_, Vis::Explicit, i, t, e) => self.s("λ(").i(i).s(": ").v(t).s(") ").v(e),
       ValF::App(_, Vis::Explicit, e1, e2) => match e2.0 {
-        ValF::Hole | ValF::Bind(_) | ValF::Uni | ValF::Sigma(_, _) | ValF::Obj(_, _) => {
+        ValF::Hole(_) | ValF::Bind(_) | ValF::Uni | ValF::Sigma(_, _) | ValF::Obj(_, _) => {
           self.i(e1).s(" ").v(e2)
         }
         _ => self.i(e1).s(" (").v(e2).s(")"),

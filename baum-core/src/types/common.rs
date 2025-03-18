@@ -15,13 +15,21 @@ impl std::fmt::Debug for BindId {
     write!(f, "%{}", self.0)
   }
 }
-
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct NameId(pub u32);
 
 impl std::fmt::Debug for NameId {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     write!(f, "#{}", self.0)
+  }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+pub struct HoleId(pub u32);
+
+impl std::fmt::Debug for HoleId {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    write!(f, "?{}", self.0)
   }
 }
 

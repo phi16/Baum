@@ -8,7 +8,6 @@ pub enum ExprF<PTag, STag, E> {
   Bind(BindId),
   Def(DefId),
   Ann(E, E),
-  Synth(E),
   Uni,
   Let(Vec<(DefId, E)>, E),
 
