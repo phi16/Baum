@@ -547,6 +547,10 @@ impl Builder {
 
 pub fn convert<T>(p: Program<T>) -> (core::Program<PTag, STag>, Vec<String>) {
   let mut b = Builder::new(p.symbols);
+  // No need to do this but for convenience
+  for index in 0..8 {
+    b.name_from_index(&index);
+  }
   let defs = b.ds(&p.decls).defs;
   (
     core::Program {

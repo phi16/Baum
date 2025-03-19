@@ -446,15 +446,14 @@ where
           if tag != *ttag || vis != *tvis {
             return Err("check: lam".to_string());
           }
-          let c_ty = self.check(*ty, &Rc::new(Val(ValF::Uni)))?;
+          let c_ty = self.check_ty(*ty)?;
           let ty = self.eval(&c_ty);
           self.unify(&ty, tty)?;
           self.envs.push(Env::new());
           self.here().add(i, tty.clone());
-          // Note: bty should not depend on i...
-          // ^ need to check
-          let tbody = self.subst(*ti, &Rc::new(Val(ValF::Bind(i))), bty).into();
-          let c_body = self.check(*body, &tbody)?;
+          // currently bty depends on ti, not i
+          let bty = self.subst(*ti, &Rc::new(Val(ValF::Bind(i))), bty).into();
+          let c_body = self.check(*body, &bty)?;
           self.envs.pop();
           Ok(CE(Lam(tag, vis, i, Box::new(c_ty), Box::new(c_body))))
         }
