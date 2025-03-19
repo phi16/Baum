@@ -13,7 +13,7 @@ type Type<P, S> = RV<P, S>;
 
 // Checked Expr
 #[derive(Debug, Clone)]
-struct CE<PTag, STag>(pub ExprF<PTag, STag, Box<CE<PTag, STag>>>);
+struct CE<PTag, STag>(pub ExprF<PTag, STag, HoleId, Box<CE<PTag, STag>>>);
 
 enum Subst<'a, T> {
   Unchanged(&'a T),
@@ -379,13 +379,7 @@ where
     // Note: e may contain unresolved bindings
     use ExprF::*;
     let v = match &e.0 {
-      Hole => {
-        let htm = self.fresh_hole();
-        let hty = self.fresh_hole();
-        self.solve().add_hole(hty, Rc::new(Val(ValF::Uni)));
-        self.solve().add_hole(htm, Rc::new(Val(ValF::Hole(hty))));
-        ValF::Hole(htm)
-      }
+      Hole(h) => ValF::Hole(*h),
       Bind(i) => ValF::Bind(*i),
       Def(i) => ValF::Def(*i),
       Ann(t, _) => return self.eval(t),
@@ -437,7 +431,11 @@ where
   fn check(&mut self, e: Expr<P, S>, check_ty: &Type<P, S>) -> Result<CE<P, S>> {
     use ExprF::*;
     match e.0 {
-      Hole => Ok(CE(Hole)),
+      Hole(_) => {
+        let h = self.fresh_hole();
+        self.solve().add_hole(h, check_ty.clone());
+        Ok(CE(Hole(h)))
+      }
       Let(defs, body) => {
         unimplemented!()
       }
@@ -502,7 +500,7 @@ where
   fn synth(&mut self, e: Expr<P, S>) -> Result<(CE<P, S>, Type<P, S>)> {
     use ExprF::*;
     match e.0 {
-      Hole => Err("synth: hole".to_string()),
+      Hole(_) => Err("synth: hole".to_string()),
       Bind(i) => match self.lookup_bind(i) {
         Some(ty) => Ok((CE(Bind(i)), ty.clone())),
         None => Err("synth: bind".to_string()),
@@ -646,7 +644,8 @@ where
         }
         Err(e) => {
           self.add_error(&format!("{}: {}", self.def_symbols[&id], e));
-          (CE(ExprF::Hole), fail.clone(), fail.clone())
+          let h = self.fresh_hole();
+          (CE(ExprF::Hole(h)), fail.clone(), fail.clone())
         }
       };
       self.here().def(id, ty);

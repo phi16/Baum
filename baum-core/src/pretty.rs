@@ -81,7 +81,7 @@ impl<'a> Pretty<'a> {
 
   fn e<P, S>(&mut self, e: &Expr<P, S>) -> &mut Self {
     match &e.0 {
-      ExprF::Hole => self.s("_"),
+      ExprF::Hole(_) => self.s("_"),
       ExprF::Bind(i) => self.i(i),
       ExprF::Def(i) => self.di(i),
       ExprF::Ann(v, t) => self.e(v).s(" of ").e(t),
@@ -91,7 +91,7 @@ impl<'a> Pretty<'a> {
       ExprF::Pi(_, Vis::Explicit, i, t, e) => self.s("Π(").i(i).s(": ").e(t).s(") ").e(e),
       ExprF::Lam(_, Vis::Explicit, i, t, e) => self.s("λ(").i(i).s(": ").e(t).s(") ").e(e),
       ExprF::App(_, Vis::Explicit, e1, e2) => match e2.0 {
-        ExprF::Hole
+        ExprF::Hole(_)
         | ExprF::Bind(_)
         | ExprF::Def(_)
         | ExprF::Uni

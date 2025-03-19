@@ -27,7 +27,7 @@ impl From<Vis> for core::Vis {
 
 type CoreExpr = core::Expr<PTag, STag>;
 
-fn wrap(e: core::ExprF<PTag, STag, Box<CoreExpr>>) -> Box<CoreExpr> {
+fn wrap(e: core::ExprF<PTag, STag, (), Box<CoreExpr>>) -> Box<CoreExpr> {
   Box::new(core::Expr(e))
 }
 
@@ -214,18 +214,18 @@ impl Builder {
   fn e<T>(&mut self, e: &Expr<T>) -> CoreExpr {
     use ExprF::*;
     core::Expr(match &e.0 {
-      Hole => core::ExprF::Hole,
+      Hole => core::ExprF::Hole(()),
       Bind(i) => match self.lookup(i) {
         Some(Entity::Bind(i)) => core::ExprF::Bind(*i),
         Some(Entity::Def(i)) => core::ExprF::Def(*i),
         Some(Entity::Mod(_)) => {
           self.errors.push(format!("Expected bind/def, found module"));
-          core::ExprF::Hole
+          core::ExprF::Hole(())
         }
         None => {
           // TODO: definition?
           self.errors.push(format!("Unbound identifier: {:?}", i));
-          core::ExprF::Hole
+          core::ExprF::Hole(())
         }
       },
       Ann(e, ty) => core::ExprF::Ann(Box::new(self.e(&e)), Box::new(self.e(&ty))),
@@ -239,11 +239,11 @@ impl Builder {
             Some(Entity::Def(i)) => core::ExprF::Def(*i),
             Some(Entity::Mod(_)) => {
               self.errors.push(format!("Expected bind/def, found module"));
-              core::ExprF::Hole
+              core::ExprF::Hole(())
             }
             None => {
               self.errors.push(format!("Variable not found: {:?}", i));
-              core::ExprF::Hole
+              core::ExprF::Hole(())
             }
           }
         } else {
@@ -273,7 +273,7 @@ impl Builder {
               self
                 .errors
                 .push(format!("Module not found: {:?}", mod_name[0]));
-              core::ExprF::Hole
+              core::ExprF::Hole(())
             }
           }
         }
@@ -289,7 +289,7 @@ impl Builder {
         self
           .errors
           .push(format!("Literal not yet supported: {:?}", l));
-        core::ExprF::Hole
+        core::ExprF::Hole(())
       }
 
       PiE(i, ty, e) => {
@@ -472,7 +472,7 @@ impl Builder {
           }
           ModBodyF::Import(_) => {
             self.errors.push("Import not yet supported".to_string());
-            core::ExprF::Hole
+            core::ExprF::Hole(())
           }
           ModBodyF::App(_, mod_name, args) => match self.lookup(&mod_name[0]) {
             Some(Entity::Mod(def)) => {
@@ -502,7 +502,7 @@ impl Builder {
               self
                 .errors
                 .push(format!("Module not found: {:?}", mod_name[0]));
-              core::ExprF::Hole
+              core::ExprF::Hole(())
             }
           },
         };
