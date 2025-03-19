@@ -47,3 +47,5 @@ pub enum Vis {
   Explicit,
   Implicit,
 }
+
+pub trait Tag: Clone + std::fmt::Debug + PartialEq + Eq {}

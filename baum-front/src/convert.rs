@@ -13,8 +13,8 @@ pub struct STag {
   pub is_mod: bool,
 }
 
-impl baum_core::check::Tag for PTag {}
-impl baum_core::check::Tag for STag {}
+impl baum_core::types::common::Tag for PTag {}
+impl baum_core::types::common::Tag for STag {}
 
 impl From<Vis> for core::Vis {
   fn from(v: Vis) -> Self {

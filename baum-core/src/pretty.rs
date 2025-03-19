@@ -2,6 +2,7 @@ use crate::types::common::*;
 use crate::types::tree::*;
 use crate::types::val::*;
 use std::collections::HashMap;
+use std::rc::Rc;
 
 struct Pretty<'a> {
   def_symbols: &'a HashMap<DefId, String>,
@@ -39,6 +40,7 @@ impl<'a> Pretty<'a> {
   }
 
   fn hi(&mut self, hole: &HoleId) -> &mut Self {
+    self.s("?");
     self.line.push(hole.0.to_string());
     self
   }
@@ -122,26 +124,49 @@ impl<'a> Pretty<'a> {
     }
   }
 
+  fn ks<P, S>(&mut self, ks: &Vec<ContF<P, S, Rc<Val<P, S>>>>) -> &mut Self {
+    let mut conts = Vec::new();
+    for k in ks {
+      match k {
+        ContF::App(_, Vis::Explicit, e) => match &e.0 {
+          ValF::Id(_, kks) if kks.is_empty() => {
+            self.s(" ").v(e);
+          }
+          ValF::Uni | ValF::Sigma(_, _) | ValF::Obj(_, _) => {
+            self.s(" ").v(e);
+          }
+          _ => {
+            self.s(" (").v(e);
+            conts.push(")".to_string());
+          }
+        },
+        ContF::App(_, Vis::Implicit, e) => {
+          self.s(" {").v(e);
+          conts.push("}".to_string());
+        }
+        ContF::Prop(_, name) => {
+          self.s(".").name(name);
+        }
+      };
+    }
+    for cont in conts.iter().rev() {
+      self.s(cont);
+    }
+    self
+  }
+
   fn v<P, S>(&mut self, v: &Val<P, S>) -> &mut Self {
     match &v.0 {
-      ValF::Fail => self.s("[X]"),
-      ValF::Hole(h) => self.s("?").hi(h),
-      ValF::Bind(i) => self.i(i),
-      ValF::Def(i) => self.di(i),
+      ValF::Id(IdF::Hole(i), ks) => self.hi(i).ks(ks),
+      ValF::Id(IdF::Bind(i), ks) => self.i(i).ks(ks),
+      ValF::Id(IdF::Def(i), ks) => self.di(i).ks(ks),
       ValF::Uni => self.s("𝒰"),
 
       ValF::Pi(_, Vis::Explicit, i, t, e) => self.s("Π(").i(i).s(": ").v(t).s(") ").v(e),
       ValF::Lam(_, Vis::Explicit, i, t, e) => self.s("λ(").i(i).s(": ").v(t).s(") ").v(e),
-      ValF::App(_, Vis::Explicit, e1, e2) => match e2.0 {
-        ValF::Hole(_) | ValF::Bind(_) | ValF::Uni | ValF::Sigma(_, _) | ValF::Obj(_, _) => {
-          self.i(e1).s(" ").v(e2)
-        }
-        _ => self.i(e1).s(" (").v(e2).s(")"),
-      },
 
       ValF::Pi(_, Vis::Implicit, i, t, e) => self.s("Π{").i(i).s(": ").v(t).s("} ").v(e),
       ValF::Lam(_, Vis::Implicit, i, t, e) => self.s("λ{").i(i).s(": ").v(t).s("} ").v(e),
-      ValF::App(_, Vis::Implicit, e1, e2) => self.i(e1).s(" {").v(e2).s("}"),
 
       ValF::Sigma(_, es) => {
         self.s("Σ{");
@@ -157,7 +182,6 @@ impl<'a> Pretty<'a> {
         }
         self.s("}")
       }
-      ValF::Prop(_, e, name) => self.i(e).s(".").name(name),
     }
   }
 }
