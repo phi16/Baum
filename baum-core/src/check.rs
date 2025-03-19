@@ -76,7 +76,7 @@ impl<P, S> Solve<P, S> {
     self.holes.insert(hole, ty);
   }
 
-  fn add_constraint(&mut self, hole: HoleId, v: RV<P, S>) {
+  fn add_constraint(&mut self, hole: HoleId, v: Term<P, S>) {
     self.constraints.insert(hole, v);
   }
 }
@@ -185,49 +185,255 @@ where
   }
 
   fn unify(&mut self, v1: &RV<P, S>, v2: &RV<P, S>) -> Result<()> {
-    if Rc::ptr_eq(v1, v2) {
-      return Ok(());
+    struct BEnv {
+      b1: HashMap<BindId, u32>,
+      b2: HashMap<BindId, u32>,
     }
-    eprintln!("- unify: {} ≟ {}", self.ppv(v1), self.ppv(v2));
-    match (&v1.0, &v2.0) {
-      (ValF::Fail, _) => Err("unify: fail".to_string()),
-      (_, ValF::Fail) => Err("unify: fail".to_string()),
-      (ValF::Hole(h1), ValF::Hole(h2)) if h1.0 == h2.0 => Ok(()),
-      (ValF::Hole(h1), _) => {
-        if let Some(v1) = self.lookup_constraint(*h1) {
-          self.unify(&v1.clone(), v2)
-        } else {
-          self.solve().add_constraint(*h1, v2.clone());
-          Ok(())
+    struct B {
+      benvs: Vec<BEnv>,
+      bid: u32,
+    }
+    impl B {
+      fn new() -> Self {
+        B {
+          benvs: Vec::new(),
+          bid: 0,
         }
       }
-      (_, ValF::Hole(h2)) => {
-        if let Some(v2) = self.lookup_constraint(*h2) {
-          self.unify(v1, &v2.clone())
-        } else {
-          self.solve().add_constraint(*h2, v1.clone());
-          Ok(())
-        }
+
+      fn push(&mut self) {
+        self.benvs.push(BEnv {
+          b1: HashMap::new(),
+          b2: HashMap::new(),
+        });
       }
-      (ValF::Bind(i1), ValF::Bind(i2)) => {
+
+      fn pop(&mut self) {
+        self.benvs.pop();
+      }
+
+      fn unify(&mut self, i1: BindId, i2: BindId) {
+        let benv = self.benvs.last_mut().unwrap();
+        let bid = self.bid;
+        self.bid += 1;
+        benv.b1.insert(i1, bid);
+        benv.b2.insert(i2, bid);
+      }
+
+      fn find1(&self, i: &BindId) -> Option<u32> {
+        for benv in self.benvs.iter().rev() {
+          if let Some(bid) = benv.b1.get(i) {
+            return Some(*bid);
+          }
+        }
+        None
+      }
+      fn find2(&self, i: &BindId) -> Option<u32> {
+        for benv in self.benvs.iter().rev() {
+          if let Some(bid) = benv.b2.get(i) {
+            return Some(*bid);
+          }
+        }
+        None
+      }
+
+      fn unifiable(&self, i1: &BindId, i2: &BindId) -> bool {
         if i1 == i2 {
-          Ok(())
+          true
         } else {
-          Err(format!("unify: bind / {:?} != {:?}", i1, i2))
+          match (self.find1(i1), self.find2(i2)) {
+            (Some(b1), Some(b2)) if b1 == b2 => true,
+            _ => false,
+          }
         }
       }
-      (ValF::Uni, ValF::Uni) => Ok(()),
-      _ => Err(format!(
-        "unify: unimplemented / {:?} ~ {:?}",
-        self.ppv(v1),
-        self.ppv(v2)
-      )),
     }
+
+    fn rec<P: Tag, S: Tag>(
+      this: &mut Checker<P, S>,
+      v1: &RV<P, S>,
+      v2: &RV<P, S>,
+      b: &mut B,
+    ) -> Result<()> {
+      if Rc::ptr_eq(v1, v2) {
+        return Ok(());
+      }
+      match (&v1.0, &v2.0) {
+        (ValF::Fail, _) => Err("unify: fail".to_string()),
+        (_, ValF::Fail) => Err("unify: fail".to_string()),
+        (ValF::Hole(h1), ValF::Hole(h2)) if h1.0 == h2.0 => Ok(()),
+        (ValF::Hole(h1), _) => {
+          if let Some(v1) = this.lookup_constraint(*h1) {
+            rec(this, &v1.clone(), v2, b)
+          } else {
+            eprintln!("add_constraint: {:?} ~ {}", h1, this.ppv(v2));
+            this.solve().add_constraint(*h1, v2.clone());
+            Ok(())
+          }
+        }
+        (_, ValF::Hole(h2)) => {
+          if let Some(v2) = this.lookup_constraint(*h2) {
+            rec(this, v1, &v2.clone(), b)
+          } else {
+            eprintln!("add_constraint: {:?} ~ {}", h2, this.ppv(v1));
+            this.solve().add_constraint(*h2, v1.clone());
+            Ok(())
+          }
+        }
+        (ValF::Bind(i1), ValF::Bind(i2)) => {
+          if b.unifiable(i1, i2) {
+            Ok(())
+          } else {
+            Err(format!("unify: bind: {:?} ~ {:?}", i1, i2))
+          }
+        }
+        (ValF::Bind(i1), _) => Err(format!("unify: bind: {:?}", i1)),
+        (_, ValF::Bind(i2)) => Err(format!("unify: bind: {:?}", i2)),
+        (ValF::Def(i1), ValF::Def(i2)) if i1 == i2 => Ok(()),
+        (ValF::Def(i1), _) => {
+          // may be unifiable
+          Err(format!("unify: def: TODO expand {:?}", i1))
+        }
+        (_, ValF::Def(i2)) => {
+          // may be unifiable
+          Err(format!("unify: def: TODO expand {:?}", i2))
+        }
+        (ValF::Uni, ValF::Uni) => Ok(()),
+        (ValF::Pi(tag1, vis1, i1, ty1, bty1), ValF::Pi(tag2, vis2, i2, ty2, bty2)) => {
+          if tag1 != tag2 || vis1 != vis2 {
+            return Err(format!(
+              "unify: pi: tag/vis mismatch: {:?} ~ {:?}",
+              this.ppv(v1),
+              this.ppv(v2)
+            ));
+          }
+          rec(this, ty1, ty2, b)?;
+          b.push();
+          b.unify(*i1, *i2);
+          rec(this, bty1, bty2, b)?;
+          b.pop();
+          Ok(())
+        }
+        (ValF::Lam(tag1, vis1, i1, ty1, body1), ValF::Pi(tag2, vis2, i2, ty2, body2)) => {
+          if tag1 != tag2 || vis1 != vis2 {
+            return Err(format!(
+              "unify: pi: tag/vis mismatch: {:?} ~ {:?}",
+              this.ppv(v1),
+              this.ppv(v2)
+            ));
+          }
+          rec(this, ty1, ty2, b)?;
+          b.push();
+          b.unify(*i1, *i2);
+          rec(this, body1, body2, b)?;
+          b.pop();
+          Ok(())
+        }
+        (ValF::App(tag1, vis1, i1, x1), ValF::App(tag2, vis2, i2, x2)) => {
+          if tag1 != tag2 || vis1 != vis2 {
+            return Err(format!(
+              "unify: app: tag/vis mismatch: {:?} ~ {:?}",
+              this.ppv(v1),
+              this.ppv(v2)
+            ));
+          }
+          if b.unifiable(i1, i2) {
+            rec(this, x1, x2, b)
+          } else {
+            Err(format!("unify: app: mismatch: {:?} ~ {:?}", i1, i2))
+          }
+        }
+
+        (ValF::Sigma(tag1, props1), ValF::Sigma(tag2, props2)) => {
+          if tag1 != tag2 {
+            return Err(format!(
+              "unify: sigma: tag mismatch: {:?} ~ {:?}",
+              this.ppv(v1),
+              this.ppv(v2)
+            ));
+          }
+          if props1.len() != props2.len() {
+            return Err(format!(
+              "unify: sigma: length mismatch: {:?} ~ {:?}",
+              this.ppv(v1),
+              this.ppv(v2)
+            ));
+          }
+          b.push();
+          for ((n1, i1, ty1), (n2, i2, ty2)) in props1.iter().zip(props2.iter()) {
+            if n1 != n2 {
+              return Err(format!(
+                "unify: sigma: name mismatch: {:?} ~ {:?}",
+                this.ppv(v1),
+                this.ppv(v2)
+              ));
+            }
+            rec(this, ty1, ty2, b)?;
+            b.unify(*i1, *i2);
+          }
+          b.pop();
+          Ok(())
+        }
+        (ValF::Obj(tag1, props1), ValF::Obj(tag2, props2)) => {
+          if tag1 != tag2 {
+            return Err(format!(
+              "unify: sigma: tag mismatch: {:?} ~ {:?}",
+              this.ppv(v1),
+              this.ppv(v2)
+            ));
+          }
+          if props1.len() != props2.len() {
+            return Err(format!(
+              "unify: sigma: length mismatch: {:?} ~ {:?}",
+              this.ppv(v1),
+              this.ppv(v2)
+            ));
+          }
+          for ((n1, e1), (n2, e2)) in props1.iter().zip(props2.iter()) {
+            if n1 != n2 {
+              return Err(format!(
+                "unify: obj: name mismatch: {:?} ~ {:?}",
+                this.ppv(v1),
+                this.ppv(v2)
+              ));
+            }
+            rec(this, e1, e2, b)?;
+          }
+          Ok(())
+        }
+        (ValF::Prop(tag1, i1, n1), ValF::Prop(tag2, i2, n2)) => {
+          if tag1 != tag2 {
+            return Err(format!(
+              "unify: prop: tag mismatch: {:?} ~ {:?}",
+              this.ppv(v1),
+              this.ppv(v2)
+            ));
+          }
+          if b.unifiable(i1, i2) {
+            if n1 != n2 {
+              return Err(format!(
+                "unify: prop: name mismatch: {:?} ~ {:?}",
+                this.ppv(v1),
+                this.ppv(v2)
+              ));
+            }
+            Ok(())
+          } else {
+            Err(format!("unify: prop: mismatch: {:?} ~ {:?}", i1, i2))
+          }
+        }
+        _ => Err(format!(
+          "unify: mismatch: {:?} ~ {:?}",
+          this.ppv(v1),
+          this.ppv(v2)
+        )),
+      }
+    }
+    rec(self, v1, v2, &mut B::new())
   }
 
   fn subst<'a>(&mut self, i: BindId, e: &RV<P, S>, v: &'a RV<P, S>) -> Subst<'a, RV<P, S>> {
     // TODO: escaping
-    eprintln!("- subst: {:?} with {} in {}", i, self.ppv(e), self.ppv(v));
     match &v.0 {
       ValF::Bind(ti) => {
         if i == *ti {
@@ -354,7 +560,7 @@ where
         assert_eq!(vis, *fvis);
         self.subst(*i, &x, &body).into()
       }
-      _ => unreachable!(),
+      _ => unreachable!("app: f = {:?}, x = {:?}", f, x),
     }
   }
 
@@ -369,9 +575,9 @@ where
             return e.clone();
           }
         }
-        unreachable!()
+        unreachable!("prop: e = {:?}, name = {:?}", e, name)
       }
-      _ => unreachable!(),
+      _ => unreachable!("prop: e = {:?}, name = {:?}", e, name),
     }
   }
 
@@ -469,18 +675,25 @@ where
           for ((n, e), (tn, ti, ty)) in props.into_iter().zip(tprops.iter()) {
             if n != *tn {
               eprintln!("{:?} != {:?}", n, tn);
+              self.envs.pop();
               return Err("check: obj 2".to_string());
             }
+            // ty may depend on previous props
+            let mut ty = ty.clone();
+            for (ji, je) in &ps {
+              ty = self.subst(*ji, je, &ty).into();
+            }
             let c_e = self.check(*e, &ty)?;
+            let e = self.eval(&c_e);
             self.here().add(*ti, ty.clone());
-            ps.push((n, *ti, Rc::new(ty)));
+            ps.push((*ti, e));
             c_ps.push((n, Box::new(c_e)));
           }
+          self.envs.pop();
           if !len_match {
             // we defer this error to check the existing props as much as possible
             return Err("check: obj 3".to_string());
           }
-          self.envs.pop();
           Ok(CE(Obj(tag, c_ps)))
         }
         _ => return Err("check: obj 4".to_string()),
@@ -632,6 +845,7 @@ where
     let mut def_terms = Vec::new();
     let fail = Rc::new(Val(ValF::Fail));
     for (id, expr) in defs {
+      eprintln!("- Synth[ {} ]", self.def_symbols[&id]);
       let res = self.synth(*expr);
       match &res {
         Ok((_, ty)) => eprintln!("[o] {}: {}", self.def_symbols[&id], self.ppv(ty)),
