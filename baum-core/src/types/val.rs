@@ -1,11 +1,12 @@
 use crate::types::common::*;
+use std::collections::HashMap;
 use std::rc::Rc;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum IdF {
   Hole(HoleId),
   Bind(BindId),
-  Def(DefId),
+  Def(DefId), // not a "neutral" term though...
 }
 
 #[derive(Debug, Clone)]
@@ -16,7 +17,8 @@ pub enum ContF<PTag, STag, V> {
 
 #[derive(Debug, Clone)]
 pub enum ValF<PTag, STag, C, V> {
-  Id(IdF, Vec<C>),
+  Neu(IdF, Vec<C>),
+  Cl(HashMap<BindId, V>, V),
   Uni,
 
   Pi(PTag, Vis, BindId, V, V),

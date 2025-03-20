@@ -129,7 +129,7 @@ impl<'a> Pretty<'a> {
     for k in ks {
       match k {
         ContF::App(_, Vis::Explicit, e) => match &e.0 {
-          ValF::Id(_, kks) if kks.is_empty() => {
+          ValF::Neu(_, kks) if kks.is_empty() => {
             self.s(" ").v(e);
           }
           ValF::Uni | ValF::Sigma(_, _) | ValF::Obj(_, _) => {
@@ -157,9 +157,21 @@ impl<'a> Pretty<'a> {
 
   fn v<P, S>(&mut self, v: &Val<P, S>) -> &mut Self {
     match &v.0 {
-      ValF::Id(IdF::Hole(i), ks) => self.hi(i).ks(ks),
-      ValF::Id(IdF::Bind(i), ks) => self.i(i).ks(ks),
-      ValF::Id(IdF::Def(i), ks) => self.di(i).ks(ks),
+      ValF::Neu(i, ks) => {
+        match i {
+          IdF::Hole(i) => self.hi(i),
+          IdF::Bind(i) => self.i(i),
+          IdF::Def(i) => self.di(i),
+        };
+        self.ks(ks)
+      }
+      ValF::Cl(g, e) => {
+        self.s("(").v(e).s(") [");
+        for (i, v) in g {
+          self.i(i).s(" = ").v(v).s(", ");
+        }
+        self.s("]")
+      }
       ValF::Uni => self.s("𝒰"),
 
       ValF::Pi(_, Vis::Explicit, i, t, e) => self.s("Π(").i(i).s(": ").v(t).s(") ").v(e),

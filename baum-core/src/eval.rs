@@ -71,7 +71,7 @@ where
   pub fn subst<'a>(&self, i: BindId, e: &RV<P, S>, v: &'a RV<P, S>) -> Subst<'a, RV<P, S>> {
     // TODO: escaping (e may contain "bounded" variables...)
     match &v.0 {
-      ValF::Id(ti, ks) => {
+      ValF::Neu(ti, ks) => {
         if IdF::Bind(i) == *ti {
           let mut te = e.clone();
           for k in ks {
@@ -89,7 +89,7 @@ where
         } else {
           let ks_s = self.subst_ks(i, e, ks);
           if ks_s.is_changed() {
-            Subst::Changed(Rc::new(Val(ValF::Id(ti.clone(), ks_s.into()))))
+            Subst::Changed(Rc::new(Val(ValF::Neu(ti.clone(), ks_s.into()))))
           } else {
             Subst::Unchanged(v)
           }
@@ -181,15 +181,16 @@ where
 
   pub fn app(&self, tag: P, vis: Vis, f: Term<P, S>, x: Term<P, S>) -> Term<P, S> {
     match &f.0 {
-      ValF::Id(i, ks) => {
+      ValF::Neu(i, ks) => {
         let mut ks = ks.clone();
         ks.push(ContF::App(tag, vis, x));
-        Rc::new(Val(ValF::Id(i.clone(), ks)))
+        Rc::new(Val(ValF::Neu(i.clone(), ks)))
       }
       ValF::Lam(ftag, fvis, i, _, body) => {
         assert_eq!(tag, *ftag);
         assert_eq!(vis, *fvis);
-        self.subst(*i, &x, &body).into()
+        let g = vec![(*i, x)].into_iter().collect();
+        Rc::new(Val(ValF::Cl(g, body.clone())))
       }
       _ => unreachable!(),
     }
@@ -197,10 +198,10 @@ where
 
   pub fn prop(&self, tag: S, e: Term<P, S>, name: NameId) -> Term<P, S> {
     match &e.0 {
-      ValF::Id(i, ks) => {
+      ValF::Neu(i, ks) => {
         let mut ks = ks.clone();
         ks.push(ContF::Prop(tag, name));
-        Rc::new(Val(ValF::Id(i.clone(), ks)))
+        Rc::new(Val(ValF::Neu(i.clone(), ks)))
       }
       ValF::Obj(otag, props) => {
         assert_eq!(tag, *otag);
@@ -219,9 +220,9 @@ where
     // Note: e may contain unresolved bindings
     use ExprF::*;
     let v = match &e.0 {
-      Hole(h) => ValF::Id(IdF::Hole(*h), Vec::new()),
-      Bind(i) => ValF::Id(IdF::Bind(*i), Vec::new()),
-      Def(i) => ValF::Id(IdF::Def(*i), Vec::new()),
+      Hole(h) => ValF::Neu(IdF::Hole(*h), Vec::new()),
+      Bind(i) => ValF::Neu(IdF::Bind(*i), Vec::new()),
+      Def(i) => ValF::Neu(IdF::Def(*i), Vec::new()),
       Ann(t, _) => return self.eval(t),
       Uni => ValF::Uni,
       Let(defs, body) => {

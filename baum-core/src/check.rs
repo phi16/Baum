@@ -232,7 +232,7 @@ where
         return Ok(());
       }
       match (&v1.0, &v2.0) {
-        (ValF::Id(i1, ks1), ValF::Id(i2, ks2)) => {
+        (ValF::Neu(i1, ks1), ValF::Neu(i2, ks2)) => {
           // try to do one-to-one unification
           if ks1.len() == ks2.len() {
             let mut failed = false;
@@ -432,7 +432,7 @@ where
     rec(self, v1, v2, &mut B::new())
   }
 
-  fn check_internal(&mut self, e: Expr<P, S>, check_ty: &Type<P, S>) -> Result<CE<P, S>> {
+  fn check(&mut self, e: Expr<P, S>, check_ty: &Type<P, S>) -> Result<CE<P, S>> {
     use ExprF::*;
     match e.0 {
       Hole(_) => {
@@ -454,7 +454,7 @@ where
           self.envs.push(Env::new());
           self.here().add(i, tty.clone());
           // currently bty depends on ti, not i
-          let i_e = Rc::new(Val(ValF::Id(IdF::Bind(i), Vec::new())));
+          let i_e = Rc::new(Val(ValF::Neu(IdF::Bind(i), Vec::new())));
           let bty = self.ev.subst(*ti, &i_e, bty).into();
           let c_body = self.check(*body, &bty)?;
           self.envs.pop();
@@ -504,19 +504,11 @@ where
     }
   }
 
-  fn check(&mut self, e: Expr<P, S>, check_ty: &Type<P, S>) -> Result<CE<P, S>> {
-    let depth1 = (self.envs.len(), self.solves.len());
-    let res = self.check_internal(e, check_ty);
-    let depth2 = (self.envs.len(), self.solves.len());
-    assert_eq!(depth1, depth2);
-    res
-  }
-
   fn check_ty(&mut self, e: Expr<P, S>) -> Result<CE<P, S>> {
     self.check(e, &Rc::new(Val(ValF::Uni)))
   }
 
-  fn synth_internal(&mut self, e: Expr<P, S>) -> Result<(CE<P, S>, Type<P, S>)> {
+  fn synth(&mut self, e: Expr<P, S>) -> Result<(CE<P, S>, Type<P, S>)> {
     use ExprF::*;
     match e.0 {
       Hole(_) => Err("synth: hole".to_string()),
@@ -646,21 +638,25 @@ where
     }
   }
 
-  fn synth(&mut self, e: Expr<P, S>) -> Result<(CE<P, S>, Type<P, S>)> {
-    let depth1 = (self.envs.len(), self.solves.len());
-    let res = self.synth_internal(e);
-    let depth2 = (self.envs.len(), self.solves.len());
-    assert_eq!(depth1, depth2);
-    res
-  }
-
   fn defs(&mut self, defs: Vec<(DefId, Box<Expr<P, S>>)>) -> Vec<(DefId, Option<Term<P, S>>)> {
     self.envs.push(Env::new());
     self.solves.push(Solve::new());
     let mut def_terms = Vec::new();
     for (id, expr) in defs {
       eprintln!("- Synth[ {} ]", self.def_symbols[&id]);
+      let depth1 = (self.envs.len(), self.solves.len());
       let res = self.synth(*expr);
+      let depth2 = (self.envs.len(), self.solves.len());
+      match &res {
+        Ok(_) => assert_eq!(depth1, depth2),
+        Err(_) => {
+          assert!(depth1.0 <= depth2.0);
+          assert!(depth1.1 <= depth2.1);
+          // rollback
+          self.envs.truncate(depth1.0);
+          self.solves.truncate(depth1.1);
+        }
+      }
       match &res {
         Ok((_, ty)) => eprintln!("[o] {}: {}", self.def_symbols[&id], self.ppv(ty)),
         Err(e) => eprintln!("[x] {}: {}", self.def_symbols[&id], e),
