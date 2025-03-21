@@ -435,10 +435,10 @@ where
   fn check(&mut self, e: Expr<P, S>, check_ty: &Type<P, S>) -> Result<CE<P, S>> {
     use ExprF::*;
     match e.0 {
-      Hole(_) => {
+      Hole => {
         let h = self.fresh_hole();
         self.solve().add_hole(h, check_ty.clone());
-        Ok(CE(Hole(h)))
+        Ok(CE(CExprF::Id(IdF::Hole(h))))
       }
       Let(defs, body) => {
         unimplemented!()
@@ -458,7 +458,7 @@ where
           let bty = self.ev.subst(*ti, &i_e, bty).into();
           let c_body = self.check(*body, &bty)?;
           self.envs.pop();
-          Ok(CE(Lam(tag, vis, i, Box::new(c_ty), Box::new(c_body))))
+          Ok(CE(CExprF::Lam(tag, vis, i, Rc::new(c_ty), Rc::new(c_body))))
         }
         _ => Err("check: lam".to_string()),
       },
@@ -485,14 +485,14 @@ where
             let e = self.ev.eval(&c_e);
             self.here().add(*ti, ty.clone());
             ps.push((*ti, e));
-            c_ps.push((n, Box::new(c_e)));
+            c_ps.push((n, Rc::new(c_e)));
           }
           self.envs.pop();
           if !len_match {
             // we defer this error to check the existing props as much as possible
             return Err("check: obj 3".to_string());
           }
-          Ok(CE(Obj(tag, c_ps)))
+          Ok(CE(CExprF::Obj(tag, c_ps)))
         }
         _ => return Err("check: obj 4".to_string()),
       },
@@ -511,13 +511,13 @@ where
   fn synth(&mut self, e: Expr<P, S>) -> Result<(CE<P, S>, Type<P, S>)> {
     use ExprF::*;
     match e.0 {
-      Hole(_) => Err("synth: hole".to_string()),
+      Hole => Err("synth: hole".to_string()),
       Bind(i) => match self.lookup_bind(i) {
-        Some(ty) => Ok((CE(Bind(i)), ty.clone())),
+        Some(ty) => Ok((CE(CExprF::Id(IdF::Bind(i))), ty.clone())),
         None => Err("synth: bind".to_string()),
       },
       Def(i) => match self.lookup_def(i) {
-        Some(Some(ty)) => Ok((CE(Def(i)), ty.clone())),
+        Some(Some(ty)) => Ok((CE(CExprF::Id(IdF::Def(i))), ty.clone())),
         Some(None) => Err("synth: fail".to_string()),
         None => Err("synth: def".to_string()),
       },
@@ -525,9 +525,9 @@ where
         let c_ty = self.check_ty(*ty)?;
         let ty = self.ev.eval(&c_ty);
         let c_t = self.check(*t, &ty)?;
-        Ok((CE(Ann(Box::new(c_t), Box::new(c_ty))), ty))
+        Ok((CE(CExprF::Ann(Rc::new(c_t), Rc::new(c_ty))), ty))
       }
-      Uni => Ok(((CE(Uni)), Rc::new(Val(ValF::Uni)))),
+      Uni => Ok(((CE(CExprF::Uni)), Rc::new(Val(ValF::Uni)))),
 
       Let(defs, body) => {
         unimplemented!()
@@ -541,7 +541,7 @@ where
         let c_bty = self.check_ty(*bty)?;
         self.envs.pop();
         Ok((
-          CE(Pi(tag, vis, i, Box::new(c_ty), Box::new(c_bty))),
+          CE(CExprF::Pi(tag, vis, i, Rc::new(c_ty), Rc::new(c_bty))),
           Rc::new(Val(ValF::Uni)),
         ))
       }
@@ -553,12 +553,12 @@ where
         let (c_body, bty) = self.synth(*body)?;
         self.envs.pop();
         Ok((
-          (CE(Lam(
+          (CE(CExprF::Lam(
             tag.clone(),
             vis.clone(),
             i,
-            Box::new(c_ty),
-            Box::new(c_body),
+            Rc::new(c_ty),
+            Rc::new(c_body),
           ))),
           Rc::new(Val(ValF::Pi(tag, vis, i, ty, bty))),
         ))
@@ -577,7 +577,7 @@ where
             let x = self.ev.eval(&c_x);
             // substitute i with x in bty
             let bty = self.ev.subst(*i, &x, bty).into();
-            Ok((CE(App(tag, vis, Box::new(c_f), Box::new(c_x))), bty))
+            Ok((CE(CExprF::App(tag, vis, Rc::new(c_f), Rc::new(c_x))), bty))
           }
           _ => Err(format!("synth: app / {:?}", fty)),
         }
@@ -590,10 +590,10 @@ where
           let c_ty = self.check_ty(*ty)?;
           let ty = self.ev.eval(&c_ty);
           self.here().add(i, ty);
-          c_props.push((name, i, Box::new(c_ty)));
+          c_props.push((name, i, Rc::new(c_ty)));
         }
         self.envs.pop();
-        Ok((CE(Sigma(tag, c_props)), Rc::new(Val(ValF::Uni))))
+        Ok((CE(CExprF::Sigma(tag, c_props)), Rc::new(Val(ValF::Uni))))
       }
       Obj(tag, props) => {
         self.envs.push(Env::new());
@@ -603,11 +603,11 @@ where
           let (c_e, ty) = self.synth(*e)?;
           let i = self.fresh_id();
           tys.push((name.clone(), i, ty.clone()));
-          c_props.push((name, Box::new(c_e)));
+          c_props.push((name, Rc::new(c_e)));
         }
         self.envs.pop();
         Ok((
-          CE(Obj(tag.clone(), c_props)),
+          CE(CExprF::Obj(tag.clone(), c_props)),
           Rc::new(Val(ValF::Sigma(tag, tys))),
         ))
       }
@@ -627,7 +627,7 @@ where
                   let p = self.ev.prop(tag.clone(), e.clone(), *n); // e.n
                   ty = self.ev.subst(*i, &p, &ty).into();
                 }
-                return Ok((CE(Prop(tag, Box::new(c_e), name)), ty));
+                return Ok((CE(CExprF::Prop(tag, Rc::new(c_e), name)), ty));
               }
             }
             Err("synth: prop".to_string())

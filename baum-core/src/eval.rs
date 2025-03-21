@@ -1,11 +1,7 @@
 use crate::types::common::*;
-use crate::types::tree::*;
 use crate::types::val::*;
+use std::collections::HashMap;
 use std::rc::Rc;
-
-// Checked Expr
-#[derive(Debug, Clone)]
-pub struct CE<PTag, STag>(pub ExprF<PTag, STag, HoleId, Box<CE<PTag, STag>>>);
 
 pub enum Subst<'a, T> {
   Unchanged(&'a T),
@@ -189,8 +185,8 @@ where
       ValF::Lam(ftag, fvis, i, _, body) => {
         assert_eq!(tag, *ftag);
         assert_eq!(vis, *fvis);
-        let g = vec![(*i, x)].into_iter().collect();
-        Rc::new(Val(ValF::Cl(g, body.clone())))
+        let g = vec![(*i, x)].into_iter().collect::<HashMap<_, _>>();
+        Rc::new(Val(ValF::Cl(Rc::new(g), body.clone())))
       }
       _ => unreachable!(),
     }
@@ -218,11 +214,9 @@ where
 
   pub fn eval(&self, e: &CE<P, S>) -> Term<P, S> {
     // Note: e may contain unresolved bindings
-    use ExprF::*;
+    use CExprF::*;
     let v = match &e.0 {
-      Hole(h) => ValF::Neu(IdF::Hole(*h), Vec::new()),
-      Bind(i) => ValF::Neu(IdF::Bind(*i), Vec::new()),
-      Def(i) => ValF::Neu(IdF::Def(*i), Vec::new()),
+      Id(i) => ValF::Neu(i.clone(), Vec::new()),
       Ann(t, _) => return self.eval(t),
       Uni => ValF::Uni,
       Let(defs, body) => {

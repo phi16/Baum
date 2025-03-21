@@ -10,15 +10,35 @@ pub enum IdF {
 }
 
 #[derive(Debug, Clone)]
+pub enum CExprF<PTag, STag, E> {
+  Id(IdF),
+  Ann(E, E),
+  Uni,
+  Let(Vec<(DefId, E)>, E),
+
+  Pi(PTag, Vis, BindId, E, E),
+  Lam(PTag, Vis, BindId, E, E),
+  App(PTag, Vis, E, E),
+
+  Sigma(STag, Vec<(NameId, BindId, E)>),
+  Obj(STag, Vec<(NameId, E)>),
+  Prop(STag, E, NameId),
+}
+
+// Checked Expr
+#[derive(Debug, Clone)]
+pub struct CE<P, S>(pub CExprF<P, S, Rc<CE<P, S>>>);
+
+#[derive(Debug, Clone)]
 pub enum ContF<PTag, STag, V> {
   App(PTag, Vis, V),
   Prop(STag, NameId),
 }
 
 #[derive(Debug, Clone)]
-pub enum ValF<PTag, STag, C, V> {
-  Neu(IdF, Vec<C>),
-  Cl(HashMap<BindId, V>, V),
+pub enum ValF<PTag, STag, V> {
+  Neu(IdF, Vec<ContF<PTag, STag, V>>),
+  Cl(Rc<HashMap<BindId, V>>, V),
   Uni,
 
   Pi(PTag, Vis, BindId, V, V),
@@ -29,7 +49,7 @@ pub enum ValF<PTag, STag, C, V> {
 }
 
 #[derive(Debug, Clone)]
-pub struct Val<P, S>(pub ValF<P, S, ContF<P, S, Rc<Val<P, S>>>, Rc<Val<P, S>>>);
+pub struct Val<P, S>(pub ValF<P, S, Rc<Val<P, S>>>);
 
 pub type Conts<P, S> = Vec<ContF<P, S, Rc<Val<P, S>>>>;
 
