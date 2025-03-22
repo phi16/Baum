@@ -9,7 +9,7 @@ type Result<T> = std::result::Result<T, String>;
 
 struct VarEnv<P, S> {
   lookup: HashMap<BindId, Type<P, S>>,
-  define: HashMap<DefId, Option<Type<P, S>>>,
+  define: HashMap<DefId, Option<(Term<P, S>, Type<P, S>)>>,
 }
 
 impl<P, S> VarEnv<P, S> {
@@ -24,8 +24,8 @@ impl<P, S> VarEnv<P, S> {
     self.lookup.insert(bind, ty);
   }
 
-  fn def(&mut self, def: DefId, ty: Option<Type<P, S>>) {
-    self.define.insert(def, ty);
+  fn def(&mut self, def: DefId, tmty: Option<(Term<P, S>, Type<P, S>)>) {
+    self.define.insert(def, tmty);
   }
 }
 
@@ -126,10 +126,10 @@ where
     None
   }
 
-  fn lookup_def(&self, def: DefId) -> Option<&Option<Type<P, S>>> {
+  fn lookup_def(&self, def: DefId) -> Option<&Option<(Term<P, S>, Type<P, S>)>> {
     for env in self.envs.iter().rev() {
-      if let Some(ty) = env.define.get(&def) {
-        return Some(ty);
+      if let Some(tmty) = env.define.get(&def) {
+        return Some(tmty);
       }
     }
     None
@@ -158,12 +158,114 @@ where
     pretty_val(&self.def_symbols, &self.bind_symbols, &self.name_symbols, v)
   }
 
-  pub fn app(&mut self, tag: P, vis: Vis, f: Term<P, S>, x: Term<P, S>) -> Term<P, S> {
+  fn norm(&mut self, v: &Term<P, S>) -> Result<Term<P, S>> {
+    if let ValF::Lazy(i, ks) = &v.0 {
+      match self.lookup_def(*i) {
+        Some(Some((v, _))) => {
+          let mut v = v.clone();
+          for k in ks {
+            match k {
+              ContF::App(tag, vis, x) => {
+                v = self.app(tag.clone(), vis.clone(), v, x.clone());
+              }
+              ContF::Prop(tag, name) => {
+                v = self.prop(tag.clone(), v, *name);
+              }
+            }
+          }
+          self.norm(&v)
+        }
+        Some(None) => Err("weak_head: fail".to_string()),
+        None => unreachable!(),
+      }
+    } else {
+      Ok(v.clone())
+    }
+  }
+
+  fn deep_norm(&mut self, v: &Term<P, S>) -> Result<Term<P, S>> {
+    let v = match &self.norm(v)?.0 {
+      ValF::Hole(i) => ValF::Hole(i.clone()),
+      ValF::Neu(i, ks) => {
+        let mut v = Rc::new(Val(ValF::Neu(i.clone(), Vec::new())));
+        for k in ks {
+          match k {
+            ContF::App(tag, vis, x) => {
+              let x = self.deep_norm(x)?;
+              v = self.app(tag.clone(), vis.clone(), v, x);
+            }
+            ContF::Prop(tag, name) => {
+              v = self.prop(tag.clone(), v, *name);
+            }
+          }
+        }
+        return Ok(v);
+      }
+      ValF::Uni => ValF::Uni,
+      ValF::Pi(tag, vis, i, ty, g, bty) => {
+        let ty = self.deep_norm(ty)?;
+        let mut g = g.clone();
+        let fi = self.fresh_id(i);
+        g.insert(*i, Rc::new(Val(ValF::Neu(fi, Vec::new()))));
+        let bty = self.eval(&g, bty);
+        let bty = self.deep_norm(&bty)?;
+        let bty = self.quote(&bty);
+        ValF::Pi(tag.clone(), vis.clone(), fi, ty, g, Rc::new(bty))
+      }
+      ValF::Lam(tag, vis, i, ty, g, body) => {
+        let ty = self.deep_norm(ty)?;
+        let mut g = g.clone();
+        let fi = self.fresh_id(i);
+        g.insert(*i, Rc::new(Val(ValF::Neu(fi, Vec::new()))));
+        let body = self.eval(&g, body);
+        let body = self.deep_norm(&body)?;
+        let body = self.quote(&body);
+        ValF::Lam(tag.clone(), vis.clone(), fi, ty, g, Rc::new(body))
+      }
+
+      ValF::Sigma0(tag) => ValF::Sigma0(tag.clone()),
+      ValF::Obj0(tag) => ValF::Obj0(tag.clone()),
+      ValF::Sigma(tag, (n0, i0, ty0), g, props) => {
+        let ty0 = self.deep_norm(ty0)?;
+        let mut g = g.clone();
+        let fi0 = self.fresh_id(i0);
+        g.insert(*i0, Rc::new(Val(ValF::Neu(fi0, Vec::new()))));
+        let mut ps = Vec::new();
+        for (name, i, ty) in props {
+          let ty = self.eval(&g, ty);
+          let ty = self.deep_norm(&ty)?;
+          let ty = self.quote(&ty);
+          let fi = self.fresh_id(i);
+          g.insert(*i, Rc::new(Val(ValF::Neu(fi, Vec::new()))));
+          ps.push((*name, fi, Rc::new(ty)));
+        }
+        ValF::Sigma(tag.clone(), (*n0, fi0, ty0), g, ps)
+      }
+      ValF::Obj(tag, (n0, e0), props) => {
+        let e0 = self.deep_norm(&e0)?;
+        let mut ps = Vec::new();
+        for (name, e) in props {
+          let e = self.deep_norm(&e)?;
+          ps.push((*name, e));
+        }
+        ValF::Obj(tag.clone(), (*n0, e0), ps)
+      }
+      _ => unreachable!(),
+    };
+    Ok(Rc::new(Val(v)))
+  }
+
+  fn app(&mut self, tag: P, vis: Vis, f: Term<P, S>, x: Term<P, S>) -> Term<P, S> {
     match &f.0 {
       ValF::Neu(i, ks) => {
         let mut ks = ks.clone();
         ks.push(ContF::App(tag, vis, x));
         Rc::new(Val(ValF::Neu(i.clone(), ks)))
+      }
+      ValF::Lazy(d, ks) => {
+        let mut ks = ks.clone();
+        ks.push(ContF::App(tag, vis, x));
+        Rc::new(Val(ValF::Lazy(*d, ks)))
       }
       ValF::Lam(ftag, fvis, i, _, g, body) => {
         assert_eq!(tag, *ftag);
@@ -172,16 +274,21 @@ where
         g.insert(*i, x);
         self.eval(&g, body)
       }
-      _ => unreachable!(),
+      _ => unreachable!("{:?}", f.0),
     }
   }
 
-  pub fn prop(&mut self, tag: S, e: Term<P, S>, name: NameId) -> Term<P, S> {
+  fn prop(&mut self, tag: S, e: Term<P, S>, name: NameId) -> Term<P, S> {
     match &e.0 {
       ValF::Neu(i, ks) => {
         let mut ks = ks.clone();
         ks.push(ContF::Prop(tag, name));
         Rc::new(Val(ValF::Neu(i.clone(), ks)))
+      }
+      ValF::Lazy(i, ks) => {
+        let mut ks = ks.clone();
+        ks.push(ContF::Prop(tag, name));
+        Rc::new(Val(ValF::Lazy(i.clone(), ks)))
       }
       ValF::Obj(otag, (n0, e0), props) => {
         assert_eq!(tag, *otag);
@@ -230,16 +337,16 @@ where
       Sigma0(tag) => ValF::Sigma0(tag.clone()),
       Obj0(tag) => ValF::Obj0(tag.clone()),
       Sigma(tag, (n0, i0, ty0), props) => {
-        let mut ps = Vec::new();
         let ty0 = self.eval(g, ty0);
+        let mut ps = Vec::new();
         for (name, i, ty) in props {
           ps.push((*name, *i, ty.clone()));
         }
         ValF::Sigma(tag.clone(), (*n0, *i0, ty0), g.clone(), ps)
       }
       Obj(tag, (n0, e0), props) => {
-        let mut ps = Vec::new();
         let e0 = self.eval(g, e0);
+        let mut ps = Vec::new();
         for (name, e) in props {
           let e = self.eval(g, e);
           ps.push((*name, e));
@@ -295,19 +402,19 @@ where
         quote_ks(self, ks, e)
       }
       Uni => CE(CExprF::Uni),
-      Pi(tag, vis, i, ty, g, body) => {
+      Pi(tag, vis, i, ty, g, bty) => {
         let ty = self.quote(ty);
         let mut g = g.clone();
         let fi = self.fresh_id(i);
         g.insert(*i, Rc::new(Val(ValF::Neu(fi, Vec::new()))));
-        let body = self.eval(&g, body);
-        let body = self.quote(&body);
+        let bty = self.eval(&g, bty);
+        let bty = self.quote(&bty);
         CE(CExprF::Pi(
           tag.clone(),
           vis.clone(),
           fi,
           Rc::new(ty),
-          Rc::new(body),
+          Rc::new(bty),
         ))
       }
       Lam(tag, vis, i, ty, g, body) => {
@@ -334,8 +441,8 @@ where
         g.insert(*i0, Rc::new(Val(ValF::Neu(fi0, Vec::new()))));
         let mut ps = Vec::new();
         for (name, i, ty) in props {
-          let body = self.eval(&g, ty);
-          let ty = self.quote(&body);
+          let ty = self.eval(&g, ty);
+          let ty = self.quote(&ty);
           let fi = self.fresh_id(i);
           g.insert(*i, Rc::new(Val(ValF::Neu(fi, Vec::new()))));
           ps.push((*name, fi, Rc::new(ty)));
@@ -391,7 +498,47 @@ where
           Err("unify: neu".to_string()) // no.
         }
       }
+      (ValF::Lazy(_, _), _) => {
+        let v1 = self.norm(v1)?;
+        self.unify(&v1, v2)
+      }
+      (_, ValF::Lazy(_, _)) => {
+        let v2 = self.norm(v2)?;
+        self.unify(v1, &v2)
+      }
       (ValF::Uni, ValF::Uni) => Ok(()),
+      (ValF::Pi(t1, v1, i1, ty1, g1, bty1), (ValF::Pi(t2, v2, i2, ty2, g2, bty2))) => {
+        if t1 == t2 && v1 == v2 {
+          self.unify(ty1, ty2)?;
+          let mut g1 = g1.clone();
+          let mut g2 = g2.clone();
+          let fi = self.fresh_id(&i1);
+          g1.insert(*i1, Rc::new(Val(ValF::Neu(fi.clone(), Vec::new()))));
+          g2.insert(*i2, Rc::new(Val(ValF::Neu(fi.clone(), Vec::new()))));
+          let bty1 = self.eval(&g1, bty1);
+          let bty2 = self.eval(&g2, bty2);
+          self.unify(&bty1, &bty2)?;
+          Ok(())
+        } else {
+          Err("unify: pi".to_string())
+        }
+      }
+      (ValF::Lam(t1, v1, i1, ty1, g1, bty1), (ValF::Lam(t2, v2, i2, ty2, g2, bty2))) => {
+        if t1 == t2 && v1 == v2 {
+          self.unify(ty1, ty2)?;
+          let mut g1 = g1.clone();
+          let mut g2 = g2.clone();
+          let fi = self.fresh_id(&i1);
+          g1.insert(*i1, Rc::new(Val(ValF::Neu(fi.clone(), Vec::new()))));
+          g2.insert(*i2, Rc::new(Val(ValF::Neu(fi.clone(), Vec::new()))));
+          let bty1 = self.eval(&g1, bty1);
+          let bty2 = self.eval(&g2, bty2);
+          self.unify(&bty1, &bty2)?;
+          Ok(())
+        } else {
+          Err("unify: pi".to_string())
+        }
+      }
       (
         ValF::Sigma(t1, (n01, i01, ty01), g1, props1),
         ValF::Sigma(t2, (n02, i02, ty02), g2, props2),
@@ -429,6 +576,9 @@ where
       }
       (ValF::Obj(t1, (n01, e01), props1), ValF::Obj(t2, (n02, e02), props2)) => {
         if t1 == t2 {
+          if n01 != n02 {
+            return Err("unify: obj".to_string());
+          }
           self.unify(e01, e02)?;
           for ((n1, e1), (n2, e2)) in props1.iter().zip(props2.iter()) {
             if n1 == n2 {
@@ -448,7 +598,7 @@ where
       }
       _ => {
         eprintln!("unify: {:?} = {:?}", v1, v2);
-        Err("unimplemented".to_string())
+        Err("unify: failed".to_string())
       }
     }
   }
@@ -464,7 +614,7 @@ where
       Let(defs, body) => {
         unimplemented!()
       }
-      Lam(tag, vis, i, ty, body) => match &check_ty.0 {
+      Lam(tag, vis, i, ty, body) => match &self.norm(check_ty)?.0 {
         ValF::Pi(ttag, tvis, ti, tty, tg, bty) => {
           if tag != *ttag || vis != *tvis {
             return Err("check: lam".to_string());
@@ -481,9 +631,9 @@ where
           self.envs.pop();
           Ok(CE(CExprF::Lam(tag, vis, i, Rc::new(c_ty), Rc::new(c_body))))
         }
-        _ => Err("check: lam".to_string()),
+        _ => Err(format!("check: lam / {:?}", check_ty)),
       },
-      Obj(tag, props) => match &check_ty.0 {
+      Obj(tag, props) => match &self.norm(check_ty)?.0 {
         ValF::Sigma0(ttag) => {
           if tag != *ttag {
             return Err("check: obj 0".to_string());
@@ -556,8 +706,8 @@ where
         None => Err("synth: bind".to_string()),
       },
       Def(i) => match self.lookup_def(i) {
-        Some(Some(ty)) => Ok((CE(CExprF::Def(i)), ty.clone())),
-        Some(None) => Err("synth: fail".to_string()),
+        Some(Some((_, ty))) => Ok((CE(CExprF::Def(i)), ty.clone())),
+        Some(None) => Err("synth: failed def".to_string()),
         None => Err("synth: def".to_string()),
       },
       Ann(t, ty) => {
@@ -605,7 +755,7 @@ where
       }
       App(tag, vis, f, x) => {
         let (c_f, fty) = self.synth(*f)?;
-        match &fty.0 {
+        match &self.norm(&fty)?.0 {
           ValF::Pi(ftag, fvis, i, ty, fg, bty) => {
             if tag != *ftag {
               return Err("synth: app".to_string());
@@ -674,7 +824,7 @@ where
       }
       Prop(tag, e, name) => {
         let (c_e, ty) = self.synth(*e)?;
-        match &ty.0 {
+        match &self.norm(&ty)?.0 {
           ValF::Sigma(etag, (n0, i0, ty0), eg, props) => {
             if tag != *etag {
               return Err("synth: prop".to_string());
@@ -705,14 +855,15 @@ where
     }
   }
 
-  fn defs(&mut self, defs: Vec<(DefId, Box<Expr<P, S>>)>) -> Vec<(DefId, Option<Term<P, S>>)> {
+  fn defs(&mut self, defs: Vec<(DefId, Box<Expr<P, S>>)>) -> Vec<(DefId, Option<CE<P, S>>)> {
     self.envs.push(VarEnv::new());
-    self.solves.push(Solve::new());
     let mut def_terms = Vec::new();
     for (id, expr) in defs {
       eprintln!("- Synth[ {} ]", self.def_symbols[&id]);
+      self.solves.push(Solve::new());
       let depth1 = (self.envs.len(), self.solves.len());
       let res = self.synth(*expr);
+      // TODO: resolve holes
       let depth2 = (self.envs.len(), self.solves.len());
       match &res {
         Ok(_) => assert_eq!(depth1, depth2),
@@ -724,25 +875,27 @@ where
           self.solves.truncate(depth1.1);
         }
       }
+      self.solves.pop();
       match &res {
         Ok((_, ty)) => eprintln!("[o] {}: {}", self.def_symbols[&id], self.ppv(ty)),
         Err(e) => eprintln!("[x] {}: {}", self.def_symbols[&id], e),
       }
-      let (c_expr, tm, ty) = match res {
+      let (c_expr, tmty) = match res {
         Ok((c_expr, ty)) => {
           let tm = self.eval0(&c_expr);
-          (Some(c_expr), Some(tm), Some(ty))
+          let dtm = self.deep_norm(&tm).unwrap();
+          eprintln!("[o] {}: {}", self.def_symbols[&id], self.ppv(&dtm));
+          (Some(c_expr), Some((tm, ty)))
         }
         Err(e) => {
           self.add_error(&format!("{}: {}", self.def_symbols[&id], e));
           let h = self.fresh_hole();
-          (None, None, None)
+          (None, None)
         }
       };
-      self.here().def(id, ty);
-      def_terms.push((id, tm));
+      self.here().def(id, tmty);
+      def_terms.push((id, c_expr));
     }
-    self.solves.pop();
     self.envs.pop();
     def_terms
   }
