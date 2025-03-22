@@ -1,4 +1,3 @@
-use crate::eval::*;
 use crate::pretty::{pretty_expr, pretty_val};
 use crate::types::common::*;
 use crate::types::tree::*;
@@ -356,14 +355,96 @@ where
   }
 
   fn unify(&mut self, v1: &Term<P, S>, v2: &Term<P, S>) -> Result<()> {
-    let mut ev = Eval::new();
-    let res = ev.unify(v1, v2);
-    if let Ok(cs) = &res {
-      for (hole, v) in cs.iter() {
-        self.solve().add_constraint(*hole, v.clone());
+    eprintln!("unify: {:?} = {:?}", v1, v2);
+    match (&v1.0, &v2.0) {
+      (ValF::Hole(i1), _) => {
+        self.solve().add_constraint(i1.clone(), v2.clone());
+        Ok(())
+      }
+      (_, ValF::Hole(i2)) => {
+        self.solve().add_constraint(i2.clone(), v1.clone());
+        Ok(())
+      }
+      (ValF::Neu(i1, ks1), ValF::Neu(i2, ks2)) => {
+        if i1 == i2 && ks1.len() == ks2.len() {
+          for (k1, k2) in ks1.iter().zip(ks2.iter()) {
+            match (k1, k2) {
+              (ContF::App(p1, v1, t1), ContF::App(p2, v2, t2)) => {
+                if p1 == p2 && v1 == v2 {
+                  self.unify(t1, t2)?;
+                } else {
+                  return Err("unify: app".to_string());
+                }
+              }
+              (ContF::Prop(s1, n1), ContF::Prop(s2, n2)) => {
+                if s1 == s2 && n1 == n2 {
+                  // ok
+                } else {
+                  return Err("unify: prop".to_string());
+                }
+              }
+              _ => return Err("unify: cont".to_string()),
+            }
+          }
+          Ok(())
+        } else {
+          Err("unify: neu".to_string()) // no.
+        }
+      }
+      (ValF::Uni, ValF::Uni) => Ok(()),
+      (
+        ValF::Sigma(t1, (n01, i01, ty01), g1, props1),
+        ValF::Sigma(t2, (n02, i02, ty02), g2, props2),
+      ) => {
+        if t1 == t2 {
+          self.unify(ty01, ty02)?;
+          let fi0 = self.fresh_id(&i01);
+          let mut g1 = g1.clone();
+          g1.insert(fi0, Rc::new(Val(ValF::Neu(i01.clone(), Vec::new()))));
+          let mut g2 = g2.clone();
+          g2.insert(fi0, Rc::new(Val(ValF::Neu(i02.clone(), Vec::new()))));
+          for ((n1, i1, ty1), (n2, i2, ty2)) in props1.iter().zip(props2.iter()) {
+            if n1 == n2 {
+              let ty1 = self.eval(&g1, ty1);
+              let ty2 = self.eval(&g2, ty2);
+              self.unify(&ty1, &ty2)?;
+            } else {
+              return Err("unify: sigma".to_string());
+            }
+          }
+          if props1.len() == props2.len() {
+            Ok(())
+          } else {
+            Err("unify: sigma".to_string())
+          }
+        } else {
+          Err("unify: sigma".to_string())
+        }
+      }
+      (ValF::Obj(t1, (n01, e01), props1), ValF::Obj(t2, (n02, e02), props2)) => {
+        if t1 == t2 {
+          self.unify(e01, e02)?;
+          for ((n1, e1), (n2, e2)) in props1.iter().zip(props2.iter()) {
+            if n1 == n2 {
+              self.unify(e1, e2)?;
+            } else {
+              return Err("unify: obj".to_string());
+            }
+          }
+          if props1.len() == props2.len() {
+            Ok(())
+          } else {
+            Err("unify: obj".to_string())
+          }
+        } else {
+          Err("unify: obj".to_string())
+        }
+      }
+      _ => {
+        eprintln!("unify: {:?} = {:?}", v1, v2);
+        Err("unimplemented".to_string())
       }
     }
-    res.map(|_| ())
   }
 
   fn check(&mut self, e: Expr<P, S>, check_ty: &Type<P, S>) -> Result<CE<P, S>> {
