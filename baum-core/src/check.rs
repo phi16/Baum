@@ -355,7 +355,7 @@ where
   }
 
   fn unify(&mut self, v1: &Term<P, S>, v2: &Term<P, S>) -> Result<()> {
-    eprintln!("unify: {:?} = {:?}", v1, v2);
+    // eprintln!("unify: {} = {}", self.ppv(v1), self.ppv(v2));
     match (&v1.0, &v2.0) {
       (ValF::Hole(i1), _) => {
         self.solve().add_constraint(i1.clone(), v2.clone());
@@ -398,16 +398,22 @@ where
       ) => {
         if t1 == t2 {
           self.unify(ty01, ty02)?;
-          let fi0 = self.fresh_id(&i01);
+          if n01 != n02 {
+            return Err("unify: sigma".to_string());
+          }
           let mut g1 = g1.clone();
-          g1.insert(fi0, Rc::new(Val(ValF::Neu(i01.clone(), Vec::new()))));
           let mut g2 = g2.clone();
-          g2.insert(fi0, Rc::new(Val(ValF::Neu(i02.clone(), Vec::new()))));
+          let fi0 = self.fresh_id(&i01);
+          g1.insert(*i01, Rc::new(Val(ValF::Neu(fi0.clone(), Vec::new()))));
+          g2.insert(*i02, Rc::new(Val(ValF::Neu(fi0.clone(), Vec::new()))));
           for ((n1, i1, ty1), (n2, i2, ty2)) in props1.iter().zip(props2.iter()) {
             if n1 == n2 {
               let ty1 = self.eval(&g1, ty1);
               let ty2 = self.eval(&g2, ty2);
               self.unify(&ty1, &ty2)?;
+              let fi = self.fresh_id(&i01);
+              g1.insert(*i1, Rc::new(Val(ValF::Neu(fi.clone(), Vec::new()))));
+              g2.insert(*i2, Rc::new(Val(ValF::Neu(fi.clone(), Vec::new()))));
             } else {
               return Err("unify: sigma".to_string());
             }
