@@ -51,6 +51,136 @@ impl<P, S> Solve<P, S> {
   }
 }
 
+// TODO: optimize a lot!
+fn subst_hole<P: Tag, S: Tag>(m: &HashMap<HoleId, CE<P, S>>, e: CE<P, S>) -> CE<P, S> {
+  match &e.0 {
+    CExprF::Hole(i) => match m.get(&i) {
+      Some(e) => e.clone(),
+      None => CE(CExprF::Hole(*i)),
+    },
+    CExprF::Bind(_) => e,
+    CExprF::Def(_) => e,
+    CExprF::Ann(e, ty) => {
+      let e = subst_hole(m, (**e).clone());
+      let ty = subst_hole(m, (**ty).clone());
+      CE(CExprF::Ann(Rc::new(e), Rc::new(ty)))
+    }
+    CExprF::Uni => e,
+    CExprF::Let(defs, body) => {
+      let defs = defs
+        .into_iter()
+        .map(|(def, e)| (*def, Rc::new(subst_hole(m, (**e).clone()))))
+        .collect();
+      let body = subst_hole(m, (**body).clone());
+      CE(CExprF::Let(defs, Rc::new(subst_hole(m, body))))
+    }
+    CExprF::Pi(tag, vis, i, ty, bty) => {
+      let ty = subst_hole(m, (**ty).clone());
+      let bty = subst_hole(m, (**bty).clone());
+      CE(CExprF::Pi(
+        tag.clone(),
+        vis.clone(),
+        *i,
+        Rc::new(ty),
+        Rc::new(bty),
+      ))
+    }
+    CExprF::Lam(tag, vis, i, ty, body) => {
+      let ty = subst_hole(m, (**ty).clone());
+      let body = subst_hole(m, (**body).clone());
+      CE(CExprF::Lam(
+        tag.clone(),
+        vis.clone(),
+        *i,
+        Rc::new(ty),
+        Rc::new(body),
+      ))
+    }
+    CExprF::App(tag, vis, f, x) => {
+      let f = subst_hole(m, (**f).clone());
+      let x = subst_hole(m, (**x).clone());
+      CE(CExprF::App(
+        tag.clone(),
+        vis.clone(),
+        Rc::new(f),
+        Rc::new(x),
+      ))
+    }
+    CExprF::Sigma0(tag) => CE(CExprF::Sigma0(tag.clone())),
+    CExprF::Obj0(tag) => CE(CExprF::Obj0(tag.clone())),
+    CExprF::Sigma(tag, (n0, i0, ty0), props) => {
+      let ty0 = subst_hole(m, (**ty0).clone());
+      let props = props
+        .into_iter()
+        .map(|(name, i, ty)| (*name, *i, Rc::new(subst_hole(m, (**ty).clone()))))
+        .collect();
+      CE(CExprF::Sigma(tag.clone(), (*n0, *i0, Rc::new(ty0)), props))
+    }
+    CExprF::Obj(tag, (n0, e0), props) => {
+      let e0 = subst_hole(m, (**e0).clone());
+      let props = props
+        .into_iter()
+        .map(|(name, e)| (*name, Rc::new(subst_hole(m, (**e).clone()))))
+        .collect();
+      CE(CExprF::Obj(tag.clone(), (*n0, Rc::new(e0)), props))
+    }
+    CExprF::Prop(tag, e, name) => {
+      let e = subst_hole(m, (**e).clone());
+      CE(CExprF::Prop(tag.clone(), Rc::new(e), *name))
+    }
+  }
+}
+
+fn contains_hole_e<P, S>(i: &HoleId, e: &CE<P, S>) -> bool {
+  match &e.0 {
+    CExprF::Hole(j) => i == j,
+    CExprF::Bind(_) => false,
+    CExprF::Def(_) => false,
+    CExprF::Ann(e, _) => contains_hole_e(i, e),
+    CExprF::Uni => false,
+    CExprF::Let(defs, body) => {
+      defs.iter().any(|(_, e)| contains_hole_e(i, e)) || contains_hole_e(i, body)
+    }
+    CExprF::Pi(_, _, _, ty, body) => contains_hole_e(i, ty) || contains_hole_e(i, body),
+    CExprF::Lam(_, _, _, ty, body) => contains_hole_e(i, ty) || contains_hole_e(i, body),
+    CExprF::App(_, _, f, x) => contains_hole_e(i, f) || contains_hole_e(i, x),
+    CExprF::Sigma0(_) => false,
+    CExprF::Obj0(_) => false,
+    CExprF::Sigma(_, (_, _, ty), props) => {
+      contains_hole_e(i, ty) || props.iter().any(|(_, _, ty)| contains_hole_e(i, ty))
+    }
+    CExprF::Obj(_, (_, e), props) => {
+      contains_hole_e(i, e) || props.iter().any(|(_, e)| contains_hole_e(i, e))
+    }
+    CExprF::Prop(_, e, _) => contains_hole_e(i, e),
+  }
+}
+
+fn contains_hole_v<P, S>(i: &HoleId, v: &Term<P, S>) -> bool {
+  match &v.0 {
+    ValF::Hole(j) => i == j,
+    ValF::Neu(_, ks) => ks.iter().any(|k| match k {
+      ContF::App(_, _, x) => contains_hole_v(i, x),
+      ContF::Prop(_, _) => false,
+    }),
+    ValF::Lazy(_, ks) => ks.iter().any(|k| match k {
+      ContF::App(_, _, x) => contains_hole_v(i, x),
+      ContF::Prop(_, _) => false,
+    }),
+    ValF::Uni => false,
+    ValF::Pi(_, _, _, ty, _, bty) => contains_hole_v(i, ty) || contains_hole_e(i, bty),
+    ValF::Lam(_, _, _, ty, _, body) => contains_hole_v(i, ty) || contains_hole_e(i, body),
+    ValF::Sigma0(_) => false,
+    ValF::Obj0(_) => false,
+    ValF::Sigma(_, (_, _, ty), _, props) => {
+      contains_hole_v(i, ty) || props.iter().any(|(_, _, ty)| contains_hole_e(i, ty))
+    }
+    ValF::Obj(_, (_, e), props) => {
+      contains_hole_v(i, e) || props.iter().any(|(_, e)| contains_hole_v(i, e))
+    }
+  }
+}
+
 struct Checker<P, S> {
   def_symbols: HashMap<DefId, String>,
   bind_symbols: HashMap<BindId, String>,
@@ -136,8 +266,8 @@ where
   }
 
   fn lookup_constraint(&self, hole: HoleId) -> Option<&RV<P, S>> {
-    for env in self.solves.iter().rev() {
-      if let Some(v) = env.constraints.get(&hole) {
+    for solve in self.solves.iter().rev() {
+      if let Some(v) = solve.constraints.get(&hole) {
         return Some(v);
       }
     }
@@ -150,7 +280,7 @@ where
     id
   }
 
-  fn ppe(&self, e: &Expr<P, S>) -> String {
+  fn ppe(&self, e: &CE<P, S>) -> String {
     pretty_expr(&self.def_symbols, &self.bind_symbols, &self.name_symbols, e)
   }
 
@@ -310,7 +440,10 @@ where
     // Note: e may contain unresolved bindings
     use CExprF::*;
     let v = match &e.0 {
-      Hole(i) => ValF::Hole(i.clone()),
+      Hole(i) => match self.lookup_constraint(*i) {
+        Some(v) => return v.clone(),
+        None => ValF::Hole(i.clone()),
+      },
       Bind(i) if g.contains_key(i) => return g[i].clone(),
       Bind(i) => ValF::Neu(i.clone(), Vec::new()),
       Def(i) => ValF::Lazy(i.clone(), Vec::new()),
@@ -464,50 +597,69 @@ where
   fn unify(&mut self, v1: &Term<P, S>, v2: &Term<P, S>) -> Result<()> {
     // eprintln!("unify: {} = {}", self.ppv(v1), self.ppv(v2));
     match (&v1.0, &v2.0) {
+      (ValF::Hole(i1), ValF::Hole(i2)) if i1 == i2 => Ok(()),
+      (ValF::Hole(i1), _) if self.lookup_constraint(*i1).is_some() => {
+        let v1 = self.lookup_constraint(*i1).unwrap().clone();
+        self.unify(&v1, v2)
+      }
+      (_, ValF::Hole(i2)) if self.lookup_constraint(*i2).is_some() => {
+        let v2 = self.lookup_constraint(*i2).unwrap().clone();
+        self.unify(v1, &v2)
+      }
       (ValF::Hole(i1), _) => {
+        if contains_hole_v(i1, v2) {
+          return Err("unify: occurs check".to_string());
+        }
         self.solve().add_constraint(i1.clone(), v2.clone());
         Ok(())
       }
       (_, ValF::Hole(i2)) => {
+        if contains_hole_v(i2, v1) {
+          return Err("unify: occurs check".to_string());
+        }
         self.solve().add_constraint(i2.clone(), v1.clone());
         Ok(())
       }
       (ValF::Neu(i1, ks1), ValF::Neu(i2, ks2)) => {
-        if i1 == i2 && ks1.len() == ks2.len() {
-          for (k1, k2) in ks1.iter().zip(ks2.iter()) {
-            match (k1, k2) {
-              (ContF::App(p1, v1, t1), ContF::App(p2, v2, t2)) => {
-                if p1 == p2 && v1 == v2 {
-                  self.unify(t1, t2)?;
-                } else {
-                  return Err("unify: app".to_string());
-                }
-              }
-              (ContF::Prop(s1, n1), ContF::Prop(s2, n2)) => {
-                if s1 == s2 && n1 == n2 {
-                  // ok
-                } else {
-                  return Err("unify: prop".to_string());
-                }
-              }
-              _ => return Err("unify: cont".to_string()),
-            }
-          }
-          Ok(())
-        } else {
-          Err("unify: neu".to_string()) // no.
+        if i1 != i2 {
+          return Err(format!("unify: {:?} != {:?}", i1, i2));
         }
+        if ks1.len() != ks2.len() {
+          return Err("unify: neu: len".to_string());
+        }
+        for (k1, k2) in ks1.iter().zip(ks2.iter()) {
+          match (k1, k2) {
+            (ContF::App(p1, v1, t1), ContF::App(p2, v2, t2)) => {
+              if p1 == p2 && v1 == v2 {
+                self.unify(t1, t2)?;
+              } else {
+                return Err("unify: app".to_string());
+              }
+            }
+            (ContF::Prop(s1, n1), ContF::Prop(s2, n2)) => {
+              if s1 == s2 && n1 == n2 {
+                // ok
+              } else {
+                return Err("unify: prop".to_string());
+              }
+            }
+            _ => return Err("unify: cont".to_string()),
+          }
+        }
+        Ok(())
       }
       (ValF::Lazy(_, _), _) => {
+        // TODO: optimize
         let v1 = self.norm(v1)?;
         self.unify(&v1, v2)
       }
       (_, ValF::Lazy(_, _)) => {
+        // TODO: optimize
         let v2 = self.norm(v2)?;
         self.unify(v1, &v2)
       }
       (ValF::Uni, ValF::Uni) => Ok(()),
-      (ValF::Pi(t1, v1, i1, ty1, g1, bty1), (ValF::Pi(t2, v2, i2, ty2, g2, bty2))) => {
+      (ValF::Pi(t1, v1, i1, ty1, g1, bty1), ValF::Pi(t2, v2, i2, ty2, g2, bty2)) => {
         if t1 == t2 && v1 == v2 {
           self.unify(ty1, ty2)?;
           let mut g1 = g1.clone();
@@ -523,7 +675,7 @@ where
           Err("unify: pi".to_string())
         }
       }
-      (ValF::Lam(t1, v1, i1, ty1, g1, bty1), (ValF::Lam(t2, v2, i2, ty2, g2, bty2))) => {
+      (ValF::Lam(t1, v1, i1, ty1, g1, bty1), ValF::Lam(t2, v2, i2, ty2, g2, bty2)) => {
         if t1 == t2 && v1 == v2 {
           self.unify(ty1, ty2)?;
           let mut g1 = g1.clone();
@@ -543,55 +695,53 @@ where
         ValF::Sigma(t1, (n01, i01, ty01), g1, props1),
         ValF::Sigma(t2, (n02, i02, ty02), g2, props2),
       ) => {
-        if t1 == t2 {
-          self.unify(ty01, ty02)?;
-          if n01 != n02 {
+        if t1 != t2 {
+          return Err("unify: sigma".to_string());
+        }
+        self.unify(ty01, ty02)?;
+        if n01 != n02 {
+          return Err("unify: sigma".to_string());
+        }
+        let mut g1 = g1.clone();
+        let mut g2 = g2.clone();
+        let fi0 = self.fresh_id(&i01);
+        g1.insert(*i01, Rc::new(Val(ValF::Neu(fi0.clone(), Vec::new()))));
+        g2.insert(*i02, Rc::new(Val(ValF::Neu(fi0.clone(), Vec::new()))));
+        for ((n1, i1, ty1), (n2, i2, ty2)) in props1.iter().zip(props2.iter()) {
+          if n1 == n2 {
+            let ty1 = self.eval(&g1, ty1);
+            let ty2 = self.eval(&g2, ty2);
+            self.unify(&ty1, &ty2)?;
+            let fi = self.fresh_id(&i01);
+            g1.insert(*i1, Rc::new(Val(ValF::Neu(fi.clone(), Vec::new()))));
+            g2.insert(*i2, Rc::new(Val(ValF::Neu(fi.clone(), Vec::new()))));
+          } else {
             return Err("unify: sigma".to_string());
           }
-          let mut g1 = g1.clone();
-          let mut g2 = g2.clone();
-          let fi0 = self.fresh_id(&i01);
-          g1.insert(*i01, Rc::new(Val(ValF::Neu(fi0.clone(), Vec::new()))));
-          g2.insert(*i02, Rc::new(Val(ValF::Neu(fi0.clone(), Vec::new()))));
-          for ((n1, i1, ty1), (n2, i2, ty2)) in props1.iter().zip(props2.iter()) {
-            if n1 == n2 {
-              let ty1 = self.eval(&g1, ty1);
-              let ty2 = self.eval(&g2, ty2);
-              self.unify(&ty1, &ty2)?;
-              let fi = self.fresh_id(&i01);
-              g1.insert(*i1, Rc::new(Val(ValF::Neu(fi.clone(), Vec::new()))));
-              g2.insert(*i2, Rc::new(Val(ValF::Neu(fi.clone(), Vec::new()))));
-            } else {
-              return Err("unify: sigma".to_string());
-            }
-          }
-          if props1.len() == props2.len() {
-            Ok(())
-          } else {
-            Err("unify: sigma".to_string())
-          }
+        }
+        if props1.len() == props2.len() {
+          Ok(())
         } else {
           Err("unify: sigma".to_string())
         }
       }
       (ValF::Obj(t1, (n01, e01), props1), ValF::Obj(t2, (n02, e02), props2)) => {
-        if t1 == t2 {
-          if n01 != n02 {
+        if t1 != t2 {
+          return Err("unify: obj".to_string());
+        }
+        if n01 != n02 {
+          return Err("unify: obj".to_string());
+        }
+        self.unify(e01, e02)?;
+        for ((n1, e1), (n2, e2)) in props1.iter().zip(props2.iter()) {
+          if n1 == n2 {
+            self.unify(e1, e2)?;
+          } else {
             return Err("unify: obj".to_string());
           }
-          self.unify(e01, e02)?;
-          for ((n1, e1), (n2, e2)) in props1.iter().zip(props2.iter()) {
-            if n1 == n2 {
-              self.unify(e1, e2)?;
-            } else {
-              return Err("unify: obj".to_string());
-            }
-          }
-          if props1.len() == props2.len() {
-            Ok(())
-          } else {
-            Err("unify: obj".to_string())
-          }
+        }
+        if props1.len() == props2.len() {
+          Ok(())
         } else {
           Err("unify: obj".to_string())
         }
@@ -855,46 +1005,93 @@ where
     }
   }
 
+  fn hole_resolve(&mut self, solve: Solve<P, S>) -> Result<HashMap<HoleId, CE<P, S>>> {
+    eprintln!("[Solve]");
+    eprintln!("- holes:");
+    for (i, ty) in &solve.holes {
+      eprintln!("  - {:?}: {}", i, self.ppv(ty));
+    }
+    eprintln!("- constraints:");
+    for (i, tm) in &solve.constraints {
+      eprintln!("  - {:?} = {}", i, self.ppv(tm));
+    }
+    for (j, _) in &solve.holes {
+      if !solve.constraints.contains_key(j) {
+        return Err("unresolved hole".to_string());
+      }
+    }
+    for (_, tm) in &solve.constraints {
+      for (j, _) in &solve.holes {
+        if contains_hole_v(j, tm) {
+          return Err("unimplemented: hole in hole".to_string());
+        }
+      }
+    }
+    let mut hole_map = HashMap::new();
+    for (i, tm) in solve.constraints {
+      let tm = self.quote(&tm);
+      hole_map.insert(i, tm);
+    }
+    Ok(hole_map)
+  }
+
+  fn def(&mut self, e: Box<Expr<P, S>>) -> Result<(CE<P, S>, Term<P, S>, Type<P, S>)> {
+    self.solves.push(Solve::new());
+    let depth1 = (self.envs.len(), self.solves.len());
+    let res = self.synth(*e);
+    let depth2 = (self.envs.len(), self.solves.len());
+    match &res {
+      Ok(_) => assert_eq!(depth1, depth2),
+      Err(_) => {
+        assert!(depth1.0 <= depth2.0);
+        assert!(depth1.1 <= depth2.1);
+        // rollback
+        self.envs.truncate(depth1.0);
+        self.solves.truncate(depth1.1);
+      }
+    }
+    let solve = self.solves.pop().unwrap();
+    let (ce, ty) = res?;
+    let hole_map = self.hole_resolve(solve)?;
+
+    eprintln!("[Solve:From]");
+    eprintln!("- {}: {}", self.ppe(&ce), self.ppv(&ty));
+    let ce = subst_hole(&hole_map, ce);
+    for i in hole_map.keys() {
+      if contains_hole_e(i, &ce) || contains_hole_v(i, &ty) {
+        return Err("hole remains unresolved".to_string());
+      }
+    }
+    eprintln!("[Solve:To]");
+    eprintln!("- {}: {}", self.ppe(&ce), self.ppv(&ty));
+    // TODO: scope check?
+
+    let tm = self.eval0(&ce);
+    Ok((ce, tm, ty))
+  }
+
   fn defs(&mut self, defs: Vec<(DefId, Box<Expr<P, S>>)>) -> Vec<(DefId, Option<CE<P, S>>)> {
     self.envs.push(VarEnv::new());
     let mut def_terms = Vec::new();
     for (id, expr) in defs {
-      eprintln!("- Synth[ {} ]", self.def_symbols[&id]);
-      self.solves.push(Solve::new());
-      let depth1 = (self.envs.len(), self.solves.len());
-      let res = self.synth(*expr);
-      // TODO: resolve holes
-      let depth2 = (self.envs.len(), self.solves.len());
+      eprintln!("- Def[ {} ]", self.def_symbols[&id]);
+      let res = self.def(expr);
       match &res {
-        Ok(_) => assert_eq!(depth1, depth2),
-        Err(_) => {
-          assert!(depth1.0 <= depth2.0);
-          assert!(depth1.1 <= depth2.1);
-          // rollback
-          self.envs.truncate(depth1.0);
-          self.solves.truncate(depth1.1);
-        }
-      }
-      self.solves.pop();
-      match &res {
-        Ok((_, ty)) => eprintln!("[o] {}: {}", self.def_symbols[&id], self.ppv(ty)),
+        Ok((_, _, ty)) => eprintln!("[o] {}: {}", self.def_symbols[&id], self.ppv(ty)),
         Err(e) => eprintln!("[x] {}: {}", self.def_symbols[&id], e),
       }
-      let (c_expr, tmty) = match res {
-        Ok((c_expr, ty)) => {
-          let tm = self.eval0(&c_expr);
-          let dtm = self.deep_norm(&tm).unwrap();
-          eprintln!("[o] {}: {}", self.def_symbols[&id], self.ppv(&dtm));
-          (Some(c_expr), Some((tm, ty)))
+      match res {
+        Ok((c_expr, tm, ty)) => {
+          // let dtm = self.deep_norm(&tm).unwrap();
+          // eprintln!("    {} = {}", self.def_symbols[&id], self.ppv(&dtm));
+          self.here().def(id, Some((tm, ty)));
+          def_terms.push((id, Some(c_expr)));
         }
-        Err(e) => {
-          self.add_error(&format!("{}: {}", self.def_symbols[&id], e));
-          let h = self.fresh_hole();
-          (None, None)
+        Err(_) => {
+          self.here().def(id, None);
+          def_terms.push((id, None));
         }
       };
-      self.here().def(id, tmty);
-      def_terms.push((id, c_expr));
     }
     self.envs.pop();
     def_terms

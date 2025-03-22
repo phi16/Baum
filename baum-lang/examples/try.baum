@@ -53,5 +53,5 @@ u = two id
 
 two (a: U) (f: a → a) (x: a): a = f (f x)
 three (a: U) (f: a → a) (x: a): a = f (f (f x))
-nine (a: U) (f: a → a) (x: a): a = (two (a → a)) (three a) f x
+nine (a: U): (a → a) → a → a = (two (a → a)) (three a)
 eight (a: U) (f: a → a) (x: a): a = (three (a → a)) (two a) f x

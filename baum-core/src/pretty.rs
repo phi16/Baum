@@ -213,15 +213,15 @@ impl<'a> Pretty<'a> {
       ValF::Lazy(i, ks) => self.di(i).ks(ks),
       ValF::Uni => self.s("𝒰"),
 
-      ValF::Pi(_, Vis::Explicit, i, t, g, e) => self.s("Π(").i(i).s(": ").v(t).s(") ").c(e),
-      ValF::Lam(_, Vis::Explicit, i, t, g, e) => self.s("λ(").i(i).s(": ").v(t).s(") ").c(e),
+      ValF::Pi(_, Vis::Explicit, i, t, _, e) => self.s("Π(").i(i).s(": ").v(t).s(") ").c(e),
+      ValF::Lam(_, Vis::Explicit, i, t, _, e) => self.s("λ(").i(i).s(": ").v(t).s(") ").c(e),
 
-      ValF::Pi(_, Vis::Implicit, i, t, g, e) => self.s("Π{").i(i).s(": ").v(t).s("} ").c(e),
-      ValF::Lam(_, Vis::Implicit, i, t, g, e) => self.s("λ{").i(i).s(": ").v(t).s("} ").c(e),
+      ValF::Pi(_, Vis::Implicit, i, t, _, e) => self.s("Π{").i(i).s(": ").v(t).s("} ").c(e),
+      ValF::Lam(_, Vis::Implicit, i, t, _, e) => self.s("λ{").i(i).s(": ").v(t).s("} ").c(e),
 
       ValF::Sigma0(_) => self.s("Σ{}"),
       ValF::Obj0(_) => self.s("{}"),
-      ValF::Sigma(_, (n0, i0, ty0), g, es) => {
+      ValF::Sigma(_, (n0, i0, ty0), _, es) => {
         self.s("Σ{").name(n0).s("~").i(i0).s(": ").v(ty0);
         for (name, bind, t) in es {
           self.s(", ").name(name).s("~").i(bind).s(": ").c(t);
@@ -253,10 +253,10 @@ pub fn pretty_expr<P, S>(
   def_symbols: &HashMap<DefId, String>,
   bind_symbols: &HashMap<BindId, String>,
   name_symbols: &HashMap<NameId, String>,
-  e: &Expr<P, S>,
+  e: &CE<P, S>,
 ) -> String {
   let mut p = Pretty::new(def_symbols, bind_symbols, name_symbols);
-  p.e(e).ln();
+  p.c(e).ln();
   p.str.join("\n")
 }
 
