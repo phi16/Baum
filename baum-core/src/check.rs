@@ -288,11 +288,11 @@ where
     match &v.0 {
       Hole(i) => CE(CExprF::Hole(i.clone())),
       Neu(i, ks) => {
-        let mut e = CE(CExprF::Bind(i.clone()));
+        let e = CE(CExprF::Bind(i.clone()));
         quote_ks(self, ks, e)
       }
       Lazy(i, ks) => {
-        let mut e = CE(CExprF::Def(i.clone()));
+        let e = CE(CExprF::Def(i.clone()));
         quote_ks(self, ks, e)
       }
       Uni => CE(CExprF::Uni),
@@ -598,7 +598,6 @@ where
             for (index, (n, _, ty)) in props.iter().enumerate() {
               if name == *n {
                 let e = self.eval0(&c_e);
-                let mut ty = ty.clone();
                 let mut eg = eg.clone();
                 // ty may depend on previous props
                 let p0 = self.prop(tag.clone(), e.clone(), *n0); // e.n0
