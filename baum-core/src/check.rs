@@ -58,7 +58,7 @@ fn subst_hole_e<P: Tag, S: Tag>(
 ) -> CE<P, S> {
   match &e.0 {
     CExprF::Hole(i) => match m.get(&i) {
-      Some((e, _)) => e.clone(),
+      Some((e, _)) => subst_hole_e(m, e.clone()),
       None => CE(CExprF::Hole(*i)),
     },
     CExprF::Bind(_) => e,
@@ -140,7 +140,7 @@ fn subst_hole_v<P: Tag, S: Tag>(
 ) -> RV<P, S> {
   let v = match &v.0 {
     ValF::Hole(i) => match m.get(&i) {
-      Some((_, v)) => return v.clone(),
+      Some((_, v)) => return subst_hole_v(m, v.clone()),
       None => ValF::Hole(*i),
     },
     ValF::Neu(i, ks) => {
@@ -1120,13 +1120,7 @@ where
         return Err("unresolved hole".to_string());
       }
     }
-    for (_, tm) in &solve.constraints {
-      for (j, _) in &solve.holes {
-        if contains_hole_v(j, tm) {
-          return Err("unimplemented: hole in hole".to_string());
-        }
-      }
-    }
+    // TODO: resolve hole-in-hole constraints at this point
     let mut hole_map = HashMap::new();
     for (i, v) in solve.constraints {
       let e = self.quote(&v);

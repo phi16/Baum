@@ -211,8 +211,11 @@ impl<'a> Pretty<'a> {
       return self;
     }
     self.s("[");
-    for (i, v) in g {
-      self.i(i).s(" = ").v(v).s(", ");
+    let mut gi = g.iter();
+    let (i0, v0) = gi.next().unwrap();
+    self.i(i0).s(" = ").v(v0);
+    for (i, v) in gi {
+      self.s(", ").i(i).s(" = ").v(v);
     }
     self.s("]")
   }
