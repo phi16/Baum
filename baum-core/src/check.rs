@@ -845,6 +845,7 @@ where
           let v = self.eval0(&e);
           def_map.insert(*i, (e.clone(), v));
         }
+        // not optimal, maybe...
         let ty = SubstEnv::from_defs(def_map, self).subst_v(&ty).into();
         Ok((Rc::new(CExpr(CExprF::Let(ds, body))), ty))
       }
