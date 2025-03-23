@@ -81,6 +81,13 @@ impl<'a> Pretty<'a> {
     self
   }
 
+  fn defs_c<P, S>(&mut self, ds: &Vec<(DefId, Rc<CExpr<P, S>>)>) -> &mut Self {
+    for (i, e) in ds {
+      self.di(i).s(" = ").c(e).ln();
+    }
+    self
+  }
+
   fn e<P, S>(&mut self, e: &Expr<P, S>) -> &mut Self {
     match &e.0 {
       ExprF::Hole => self.s("_"),
@@ -131,7 +138,7 @@ impl<'a> Pretty<'a> {
       CExprF::Def(i) => self.di(i),
       CExprF::Ann(v, t) => self.c(v).s(" of ").c(t),
       CExprF::Uni => self.s("𝒰"),
-      CExprF::Let(defs, e) => unimplemented!(), // self.s("let").open().defs(defs).close().s("in ").c(e),
+      CExprF::Let(defs, e) => self.s("let").open().defs_c(defs).close().s("in ").c(e),
 
       CExprF::Pi(_, Vis::Explicit, i, t, e) => self.s("Π(").i(i).s(": ").c(t).s(") ").c(e),
       CExprF::Lam(_, Vis::Explicit, i, t, e) => self.s("λ(").i(i).s(": ").c(t).s(") ").c(e),
