@@ -24,7 +24,8 @@ pub enum CExprF<PTag, STag, E> {
 
 // Checked Expr
 #[derive(Debug, Clone)]
-pub struct CE<P, S>(pub CExprF<P, S, Rc<CE<P, S>>>);
+pub struct CExpr<P, S>(pub CExprF<P, S, RE<P, S>>);
+pub type RE<P, S> = Rc<CExpr<P, S>>;
 
 #[derive(Debug, Clone)]
 pub enum ContF<PTag, STag, V> {
@@ -51,7 +52,7 @@ pub enum ValF<PTag, STag, V, E, D> {
 pub type Env<P, S> = HashMap<BindId, RV<P, S>>;
 
 #[derive(Debug, Clone)]
-pub struct Val<P, S>(pub ValF<P, S, RV<P, S>, Env<P, S>, Rc<CE<P, S>>>);
+pub struct Val<P, S>(pub ValF<P, S, RV<P, S>, Env<P, S>, RE<P, S>>);
 pub type RV<P, S> = Rc<Val<P, S>>;
 
 pub type Conts<P, S> = Vec<ContF<P, S, RV<P, S>>>;

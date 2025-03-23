@@ -124,7 +124,7 @@ impl<'a> Pretty<'a> {
     }
   }
 
-  fn c<P, S>(&mut self, e: &CE<P, S>) -> &mut Self {
+  fn c<P, S>(&mut self, e: &CExpr<P, S>) -> &mut Self {
     match &e.0 {
       CExprF::Hole(i) => self.hi(i),
       CExprF::Bind(i) => self.i(i),
@@ -267,7 +267,7 @@ pub fn pretty_expr<P, S>(
   def_symbols: &HashMap<DefId, String>,
   bind_symbols: &HashMap<BindId, String>,
   name_symbols: &HashMap<NameId, String>,
-  e: &CE<P, S>,
+  e: &CExpr<P, S>,
 ) -> String {
   let mut p = Pretty::new(def_symbols, bind_symbols, name_symbols);
   p.c(e).ln();

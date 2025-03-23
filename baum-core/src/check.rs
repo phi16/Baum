@@ -61,156 +61,302 @@ impl<P, S> Solve<P, S> {
   }
 }
 
-// TODO: optimize a lot!
-fn subst_hole_e<P: Tag, S: Tag>(
-  m: &HashMap<HoleId, (CE<P, S>, RV<P, S>)>,
-  e: CE<P, S>,
-) -> CE<P, S> {
-  match &e.0 {
-    CExprF::Hole(i) => match m.get(&i) {
-      Some((e, _)) => subst_hole_e(m, e.clone()),
-      None => CE(CExprF::Hole(*i)),
-    },
-    CExprF::Bind(_) => e,
-    CExprF::Def(_) => e,
-    CExprF::Ann(e, ty) => {
-      let e = subst_hole_e(m, (**e).clone());
-      let ty = subst_hole_e(m, (**ty).clone());
-      CE(CExprF::Ann(Rc::new(e), Rc::new(ty)))
+pub enum Subst<'a, T> {
+  Unchanged(&'a T),
+  Changed(T),
+}
+
+impl<'a, T: Clone> Subst<'a, T> {
+  fn is_changed(&self) -> bool {
+    match self {
+      Subst::Unchanged(_) => false,
+      Subst::Changed(_) => true,
     }
-    CExprF::Uni => e,
-    CExprF::Let(defs, body) => {
-      let defs = defs
-        .into_iter()
-        .map(|(def, e)| (*def, Rc::new(subst_hole_e(m, (**e).clone()))))
-        .collect();
-      let body = subst_hole_e(m, (**body).clone());
-      CE(CExprF::Let(defs, Rc::new(subst_hole_e(m, body))))
-    }
-    CExprF::Pi(tag, vis, i, ty, bty) => {
-      let ty = subst_hole_e(m, (**ty).clone());
-      let bty = subst_hole_e(m, (**bty).clone());
-      CE(CExprF::Pi(
-        tag.clone(),
-        vis.clone(),
-        *i,
-        Rc::new(ty),
-        Rc::new(bty),
-      ))
-    }
-    CExprF::Lam(tag, vis, i, ty, body) => {
-      let ty = subst_hole_e(m, (**ty).clone());
-      let body = subst_hole_e(m, (**body).clone());
-      CE(CExprF::Lam(
-        tag.clone(),
-        vis.clone(),
-        *i,
-        Rc::new(ty),
-        Rc::new(body),
-      ))
-    }
-    CExprF::App(tag, vis, f, x) => {
-      let f = subst_hole_e(m, (**f).clone());
-      let x = subst_hole_e(m, (**x).clone());
-      CE(CExprF::App(
-        tag.clone(),
-        vis.clone(),
-        Rc::new(f),
-        Rc::new(x),
-      ))
-    }
-    CExprF::Sigma0(tag) => CE(CExprF::Sigma0(tag.clone())),
-    CExprF::Obj0(tag) => CE(CExprF::Obj0(tag.clone())),
-    CExprF::Sigma(tag, (n0, i0, ty0), props) => {
-      let ty0 = subst_hole_e(m, (**ty0).clone());
-      let props = props
-        .into_iter()
-        .map(|(name, i, ty)| (*name, *i, Rc::new(subst_hole_e(m, (**ty).clone()))))
-        .collect();
-      CE(CExprF::Sigma(tag.clone(), (*n0, *i0, Rc::new(ty0)), props))
-    }
-    CExprF::Obj(tag, (n0, e0), props) => {
-      let e0 = subst_hole_e(m, (**e0).clone());
-      let props = props
-        .into_iter()
-        .map(|(name, e)| (*name, Rc::new(subst_hole_e(m, (**e).clone()))))
-        .collect();
-      CE(CExprF::Obj(tag.clone(), (*n0, Rc::new(e0)), props))
-    }
-    CExprF::Prop(tag, e, name) => {
-      let e = subst_hole_e(m, (**e).clone());
-      CE(CExprF::Prop(tag.clone(), Rc::new(e), *name))
+  }
+  pub fn into(self) -> T {
+    match self {
+      Subst::Unchanged(t) => t.clone(),
+      Subst::Changed(t) => t,
     }
   }
 }
 
-fn subst_hole_v<P: Tag, S: Tag>(
-  m: &HashMap<HoleId, (CE<P, S>, RV<P, S>)>,
-  v: RV<P, S>,
-) -> RV<P, S> {
-  let v = match &v.0 {
-    ValF::Hole(i) => match m.get(&i) {
-      Some((_, v)) => return subst_hole_v(m, v.clone()),
-      None => ValF::Hole(*i),
+fn subst_hole_e<'a, P: Tag, S: Tag>(
+  m: &HashMap<HoleId, (RE<P, S>, RV<P, S>)>,
+  e: &'a RE<P, S>,
+) -> Subst<'a, RE<P, S>> {
+  let unchanged = Subst::Unchanged(e);
+  match &e.0 {
+    CExprF::Hole(i) => match m.get(&i) {
+      Some((e, _)) => Subst::Changed(subst_hole_e(m, e).into()),
+      None => unchanged,
     },
-    ValF::Neu(i, ks) => {
-      let ks = ks
-        .iter()
-        .map(|k| match k {
-          ContF::App(tag, vis, x) => {
-            ContF::App(tag.clone(), vis.clone(), subst_hole_v(m, x.clone()))
-          }
-          ContF::Prop(tag, name) => ContF::Prop(tag.clone(), *name),
-        })
-        .collect();
-      ValF::Neu(*i, ks)
+    CExprF::Bind(_) => unchanged,
+    CExprF::Def(_) => unchanged,
+    CExprF::Ann(e, ty) => {
+      let e = subst_hole_e(m, e);
+      let ty = subst_hole_e(m, ty);
+      if e.is_changed() || ty.is_changed() {
+        Subst::Changed(Rc::new(CExpr(CExprF::Ann(e.into(), ty.into()))))
+      } else {
+        unchanged
+      }
     }
-    ValF::Lazy(i, ks) => {
-      let ks = ks
-        .iter()
-        .map(|k| match k {
-          ContF::App(tag, vis, x) => {
-            ContF::App(tag.clone(), vis.clone(), subst_hole_v(m, x.clone()))
-          }
-          ContF::Prop(tag, name) => ContF::Prop(tag.clone(), *name),
-        })
-        .collect();
-      ValF::Lazy(*i, ks)
+    CExprF::Uni => unchanged,
+    CExprF::Let(defs, body) => {
+      let mut changed = false;
+      let mut rdefs = Vec::new();
+      for (def, e) in defs {
+        let e = subst_hole_e(m, e);
+        if e.is_changed() {
+          changed = true;
+        }
+        rdefs.push((*def, e.into()));
+      }
+      let body = subst_hole_e(m, body);
+      if changed || body.is_changed() {
+        Subst::Changed(Rc::new(CExpr(CExprF::Let(rdefs, body.into()))))
+      } else {
+        unchanged
+      }
     }
-    ValF::Uni => ValF::Uni,
-    ValF::Pi(tag, vis, i, ty, g, bty) => {
-      let ty = subst_hole_v(m, ty.clone());
-      let bty = subst_hole_e(m, (**bty).clone());
-      ValF::Pi(tag.clone(), vis.clone(), *i, ty, g.clone(), Rc::new(bty))
+    CExprF::Pi(tag, vis, i, ty, bty) => {
+      let ty = subst_hole_e(m, ty);
+      let bty = subst_hole_e(m, bty);
+      if ty.is_changed() || bty.is_changed() {
+        Subst::Changed(Rc::new(CExpr(CExprF::Pi(
+          tag.clone(),
+          vis.clone(),
+          *i,
+          ty.into(),
+          bty.into(),
+        ))))
+      } else {
+        unchanged
+      }
     }
-    ValF::Lam(tag, vis, i, ty, g, body) => {
-      let ty = subst_hole_v(m, ty.clone());
-      let body = subst_hole_e(m, (**body).clone());
-      ValF::Lam(tag.clone(), vis.clone(), *i, ty, g.clone(), Rc::new(body))
+    CExprF::Lam(tag, vis, i, ty, body) => {
+      let ty = subst_hole_e(m, ty);
+      let body = subst_hole_e(m, body);
+      if ty.is_changed() || body.is_changed() {
+        Subst::Changed(Rc::new(CExpr(CExprF::Lam(
+          tag.clone(),
+          vis.clone(),
+          *i,
+          ty.into(),
+          body.into(),
+        ))))
+      } else {
+        unchanged
+      }
     }
-    ValF::Sigma0(tag) => ValF::Sigma0(tag.clone()),
-    ValF::Obj0(tag) => ValF::Obj0(tag.clone()),
-    ValF::Sigma(tag, (n0, i0, ty0), g, props) => {
-      let ty0 = subst_hole_v(m, ty0.clone());
-      let props = props
-        .into_iter()
-        .map(|(name, i, ty)| (*name, *i, Rc::new(subst_hole_e(m, (**ty).clone()))))
-        .collect();
-      ValF::Sigma(tag.clone(), (*n0, *i0, ty0), g.clone(), props)
+    CExprF::App(tag, vis, f, x) => {
+      let f = subst_hole_e(m, f);
+      let x = subst_hole_e(m, x);
+      if f.is_changed() || x.is_changed() {
+        Subst::Changed(Rc::new(CExpr(CExprF::App(
+          tag.clone(),
+          vis.clone(),
+          f.into(),
+          x.into(),
+        ))))
+      } else {
+        unchanged
+      }
     }
-    ValF::Obj(tag, (n0, e0), props) => {
-      let e0 = subst_hole_v(m, e0.clone());
-      let props = props
-        .into_iter()
-        .map(|(name, e)| (*name, subst_hole_v(m, e.clone())))
-        .collect();
-      ValF::Obj(tag.clone(), (*n0, e0), props)
+    CExprF::Sigma0(_) => unchanged,
+    CExprF::Obj0(_) => unchanged,
+    CExprF::Sigma(tag, (n0, i0, ty0), props) => {
+      let ty0 = subst_hole_e(m, ty0);
+      let mut changed = false;
+      let mut rprops = Vec::new();
+      for (n, i, ty) in props {
+        let ty = subst_hole_e(m, ty);
+        if ty.is_changed() {
+          changed = true;
+        }
+        rprops.push((*n, *i, ty.into()));
+      }
+      if ty0.is_changed() || changed {
+        Subst::Changed(Rc::new(CExpr(CExprF::Sigma(
+          tag.clone(),
+          (*n0, *i0, ty0.into()),
+          rprops,
+        ))))
+      } else {
+        unchanged
+      }
     }
-  };
-  Rc::new(Val(v))
+    CExprF::Obj(tag, (n0, e0), props) => {
+      let e0 = subst_hole_e(m, e0);
+      let mut changed = false;
+      let mut rprops = Vec::new();
+      for (n, e) in props {
+        let e = subst_hole_e(m, e);
+        if e.is_changed() {
+          changed = true;
+        }
+        rprops.push((*n, e.into()));
+      }
+      if e0.is_changed() || changed {
+        Subst::Changed(Rc::new(CExpr(CExprF::Obj(
+          tag.clone(),
+          (*n0, e0.into()),
+          rprops,
+        ))))
+      } else {
+        unchanged
+      }
+    }
+    CExprF::Prop(tag, e, name) => {
+      let e = subst_hole_e(m, e);
+      if e.is_changed() {
+        Subst::Changed(Rc::new(CExpr(CExprF::Prop(tag.clone(), e.into(), *name))))
+      } else {
+        unchanged
+      }
+    }
+  }
 }
 
-fn contains_hole_e<P, S>(i: &HoleId, e: &CE<P, S>) -> bool {
+fn subst_hole_v<'a, P: Tag, S: Tag>(
+  m: &HashMap<HoleId, (RE<P, S>, RV<P, S>)>,
+  v: &'a RV<P, S>,
+) -> Subst<'a, RV<P, S>> {
+  let unchanged = Subst::Unchanged(v);
+  match &v.0 {
+    ValF::Hole(i) => match m.get(&i) {
+      Some((_, v)) => Subst::Changed(subst_hole_v(m, v).into()),
+      None => unchanged,
+    },
+    ValF::Neu(i, ks) => {
+      let mut changed = false;
+      let mut rks = Vec::new();
+      for k in ks {
+        match k {
+          ContF::App(tag, vis, x) => {
+            let x = subst_hole_v(m, x);
+            if x.is_changed() {
+              changed = true;
+            }
+            rks.push(ContF::App(tag.clone(), vis.clone(), x.into()));
+          }
+          ContF::Prop(tag, name) => {
+            rks.push(ContF::Prop(tag.clone(), *name));
+          }
+        }
+      }
+      if changed {
+        Subst::Changed(Rc::new(Val(ValF::Neu(*i, rks))))
+      } else {
+        unchanged
+      }
+    }
+    ValF::Lazy(i, ks) => {
+      let mut changed = false;
+      let mut rks = Vec::new();
+      for k in ks {
+        match k {
+          ContF::App(tag, vis, x) => {
+            let x = subst_hole_v(m, x);
+            if x.is_changed() {
+              changed = true;
+            }
+            rks.push(ContF::App(tag.clone(), vis.clone(), x.into()));
+          }
+          ContF::Prop(tag, name) => {
+            rks.push(ContF::Prop(tag.clone(), *name));
+          }
+        }
+      }
+      if changed {
+        Subst::Changed(Rc::new(Val(ValF::Lazy(*i, rks))))
+      } else {
+        unchanged
+      }
+    }
+    ValF::Uni => unchanged,
+    ValF::Pi(tag, vis, i, ty, g, bty) => {
+      let ty = subst_hole_v(m, ty);
+      let bty = subst_hole_e(m, bty);
+      if ty.is_changed() || bty.is_changed() {
+        Subst::Changed(Rc::new(Val(ValF::Pi(
+          tag.clone(),
+          vis.clone(),
+          *i,
+          ty.into(),
+          g.clone(),
+          bty.into(),
+        ))))
+      } else {
+        unchanged
+      }
+    }
+    ValF::Lam(tag, vis, i, ty, g, body) => {
+      let ty = subst_hole_v(m, ty);
+      let body = subst_hole_e(m, body);
+      if ty.is_changed() || body.is_changed() {
+        Subst::Changed(Rc::new(Val(ValF::Lam(
+          tag.clone(),
+          vis.clone(),
+          *i,
+          ty.into(),
+          g.clone(),
+          body.into(),
+        ))))
+      } else {
+        unchanged
+      }
+    }
+    ValF::Sigma0(tag) => unchanged,
+    ValF::Obj0(tag) => unchanged,
+    ValF::Sigma(tag, (n0, i0, ty0), g, props) => {
+      let ty0 = subst_hole_v(m, ty0);
+      let mut changed = false;
+      let mut rprops = Vec::new();
+      for (n, i, ty) in props {
+        let ty = subst_hole_e(m, ty);
+        if ty.is_changed() {
+          changed = true;
+        }
+        rprops.push((*n, *i, ty.into()));
+      }
+      if ty0.is_changed() || changed {
+        Subst::Changed(Rc::new(Val(ValF::Sigma(
+          tag.clone(),
+          (*n0, *i0, ty0.into()),
+          g.clone(),
+          rprops,
+        ))))
+      } else {
+        unchanged
+      }
+    }
+    ValF::Obj(tag, (n0, e0), props) => {
+      let e0 = subst_hole_v(m, e0);
+      let mut changed = false;
+      let mut rprops = Vec::new();
+      for (n, e) in props {
+        let e = subst_hole_v(m, e);
+        if e.is_changed() {
+          changed = true;
+        }
+        rprops.push((*n, e.into()));
+      }
+      if e0.is_changed() || changed {
+        Subst::Changed(Rc::new(Val(ValF::Obj(
+          tag.clone(),
+          (*n0, e0.into()),
+          rprops,
+        ))))
+      } else {
+        unchanged
+      }
+    }
+  }
+}
+
+fn contains_hole_e<P, S>(i: &HoleId, e: &RE<P, S>) -> bool {
   match &e.0 {
     CExprF::Hole(j) => i == j,
     CExprF::Bind(_) => false,
@@ -365,7 +511,7 @@ where
     id
   }
 
-  fn ppe(&self, e: &CE<P, S>) -> String {
+  fn ppe(&self, e: &RE<P, S>) -> String {
     pretty_expr(&self.def_symbols, &self.bind_symbols, &self.name_symbols, e)
   }
 
@@ -427,7 +573,7 @@ where
         let bty = self.eval(&g, bty);
         let bty = self.deep_norm(&bty)?;
         let bty = self.quote(&bty);
-        ValF::Pi(tag.clone(), vis.clone(), fi, ty, g, Rc::new(bty))
+        ValF::Pi(tag.clone(), vis.clone(), fi, ty, g, bty)
       }
       ValF::Lam(tag, vis, i, ty, g, body) => {
         let ty = self.deep_norm(ty)?;
@@ -437,7 +583,7 @@ where
         let body = self.eval(&g, body);
         let body = self.deep_norm(&body)?;
         let body = self.quote(&body);
-        ValF::Lam(tag.clone(), vis.clone(), fi, ty, g, Rc::new(body))
+        ValF::Lam(tag.clone(), vis.clone(), fi, ty, g, body)
       }
 
       ValF::Sigma0(tag) => ValF::Sigma0(tag.clone()),
@@ -454,7 +600,7 @@ where
           let ty = self.quote(&ty);
           let fi = self.fresh_id(i);
           g.insert(*i, Rc::new(Val(ValF::Neu(fi, Vec::new()))));
-          ps.push((*name, fi, Rc::new(ty)));
+          ps.push((*name, fi, ty));
         }
         ValF::Sigma(tag.clone(), (*n0, fi0, ty0), g, ps)
       }
@@ -523,7 +669,7 @@ where
     }
   }
 
-  fn eval(&mut self, g: &Env<P, S>, e: &CE<P, S>) -> Term<P, S> {
+  fn eval(&mut self, g: &Env<P, S>, e: &RE<P, S>) -> Term<P, S> {
     // Note: e may contain unresolved bindings
     use CExprF::*;
     let v = match &e.0 {
@@ -581,47 +727,42 @@ where
     Rc::new(Val(v))
   }
 
-  fn eval0(&mut self, e: &CE<P, S>) -> Term<P, S> {
+  fn eval0(&mut self, e: &RE<P, S>) -> Term<P, S> {
     self.eval(&Env::new(), e)
   }
 
-  fn quote(&mut self, v: &Term<P, S>) -> CE<P, S> {
+  fn quote(&mut self, v: &Term<P, S>) -> RE<P, S> {
     use ValF::*;
     fn quote_ks<P: Tag, S: Tag>(
       this: &mut Checker<P, S>,
       ks: &Conts<P, S>,
-      e: CE<P, S>,
-    ) -> CE<P, S> {
+      e: RE<P, S>,
+    ) -> RE<P, S> {
       let mut e = e;
       for k in ks {
         match k {
           ContF::App(tag, vis, x) => {
             let x = this.quote(x);
-            e = CE(CExprF::App(
-              tag.clone(),
-              vis.clone(),
-              Rc::new(e),
-              Rc::new(x),
-            ));
+            e = Rc::new(CExpr(CExprF::App(tag.clone(), vis.clone(), e, x.clone())));
           }
           ContF::Prop(tag, name) => {
-            e = CE(CExprF::Prop(tag.clone(), Rc::new(e), *name));
+            e = Rc::new(CExpr(CExprF::Prop(tag.clone(), e, *name)));
           }
         }
       }
       e
     }
     match &v.0 {
-      Hole(i) => CE(CExprF::Hole(i.clone())),
+      Hole(i) => Rc::new(CExpr(CExprF::Hole(i.clone()))),
       Neu(i, ks) => {
-        let e = CE(CExprF::Bind(i.clone()));
+        let e = Rc::new(CExpr(CExprF::Bind(i.clone())));
         quote_ks(self, ks, e)
       }
       Lazy(i, ks) => {
-        let e = CE(CExprF::Def(i.clone()));
+        let e = Rc::new(CExpr(CExprF::Def(i.clone())));
         quote_ks(self, ks, e)
       }
-      Uni => CE(CExprF::Uni),
+      Uni => Rc::new(CExpr(CExprF::Uni)),
       Pi(tag, vis, i, ty, g, bty) => {
         let ty = self.quote(ty);
         let mut g = g.clone();
@@ -629,13 +770,7 @@ where
         g.insert(*i, Rc::new(Val(ValF::Neu(fi, Vec::new()))));
         let bty = self.eval(&g, bty);
         let bty = self.quote(&bty);
-        CE(CExprF::Pi(
-          tag.clone(),
-          vis.clone(),
-          fi,
-          Rc::new(ty),
-          Rc::new(bty),
-        ))
+        Rc::new(CExpr(CExprF::Pi(tag.clone(), vis.clone(), fi, ty, bty)))
       }
       Lam(tag, vis, i, ty, g, body) => {
         let ty = self.quote(ty);
@@ -644,16 +779,10 @@ where
         g.insert(*i, Rc::new(Val(ValF::Neu(fi, Vec::new()))));
         let body = self.eval(&g, body);
         let body = self.quote(&body);
-        CE(CExprF::Lam(
-          tag.clone(),
-          vis.clone(),
-          fi,
-          Rc::new(ty),
-          Rc::new(body),
-        ))
+        Rc::new(CExpr(CExprF::Lam(tag.clone(), vis.clone(), fi, ty, body)))
       }
-      Sigma0(tag) => CE(CExprF::Sigma0(tag.clone())),
-      Obj0(tag) => CE(CExprF::Obj0(tag.clone())),
+      Sigma0(tag) => Rc::new(CExpr(CExprF::Sigma0(tag.clone()))),
+      Obj0(tag) => Rc::new(CExpr(CExprF::Obj0(tag.clone()))),
       Sigma(tag, (n0, i0, ty0), g, props) => {
         let fi0 = self.fresh_id(i0);
         let ty0 = self.quote(ty0);
@@ -665,18 +794,18 @@ where
           let ty = self.quote(&ty);
           let fi = self.fresh_id(i);
           g.insert(*i, Rc::new(Val(ValF::Neu(fi, Vec::new()))));
-          ps.push((*name, fi, Rc::new(ty)));
+          ps.push((*name, fi, ty));
         }
-        CE(CExprF::Sigma(tag.clone(), (*n0, fi0, Rc::new(ty0)), ps))
+        Rc::new(CExpr(CExprF::Sigma(tag.clone(), (*n0, fi0, ty0), ps)))
       }
       Obj(tag, (n0, e0), props) => {
         let e0 = self.quote(e0);
         let mut ps = Vec::new();
         for (name, e) in props {
           let e = self.quote(e);
-          ps.push((*name, Rc::new(e)));
+          ps.push((*name, e));
         }
-        CE(CExprF::Obj(tag.clone(), (*n0, Rc::new(e0)), ps))
+        Rc::new(CExpr(CExprF::Obj(tag.clone(), (*n0, e0), ps)))
       }
     }
   }
@@ -842,13 +971,13 @@ where
     }
   }
 
-  fn check(&mut self, e: Expr<P, S>, check_ty: &Type<P, S>) -> Result<CE<P, S>> {
+  fn check(&mut self, e: Expr<P, S>, check_ty: &Type<P, S>) -> Result<RE<P, S>> {
     use ExprF::*;
     match e.0 {
       Hole => {
         let h = self.fresh_hole();
         self.solve().add_hole(h, check_ty.clone());
-        Ok(CE(CExprF::Hole(h)))
+        Ok(Rc::new(CExpr(CExprF::Hole(h))))
       }
       Let(defs, body) => {
         let ds = self.defs(defs);
@@ -869,7 +998,7 @@ where
           let bty = self.eval(&tg, bty);
           let c_body = self.check(*body, &bty)?;
           self.varenvs.pop();
-          Ok(CE(CExprF::Lam(tag, vis, i, Rc::new(c_ty), Rc::new(c_body))))
+          Ok(Rc::new(CExpr(CExprF::Lam(tag, vis, i, c_ty, c_body))))
         }
         _ => Err(format!("check: lam / {:?}", check_ty)),
       },
@@ -881,7 +1010,7 @@ where
           if !props.is_empty() {
             return Err("check: obj 0 (not length 0)".to_string());
           }
-          return Ok(CE(CExprF::Obj0(tag)));
+          return Ok(Rc::new(CExpr(CExprF::Obj0(tag))));
         }
         ValF::Sigma(ttag, (tn0, ti0, tty0), tg, tprops) => {
           if tag != *ttag {
@@ -914,14 +1043,14 @@ where
             self.varenv().add(*ti, ty.clone());
             tg.insert(*ti, e.clone());
             ps.push((*ti, e));
-            c_ps.push((n, Rc::new(c_e)));
+            c_ps.push((n, c_e));
           }
           self.varenvs.pop();
           if !len_match {
             // we defer this error to check the existing props as much as possible
             return Err("check: obj 3".to_string());
           }
-          Ok(CE(CExprF::Obj(tag, (n0, Rc::new(c_e0)), c_ps)))
+          Ok(Rc::new(CExpr(CExprF::Obj(tag, (n0, c_e0), c_ps))))
         }
         _ => return Err("check: obj 4".to_string()),
       },
@@ -933,26 +1062,26 @@ where
     }
   }
 
-  fn check_ty(&mut self, e: Expr<P, S>) -> Result<CE<P, S>> {
+  fn check_ty(&mut self, e: Expr<P, S>) -> Result<RE<P, S>> {
     self.check(e, &Rc::new(Val(ValF::Uni)))
   }
 
   fn resolve_implicits(
     &mut self,
-    c_f: CE<P, S>,
+    c_f: RE<P, S>,
     fty: Type<P, S>,
-  ) -> Result<(CE<P, S>, Type<P, S>)> {
+  ) -> Result<(RE<P, S>, Type<P, S>)> {
     match &self.norm(&fty)?.0 {
       ValF::Pi(ftag, Vis::Implicit, i, ty, fg, bty) => {
         // there should be implicit applications in between f and x
         let h = self.fresh_hole();
         self.solve().add_hole(h, ty.clone());
-        let c_fh = CE(CExprF::App(
+        let c_fh = Rc::new(CExpr(CExprF::App(
           ftag.clone(),
           Vis::Implicit,
-          Rc::new(c_f),
-          Rc::new(CE(CExprF::Hole(h))),
-        ));
+          c_f,
+          Rc::new(CExpr(CExprF::Hole(h))),
+        )));
         let mut fg = fg.clone();
         fg.insert(*i, Rc::new(Val(ValF::Hole(h))));
         let bty = self.eval(&fg, bty);
@@ -962,25 +1091,25 @@ where
     }
   }
 
-  fn synth(&mut self, e: Expr<P, S>) -> Result<(CE<P, S>, Type<P, S>)> {
+  fn synth(&mut self, e: Expr<P, S>) -> Result<(RE<P, S>, Type<P, S>)> {
     use ExprF::*;
     match e.0 {
       Hole => Err("synth: hole".to_string()),
       Bind(i) => match self.lookup_bind(i) {
-        Some(ty) => Ok((CE(CExprF::Bind(i)), ty.clone())),
+        Some(ty) => Ok((Rc::new(CExpr(CExprF::Bind(i))), ty.clone())),
         None => Err("synth: bind".to_string()),
       },
       Def(i) => match self.lookup_def(i) {
-        Some((_, ty)) => Ok((CE(CExprF::Def(i)), ty.clone())),
+        Some((_, ty)) => Ok((Rc::new(CExpr(CExprF::Def(i))), ty.clone())),
         None => Err("synth: failed def".to_string()),
       },
-      Ann(t, ty) => {
+      Ann(tm, ty) => {
         let c_ty = self.check_ty(*ty)?;
         let ty = self.eval0(&c_ty);
-        let c_t = self.check(*t, &ty)?;
-        Ok((CE(CExprF::Ann(Rc::new(c_t), Rc::new(c_ty))), ty))
+        let c_tm = self.check(*tm, &ty)?;
+        Ok((Rc::new(CExpr(CExprF::Ann(c_tm, c_ty))), ty))
       }
-      Uni => Ok(((CE(CExprF::Uni)), Rc::new(Val(ValF::Uni)))),
+      Uni => Ok(((Rc::new(CExpr(CExprF::Uni))), Rc::new(Val(ValF::Uni)))),
 
       Let(defs, body) => {
         let ds = self.defs(defs);
@@ -995,7 +1124,7 @@ where
         let c_bty = self.check_ty(*bty)?;
         self.varenvs.pop();
         Ok((
-          CE(CExprF::Pi(tag, vis, i, Rc::new(c_ty), Rc::new(c_bty))),
+          Rc::new(CExpr(CExprF::Pi(tag, vis, i, c_ty, c_bty))),
           Rc::new(Val(ValF::Uni)),
         ))
       }
@@ -1008,14 +1137,14 @@ where
         let bty = self.quote(&bty);
         self.varenvs.pop();
         Ok((
-          (CE(CExprF::Lam(
+          (Rc::new(CExpr(CExprF::Lam(
             tag.clone(),
             vis.clone(),
             i,
-            Rc::new(c_ty),
-            Rc::new(c_body),
-          ))),
-          Rc::new(Val(ValF::Pi(tag, vis, i, ty, HashMap::new(), Rc::new(bty)))),
+            c_ty,
+            c_body,
+          )))),
+          Rc::new(Val(ValF::Pi(tag, vis, i, ty, HashMap::new(), bty))),
         ))
       }
       App(tag, vis, f, x) => {
@@ -1034,7 +1163,7 @@ where
             let mut fg = fg.clone();
             fg.insert(*i, x);
             let bty = self.eval(&fg, bty);
-            Ok((CE(CExprF::App(tag, vis, Rc::new(c_f), Rc::new(c_x))), bty))
+            Ok((Rc::new(CExpr(CExprF::App(tag, vis, c_f, c_x))), bty))
           }
           _ => Err(format!("synth: app / {:?}", fty)),
         }
@@ -1042,7 +1171,7 @@ where
 
       Sigma(tag, props) => {
         if props.is_empty() {
-          return Ok((CE(CExprF::Sigma0(tag)), Rc::new(Val(ValF::Uni))));
+          return Ok((Rc::new(CExpr(CExprF::Sigma0(tag))), Rc::new(Val(ValF::Uni))));
         }
         let mut pi = props.into_iter();
         let (n0, i0, ty0) = pi.next().unwrap();
@@ -1055,18 +1184,18 @@ where
           let c_ty = self.check_ty(*ty)?;
           let ty = self.eval0(&c_ty);
           self.varenv().add(i, ty);
-          c_props.push((name, i, Rc::new(c_ty)));
+          c_props.push((name, i, c_ty));
         }
         self.varenvs.pop();
         Ok((
-          CE(CExprF::Sigma(tag, (n0, i0, Rc::new(c_ty0)), c_props)),
+          Rc::new(CExpr(CExprF::Sigma(tag, (n0, i0, c_ty0), c_props))),
           Rc::new(Val(ValF::Uni)),
         ))
       }
       Obj(tag, props) => {
         if props.is_empty() {
           return Ok((
-            CE(CExprF::Obj0(tag.clone())),
+            Rc::new(CExpr(CExprF::Obj0(tag.clone()))),
             Rc::new(Val(ValF::Sigma0(tag))),
           ));
         }
@@ -1080,11 +1209,11 @@ where
           let (c_e, ty) = self.synth(*e)?;
           let ty = self.quote(&ty);
           let i = self.fresh_id_new();
-          tys.push((name.clone(), i, Rc::new(ty)));
-          c_props.push((name, Rc::new(c_e)));
+          tys.push((name.clone(), i, ty));
+          c_props.push((name, c_e));
         }
         Ok((
-          CE(CExprF::Obj(tag.clone(), (n0, Rc::new(c_e0)), c_props)),
+          Rc::new(CExpr(CExprF::Obj(tag.clone(), (n0, c_e0), c_props))),
           Rc::new(Val(ValF::Sigma(tag, (n0, i0, ty0), HashMap::new(), tys))),
         ))
       }
@@ -1096,7 +1225,7 @@ where
               return Err("synth: prop".to_string());
             }
             if name == *n0 {
-              return Ok((CE(CExprF::Prop(tag, Rc::new(c_e), name)), ty0.clone()));
+              return Ok((Rc::new(CExpr(CExprF::Prop(tag, c_e, name))), ty0.clone()));
             }
             for (index, (n, _, ty)) in props.iter().enumerate() {
               if name == *n {
@@ -1110,7 +1239,7 @@ where
                   eg.insert(*i, p);
                 }
                 let ty = self.eval(&eg, &ty);
-                return Ok((CE(CExprF::Prop(tag, Rc::new(c_e), name)), ty));
+                return Ok((Rc::new(CExpr(CExprF::Prop(tag, c_e, name))), ty));
               }
             }
             Err("synth: prop".to_string())
@@ -1121,7 +1250,7 @@ where
     }
   }
 
-  fn hole_resolve(&mut self, solve: Solve<P, S>) -> Result<HashMap<HoleId, (CE<P, S>, RV<P, S>)>> {
+  fn hole_resolve(&mut self, solve: Solve<P, S>) -> Result<HashMap<HoleId, (RE<P, S>, RV<P, S>)>> {
     eprintln!("[Solve]");
     eprintln!("- holes:");
     for (i, ty) in &solve.holes {
@@ -1145,7 +1274,7 @@ where
     Ok(hole_map)
   }
 
-  fn def(&mut self, e: Box<Expr<P, S>>) -> Result<(CE<P, S>, Term<P, S>, Type<P, S>)> {
+  fn def(&mut self, e: Box<Expr<P, S>>) -> Result<(RE<P, S>, Term<P, S>, Type<P, S>)> {
     self.solves.push(Solve::new());
     let depth1 = (self.varenvs.len(), self.defenvs.len(), self.solves.len());
     let res = self.synth(*e);
@@ -1168,22 +1297,22 @@ where
 
     eprintln!("- From");
     eprintln!("  - {}: {}", self.ppe(&ce), self.ppv(&ty));
-    let ce = subst_hole_e(&hole_map, ce);
-    let ty = subst_hole_v(&hole_map, ty);
+    let ce = subst_hole_e(&hole_map, &ce).into();
+    let ty = subst_hole_v(&hole_map, &ty).into();
+    eprintln!("- To");
+    eprintln!("  - {}: {}", self.ppe(&ce), self.ppv(&ty));
     for i in hole_map.keys() {
       if contains_hole_e(i, &ce) || contains_hole_v(i, &ty) {
         return Err("hole remains unresolved".to_string());
       }
     }
-    eprintln!("- To");
-    eprintln!("  - {}: {}", self.ppe(&ce), self.ppv(&ty));
     // TODO: scope check?
 
     let tm = self.eval0(&ce);
     Ok((ce, tm, ty))
   }
 
-  fn defs(&mut self, defs: Vec<(DefId, Box<Expr<P, S>>)>) -> Vec<(DefId, CE<P, S>)> {
+  fn defs(&mut self, defs: Vec<(DefId, Box<Expr<P, S>>)>) -> Vec<(DefId, RE<P, S>)> {
     self.defenvs.push(DefEnv::new());
     let mut def_terms = Vec::new();
     for (id, expr) in defs {
