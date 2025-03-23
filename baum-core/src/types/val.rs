@@ -54,7 +54,7 @@ pub struct Env<P, S> {
   // Note: lookup elements don't refer the binds in the lookup,
   //       but define elements may do so.
   pub lookup: HashMap<BindId, Term<P, S>>,
-  pub define: HashMap<DefId, (RE<P, S>, Term<P, S>, Type<P, S>)>,
+  pub define: HashMap<DefId, (RE<P, S>, Term<P, S>)>,
 }
 
 impl<P, S> Env<P, S> {
@@ -69,12 +69,16 @@ impl<P, S> Env<P, S> {
     self.lookup.insert(i, val);
   }
 
-  pub fn add_def(&mut self, i: DefId, e: RE<P, S>, tm: Term<P, S>, ty: Type<P, S>) {
-    self.define.insert(i, (e, tm, ty));
+  pub fn add_def(&mut self, i: DefId, e: RE<P, S>, tm: Term<P, S>) {
+    self.define.insert(i, (e, tm));
   }
 
   pub fn lookup_bind(&self, i: &BindId) -> Option<&RV<P, S>> {
     self.lookup.get(i)
+  }
+
+  pub fn lookup_def(&self, i: &DefId) -> Option<&(RE<P, S>, RV<P, S>)> {
+    self.define.get(i)
   }
 }
 

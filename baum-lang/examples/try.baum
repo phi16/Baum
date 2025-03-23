@@ -1,12 +1,14 @@
 syntax 0.1> A → B = Π(x: A) B
 syntax 0.1> (x: A) → B = Π(x: A) B
 
-two (a: U) (f: a → a) (x: a): a = f (f x)
-three (a: U) (f: a → a) (x: a): a = f (f (f x))
+two {a} (f: a → a) (x: a): a = f (f x)
+three {a} (f: a → a) (x: a): a = f (f (f x))
+nine = two three
+nine {a} = two (three {a})
 
 module A = {
-  nine (a: U): (a → a) → a → a = (two (a → a)) (three a)
-  eight (a: U) (f: a → a) (x: a): a = (three (a → a)) (two a) f x
+  nine (a: U): (a → a) → a → a = (two {a → a}) (three {a})
+  eight (a: U) (f: a → a) (x: a): a = (three {a → a}) (two {a}) f x
 }
 
 n9 = A.nine

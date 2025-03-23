@@ -308,8 +308,8 @@ fn subst_hole_v<'a, P: Tag, S: Tag>(
         unchanged
       }
     }
-    ValF::Sigma0(tag) => unchanged,
-    ValF::Obj0(tag) => unchanged,
+    ValF::Sigma0(_) => unchanged,
+    ValF::Obj0(_) => unchanged,
     ValF::Sigma(tag, (n0, i0, ty0), g, props) => {
       let ty0 = subst_hole_v(m, ty0);
       let mut changed = false;
@@ -681,11 +681,19 @@ where
         Some(v) => return v.clone(),
         None => ValF::Neu(i.clone(), Vec::new()),
       },
-      Def(i) => ValF::Lazy(i.clone(), Vec::new()),
+      Def(i) => match g.lookup_def(i) {
+        Some((_, v)) => return v.clone(), // ???
+        None => ValF::Lazy(i.clone(), Vec::new()),
+      },
       Ann(t, _) => return self.eval(g, t),
       Uni => ValF::Uni,
       Let(defs, body) => {
-        unimplemented!()
+        let mut g = g.clone();
+        for (i, e) in defs {
+          let v = self.eval(&g, e);
+          g.add_def(*i, e.clone(), v);
+        }
+        return self.eval(&g, body);
       }
 
       Pi(tag, vis, i, ty, body) => {
@@ -892,7 +900,11 @@ where
           self.unify(&bty1, &bty2)?;
           Ok(())
         } else {
-          Err("unify: pi".to_string())
+          if t1 == t2 {
+            Err("unify: pi (implicit?)".to_string())
+          } else {
+            Err("unify: pi".to_string())
+          }
         }
       }
       (ValF::Lam(t1, v1, i1, ty1, g1, bty1), ValF::Lam(t2, v2, i2, ty2, g2, bty2)) => {
@@ -986,7 +998,8 @@ where
         let ds = self.defs(defs);
         let res = self.check(*body, check_ty)?;
         self.defenvs.pop();
-        unimplemented!()
+        let defs = ds.into_iter().map(|(i, (e, _, _))| (i, e)).collect();
+        Ok(Rc::new(CExpr(CExprF::Let(defs, res))))
       }
       Lam(tag, vis, i, ty, body) => match &self.norm(check_ty)?.0 {
         ValF::Pi(ttag, tvis, ti, tty, tg, bty) => {
@@ -1119,9 +1132,11 @@ where
       Let(defs, body) => {
         self.defenvs.push(DefEnv::new());
         let ds = self.defs(defs);
-        let res = self.synth(*body)?;
+        let (body, ty) = self.synth(*body)?;
         self.defenvs.pop();
-        unimplemented!()
+        let defs = ds.into_iter().map(|(i, (e, _, _))| (i, e)).collect();
+        // TODO: escape defs in ty
+        Ok((Rc::new(CExpr(CExprF::Let(defs, body))), ty))
       }
 
       Pi(tag, vis, i, ty, bty) => {
@@ -1259,7 +1274,7 @@ where
   }
 
   fn hole_resolve(&mut self, solve: Solve<P, S>) -> Result<HashMap<HoleId, (RE<P, S>, RV<P, S>)>> {
-    eprintln!("[Solve]");
+    /* eprintln!("[Solve]");
     eprintln!("- holes:");
     for (i, ty) in &solve.holes {
       eprintln!("  - {:?}: {}", i, self.ppv(ty));
@@ -1272,7 +1287,7 @@ where
       if !solve.constraints.contains_key(j) {
         return Err("unresolved hole".to_string());
       }
-    }
+    } */
     // TODO: resolve hole-in-hole constraints at this point
     let mut hole_map = HashMap::new();
     for (i, v) in solve.constraints {
@@ -1303,12 +1318,12 @@ where
     let (ce, ty) = res?;
     let hole_map = self.hole_resolve(solve)?;
 
-    eprintln!("- From");
-    eprintln!("  - {}: {}", self.ppe(&ce), self.ppv(&ty));
+    /* eprintln!("- From");
+    eprintln!("  - {}: {}", self.ppe(&ce), self.ppv(&ty)); */
     let ce = subst_hole_e(&hole_map, &ce).into();
     let ty = subst_hole_v(&hole_map, &ty).into();
-    eprintln!("- To");
-    eprintln!("  - {}: {}", self.ppe(&ce), self.ppv(&ty));
+    /* eprintln!("- To");
+    eprintln!("  - {}: {}", self.ppe(&ce), self.ppv(&ty)); */
     for i in hole_map.keys() {
       if contains_hole_e(i, &ce) || contains_hole_v(i, &ty) {
         return Err("hole remains unresolved".to_string());
