@@ -49,7 +49,32 @@ pub enum ValF<PTag, STag, V, E, D> {
   Obj(STag, (NameId, V), Vec<(NameId, V)>),
 }
 
-pub type Env<P, S> = HashMap<BindId, RV<P, S>>;
+#[derive(Debug, Clone)]
+pub struct Env<P, S> {
+  pub lookup: HashMap<BindId, RV<P, S>>,
+  pub define: HashMap<DefId, RV<P, S>>,
+}
+
+impl<P, S> Env<P, S> {
+  pub fn new() -> Self {
+    Self {
+      lookup: HashMap::new(),
+      define: HashMap::new(),
+    }
+  }
+
+  pub fn add_bind(&mut self, i: BindId, val: RV<P, S>) {
+    self.lookup.insert(i, val);
+  }
+
+  pub fn add_def(&mut self, i: DefId, val: RV<P, S>) {
+    self.define.insert(i, val);
+  }
+
+  pub fn lookup_bind(&self, i: &BindId) -> Option<&RV<P, S>> {
+    self.lookup.get(i)
+  }
+}
 
 #[derive(Debug, Clone)]
 pub struct Val<P, S>(pub ValF<P, S, RV<P, S>, Env<P, S>, RE<P, S>>);

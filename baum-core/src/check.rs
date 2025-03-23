@@ -569,7 +569,7 @@ where
         let ty = self.deep_norm(ty)?;
         let mut g = g.clone();
         let fi = self.fresh_id(i);
-        g.insert(*i, Rc::new(Val(ValF::Neu(fi, Vec::new()))));
+        g.add_bind(*i, Rc::new(Val(ValF::Neu(fi, Vec::new()))));
         let bty = self.eval(&g, bty);
         let bty = self.deep_norm(&bty)?;
         let bty = self.quote(&bty);
@@ -579,7 +579,7 @@ where
         let ty = self.deep_norm(ty)?;
         let mut g = g.clone();
         let fi = self.fresh_id(i);
-        g.insert(*i, Rc::new(Val(ValF::Neu(fi, Vec::new()))));
+        g.add_bind(*i, Rc::new(Val(ValF::Neu(fi, Vec::new()))));
         let body = self.eval(&g, body);
         let body = self.deep_norm(&body)?;
         let body = self.quote(&body);
@@ -592,14 +592,14 @@ where
         let ty0 = self.deep_norm(ty0)?;
         let mut g = g.clone();
         let fi0 = self.fresh_id(i0);
-        g.insert(*i0, Rc::new(Val(ValF::Neu(fi0, Vec::new()))));
+        g.add_bind(*i0, Rc::new(Val(ValF::Neu(fi0, Vec::new()))));
         let mut ps = Vec::new();
         for (name, i, ty) in props {
           let ty = self.eval(&g, ty);
           let ty = self.deep_norm(&ty)?;
           let ty = self.quote(&ty);
           let fi = self.fresh_id(i);
-          g.insert(*i, Rc::new(Val(ValF::Neu(fi, Vec::new()))));
+          g.add_bind(*i, Rc::new(Val(ValF::Neu(fi, Vec::new()))));
           ps.push((*name, fi, ty));
         }
         ValF::Sigma(tag.clone(), (*n0, fi0, ty0), g, ps)
@@ -634,7 +634,7 @@ where
         assert_eq!(tag, *ftag);
         assert_eq!(vis, *fvis);
         let mut g = g.clone();
-        g.insert(*i, x);
+        g.add_bind(*i, x);
         self.eval(&g, body)
       }
       _ => unreachable!("{:?}", f.0),
@@ -677,8 +677,10 @@ where
         Some(v) => return v.clone(),
         None => ValF::Hole(i.clone()),
       },
-      Bind(i) if g.contains_key(i) => return g[i].clone(),
-      Bind(i) => ValF::Neu(i.clone(), Vec::new()),
+      Bind(i) => match g.lookup_bind(i) {
+        Some(v) => return v.clone(),
+        None => ValF::Neu(i.clone(), Vec::new()),
+      },
       Def(i) => ValF::Lazy(i.clone(), Vec::new()),
       Ann(t, _) => return self.eval(g, t),
       Uni => ValF::Uni,
@@ -767,7 +769,7 @@ where
         let ty = self.quote(ty);
         let mut g = g.clone();
         let fi = self.fresh_id(i);
-        g.insert(*i, Rc::new(Val(ValF::Neu(fi, Vec::new()))));
+        g.add_bind(*i, Rc::new(Val(ValF::Neu(fi, Vec::new()))));
         let bty = self.eval(&g, bty);
         let bty = self.quote(&bty);
         Rc::new(CExpr(CExprF::Pi(tag.clone(), vis.clone(), fi, ty, bty)))
@@ -776,7 +778,7 @@ where
         let ty = self.quote(ty);
         let mut g = g.clone();
         let fi = self.fresh_id(i);
-        g.insert(*i, Rc::new(Val(ValF::Neu(fi, Vec::new()))));
+        g.add_bind(*i, Rc::new(Val(ValF::Neu(fi, Vec::new()))));
         let body = self.eval(&g, body);
         let body = self.quote(&body);
         Rc::new(CExpr(CExprF::Lam(tag.clone(), vis.clone(), fi, ty, body)))
@@ -787,13 +789,13 @@ where
         let fi0 = self.fresh_id(i0);
         let ty0 = self.quote(ty0);
         let mut g = g.clone();
-        g.insert(*i0, Rc::new(Val(ValF::Neu(fi0, Vec::new()))));
+        g.add_bind(*i0, Rc::new(Val(ValF::Neu(fi0, Vec::new()))));
         let mut ps = Vec::new();
         for (name, i, ty) in props {
           let ty = self.eval(&g, ty);
           let ty = self.quote(&ty);
           let fi = self.fresh_id(i);
-          g.insert(*i, Rc::new(Val(ValF::Neu(fi, Vec::new()))));
+          g.add_bind(*i, Rc::new(Val(ValF::Neu(fi, Vec::new()))));
           ps.push((*name, fi, ty));
         }
         Rc::new(CExpr(CExprF::Sigma(tag.clone(), (*n0, fi0, ty0), ps)))
@@ -883,8 +885,8 @@ where
           let mut g1 = g1.clone();
           let mut g2 = g2.clone();
           let fi = self.fresh_id(&i1);
-          g1.insert(*i1, Rc::new(Val(ValF::Neu(fi.clone(), Vec::new()))));
-          g2.insert(*i2, Rc::new(Val(ValF::Neu(fi.clone(), Vec::new()))));
+          g1.add_bind(*i1, Rc::new(Val(ValF::Neu(fi.clone(), Vec::new()))));
+          g2.add_bind(*i2, Rc::new(Val(ValF::Neu(fi.clone(), Vec::new()))));
           let bty1 = self.eval(&g1, bty1);
           let bty2 = self.eval(&g2, bty2);
           self.unify(&bty1, &bty2)?;
@@ -899,8 +901,8 @@ where
           let mut g1 = g1.clone();
           let mut g2 = g2.clone();
           let fi = self.fresh_id(&i1);
-          g1.insert(*i1, Rc::new(Val(ValF::Neu(fi.clone(), Vec::new()))));
-          g2.insert(*i2, Rc::new(Val(ValF::Neu(fi.clone(), Vec::new()))));
+          g1.add_bind(*i1, Rc::new(Val(ValF::Neu(fi.clone(), Vec::new()))));
+          g2.add_bind(*i2, Rc::new(Val(ValF::Neu(fi.clone(), Vec::new()))));
           let bty1 = self.eval(&g1, bty1);
           let bty2 = self.eval(&g2, bty2);
           self.unify(&bty1, &bty2)?;
@@ -923,16 +925,16 @@ where
         let mut g1 = g1.clone();
         let mut g2 = g2.clone();
         let fi0 = self.fresh_id(&i01);
-        g1.insert(*i01, Rc::new(Val(ValF::Neu(fi0.clone(), Vec::new()))));
-        g2.insert(*i02, Rc::new(Val(ValF::Neu(fi0.clone(), Vec::new()))));
+        g1.add_bind(*i01, Rc::new(Val(ValF::Neu(fi0.clone(), Vec::new()))));
+        g2.add_bind(*i02, Rc::new(Val(ValF::Neu(fi0.clone(), Vec::new()))));
         for ((n1, i1, ty1), (n2, i2, ty2)) in props1.iter().zip(props2.iter()) {
           if n1 == n2 {
             let ty1 = self.eval(&g1, ty1);
             let ty2 = self.eval(&g2, ty2);
             self.unify(&ty1, &ty2)?;
             let fi = self.fresh_id(&i01);
-            g1.insert(*i1, Rc::new(Val(ValF::Neu(fi.clone(), Vec::new()))));
-            g2.insert(*i2, Rc::new(Val(ValF::Neu(fi.clone(), Vec::new()))));
+            g1.add_bind(*i1, Rc::new(Val(ValF::Neu(fi.clone(), Vec::new()))));
+            g2.add_bind(*i2, Rc::new(Val(ValF::Neu(fi.clone(), Vec::new()))));
           } else {
             return Err("unify: sigma".to_string());
           }
@@ -994,7 +996,7 @@ where
           self.varenvs.push(VarEnv::new());
           self.varenv().add(i, tty.clone());
           let mut tg = tg.clone();
-          tg.insert(*ti, Rc::new(Val(ValF::Neu(i, Vec::new()))));
+          tg.add_bind(*ti, Rc::new(Val(ValF::Neu(i, Vec::new()))));
           let bty = self.eval(&tg, bty);
           let c_body = self.check(*body, &bty)?;
           self.varenvs.pop();
@@ -1028,7 +1030,7 @@ where
           self.varenvs.push(VarEnv::new());
           self.varenv().add(*ti0, tty0.clone());
           let mut tg = tg.clone();
-          tg.insert(*ti0, e0);
+          tg.add_bind(*ti0, e0);
           let mut ps = Vec::new();
           let mut c_ps = Vec::new();
           for ((n, e), (tn, ti, ty)) in pi.zip(tprops.iter()) {
@@ -1041,7 +1043,7 @@ where
             let c_e = self.check(*e, &ty)?;
             let e = self.eval0(&c_e);
             self.varenv().add(*ti, ty.clone());
-            tg.insert(*ti, e.clone());
+            tg.add_bind(*ti, e.clone());
             ps.push((*ti, e));
             c_ps.push((n, c_e));
           }
@@ -1083,7 +1085,7 @@ where
           Rc::new(CExpr(CExprF::Hole(h))),
         )));
         let mut fg = fg.clone();
-        fg.insert(*i, Rc::new(Val(ValF::Hole(h))));
+        fg.add_bind(*i, Rc::new(Val(ValF::Hole(h))));
         let bty = self.eval(&fg, bty);
         self.resolve_implicits(c_fh, bty)
       }
@@ -1144,7 +1146,7 @@ where
             c_ty,
             c_body,
           )))),
-          Rc::new(Val(ValF::Pi(tag, vis, i, ty, HashMap::new(), bty))),
+          Rc::new(Val(ValF::Pi(tag, vis, i, ty, Env::new(), bty))),
         ))
       }
       App(tag, vis, f, x) => {
@@ -1161,7 +1163,7 @@ where
             let c_x = self.check(*x, &ty)?;
             let x = self.eval0(&c_x);
             let mut fg = fg.clone();
-            fg.insert(*i, x);
+            fg.add_bind(*i, x);
             let bty = self.eval(&fg, bty);
             Ok((Rc::new(CExpr(CExprF::App(tag, vis, c_f, c_x))), bty))
           }
@@ -1214,7 +1216,7 @@ where
         }
         Ok((
           Rc::new(CExpr(CExprF::Obj(tag.clone(), (n0, c_e0), c_props))),
-          Rc::new(Val(ValF::Sigma(tag, (n0, i0, ty0), HashMap::new(), tys))),
+          Rc::new(Val(ValF::Sigma(tag, (n0, i0, ty0), Env::new(), tys))),
         ))
       }
       Prop(tag, e, name) => {
@@ -1233,10 +1235,10 @@ where
                 let mut eg = eg.clone();
                 // ty may depend on previous props
                 let p0 = self.prop(tag.clone(), e.clone(), *n0); // e.n0
-                eg.insert(*i0, p0);
+                eg.add_bind(*i0, p0);
                 for (n, i, _) in props.iter().take(index) {
                   let p = self.prop(tag.clone(), e.clone(), *n); // e.n
-                  eg.insert(*i, p);
+                  eg.add_bind(*i, p);
                 }
                 let ty = self.eval(&eg, &ty);
                 return Ok((Rc::new(CExpr(CExprF::Prop(tag, c_e, name))), ty));

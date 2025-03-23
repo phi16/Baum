@@ -206,18 +206,28 @@ impl<'a> Pretty<'a> {
     self
   }
 
-  fn g<P, S>(&mut self, g: &HashMap<BindId, RV<P, S>>) -> &mut Self {
-    if g.is_empty() {
-      return self;
+  fn g<P, S>(&mut self, g: &Env<P, S>) -> &mut Self {
+    if !g.lookup.is_empty() {
+      self.s("[");
+      let mut gi = g.lookup.iter();
+      let (i0, v0) = gi.next().unwrap();
+      self.i(i0).s(" = ").v(v0);
+      for (i, v) in gi {
+        self.s(", ").i(i).s(" = ").v(v);
+      }
+      self.s("]");
     }
-    self.s("[");
-    let mut gi = g.iter();
-    let (i0, v0) = gi.next().unwrap();
-    self.i(i0).s(" = ").v(v0);
-    for (i, v) in gi {
-      self.s(", ").i(i).s(" = ").v(v);
+    if !g.define.is_empty() {
+      self.s("[");
+      let mut gi = g.define.iter();
+      let (i0, v0) = gi.next().unwrap();
+      self.di(i0).s(" = ").v(v0);
+      for (i, v) in gi {
+        self.s(", ").di(i).s(" = ").v(v);
+      }
+      self.s("]");
     }
-    self.s("]")
+    self
   }
 
   fn v<P, S>(&mut self, v: &Val<P, S>) -> &mut Self {
