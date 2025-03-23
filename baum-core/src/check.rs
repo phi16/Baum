@@ -982,7 +982,10 @@ where
         Ok(Rc::new(CExpr(CExprF::Hole(h))))
       }
       Let(defs, body) => {
+        self.defenvs.push(DefEnv::new());
         let ds = self.defs(defs);
+        let res = self.check(*body, check_ty)?;
+        self.defenvs.pop();
         unimplemented!()
       }
       Lam(tag, vis, i, ty, body) => match &self.norm(check_ty)?.0 {
@@ -1114,7 +1117,10 @@ where
       Uni => Ok(((Rc::new(CExpr(CExprF::Uni))), Rc::new(Val(ValF::Uni)))),
 
       Let(defs, body) => {
+        self.defenvs.push(DefEnv::new());
         let ds = self.defs(defs);
+        let res = self.synth(*body)?;
+        self.defenvs.pop();
         unimplemented!()
       }
 
@@ -1314,8 +1320,10 @@ where
     Ok((ce, tm, ty))
   }
 
-  fn defs(&mut self, defs: Vec<(DefId, Box<Expr<P, S>>)>) -> Vec<(DefId, RE<P, S>)> {
-    self.defenvs.push(DefEnv::new());
+  fn defs(
+    &mut self,
+    defs: Vec<(DefId, Box<Expr<P, S>>)>,
+  ) -> Vec<(DefId, (RE<P, S>, Term<P, S>, Type<P, S>))> {
     let mut def_terms = Vec::new();
     for (id, expr) in defs {
       eprintln!("- Def[ {} ]", self.def_symbols[&id]);
@@ -1328,17 +1336,16 @@ where
         Ok((c_expr, tm, ty)) => {
           // let dtm = self.deep_norm(&tm).unwrap();
           // eprintln!("    {} = {}", self.def_symbols[&id], self.ppv(&dtm));
-          self.defenv().add(id, tm, ty);
-          def_terms.push((id, c_expr));
+          self.defenv().add(id, tm.clone(), ty.clone());
+          def_terms.push((id, (c_expr, tm, ty)));
         }
         Err(e) => {
           self
             .errors
             .push(format!("def {}: {}", self.def_symbols[&id], e));
         }
-      };
+      }
     }
-    self.defenvs.pop();
     def_terms
   }
 }
@@ -1349,7 +1356,9 @@ where
   S: Tag,
 {
   let mut c = Checker::new(p.def_symbols, p.bind_symbols, p.name_symbols);
+  c.defenvs.push(DefEnv::new());
   c.defs(p.defs);
+  c.defenvs.pop();
   if c.errors.is_empty() {
     Ok(())
   } else {

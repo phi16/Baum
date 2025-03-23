@@ -1,0 +1,62 @@
+syntax 0.1> A → B = Π(x: A) B
+syntax 0.1> (x: A) → B = Π(x: A) B
+
+id {a: U} (x: a): a = x
+id {a} (x: a): a = x
+const {a b: U}: a → b → a = λ(x: a, y: b) x
+id2 {a} (x: a): a = id x
+
+-- const {a b: U} (x: a, y: b) = x
+-- const {a b: U}: (a, b) → a = λ(x: a, y: b) x
+-- const {a b: U}: Σ(a, b) → a = λ(x: a, y: b) x
+-- curry
+--   {a b c: U}
+--   (f: (p: Σ(x: a, b(x))) → c(p))
+--   : (x: a) → (y: b(x)) → c(x, y) = λ(x: a) λ(y: b(x)) f (x, y)
+-- curry
+--   {a b: U} {c: Σ(a, b) → U}
+--   (f: (p: Σ(x: a, b(x))) → c(p))
+--   : (x: a) → (y: b(x)) → c(x, y) = λ(x: a) λ(y: b(x)) f(x, y)
+-- curry
+--   {a: U} {b: a → U} {c: Σ(a, b) → U}
+--   (f: (p: Σ(x: a, b(x))) → c(p))
+--   : (x: a) → (y: b(x)) → c(x, y) = λ(x: a) λ(y: b(x)) f(x, y)
+-- flip {a b c: U} (f: (x: a) → (y: b) → c(x, y)): (y: b) → (x: a) → c(x, y) = λ(y: b) λ(x: a) f y x
+
+id2 = id id
+id3 = id id id
+id4 = id id id id
+id4 {a} = (id {_}) (id {_}) (id {_}) (id {a})
+
+module A = {}
+
+curry
+  {a: U} {b: a → U} {c: Σ(x: a, b(x)) → U}
+  (f: (p: Σ(x: a, b(x))) → c(p))
+  : (x: a) → (y: b(x)) → c(x, y)
+  = λ(x: a) λ(y: b(x)) f(x, y)
+flip {a b: U} {c: Σ(a, b) → U} (f: (x: a) → (y: b) → c(x, y)): (y: b) → (x: a) → c(x, y) = λ(y: b) λ(x: a) f x y
+fst {a: U} {b: a → U} (p: Σ(x: a, b(x))): a = p.0
+snd {a: U} {b: a → U} (p: Σ(x: a, b(x))): b(p.0) = p.1
+two {a: U} (f: a → a) (x: a): a = f (f x)
+u = two id
+
+-- x = λ(a: U, v: a) {x = a, y = v, z = U}
+-- y (a: U) (v: a) = {x = a, y = v, z = U}
+-- z = x
+-- y (a: U) (v: a): Σ{x: U, y: a, z: U} = {x = a, y = v, z = U}
+-- 
+-- app (A B: U) (f: Π(A) B) (x: A) = f x
+-- app2 (A B: U) (f: Π(a: A) B) (x: A): B = f x
+-- g x = x
+-- 
+-- module A = {
+--   x = g
+--   y = Π(x: U) x
+--   u: y = _
+-- }
+
+two (a: U) (f: a → a) (x: a): a = f (f x)
+three (a: U) (f: a → a) (x: a): a = f (f (f x))
+nine (a: U): (a → a) → a → a = (two (a → a)) (three a)
+eight (a: U) (f: a → a) (x: a): a = (three (a → a)) (two a) f x

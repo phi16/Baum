@@ -51,8 +51,10 @@ pub enum ValF<PTag, STag, V, E, D> {
 
 #[derive(Debug, Clone)]
 pub struct Env<P, S> {
-  pub lookup: HashMap<BindId, RV<P, S>>,
-  pub define: HashMap<DefId, RV<P, S>>,
+  // Note: lookup elements don't refer the binds in the lookup,
+  //       but define elements may do so.
+  pub lookup: HashMap<BindId, Term<P, S>>,
+  pub define: HashMap<DefId, (RE<P, S>, Term<P, S>, Type<P, S>)>,
 }
 
 impl<P, S> Env<P, S> {
@@ -63,12 +65,12 @@ impl<P, S> Env<P, S> {
     }
   }
 
-  pub fn add_bind(&mut self, i: BindId, val: RV<P, S>) {
+  pub fn add_bind(&mut self, i: BindId, val: Term<P, S>) {
     self.lookup.insert(i, val);
   }
 
-  pub fn add_def(&mut self, i: DefId, val: RV<P, S>) {
-    self.define.insert(i, val);
+  pub fn add_def(&mut self, i: DefId, e: RE<P, S>, tm: Term<P, S>, ty: Type<P, S>) {
+    self.define.insert(i, (e, tm, ty));
   }
 
   pub fn lookup_bind(&self, i: &BindId) -> Option<&RV<P, S>> {

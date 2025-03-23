@@ -220,9 +220,9 @@ impl<'a> Pretty<'a> {
     if !g.define.is_empty() {
       self.s("[");
       let mut gi = g.define.iter();
-      let (i0, v0) = gi.next().unwrap();
+      let (i0, (_, v0, _)) = gi.next().unwrap();
       self.di(i0).s(" = ").v(v0);
-      for (i, v) in gi {
+      for (i, (_, v, _)) in gi {
         self.s(", ").di(i).s(" = ").v(v);
       }
       self.s("]");
