@@ -206,6 +206,17 @@ impl<'a> Pretty<'a> {
     self
   }
 
+  fn g<P, S>(&mut self, g: &HashMap<BindId, RV<P, S>>) -> &mut Self {
+    if g.is_empty() {
+      return self;
+    }
+    self.s("[");
+    for (i, v) in g {
+      self.i(i).s(" = ").v(v).s(", ");
+    }
+    self.s("]")
+  }
+
   fn v<P, S>(&mut self, v: &Val<P, S>) -> &mut Self {
     match &v.0 {
       ValF::Hole(i) => self.hi(i),
@@ -213,16 +224,16 @@ impl<'a> Pretty<'a> {
       ValF::Lazy(i, ks) => self.di(i).ks(ks),
       ValF::Uni => self.s("𝒰"),
 
-      ValF::Pi(_, Vis::Explicit, i, t, _, e) => self.s("Π(").i(i).s(": ").v(t).s(") ").c(e),
-      ValF::Lam(_, Vis::Explicit, i, t, _, e) => self.s("λ(").i(i).s(": ").v(t).s(") ").c(e),
+      ValF::Pi(_, Vis::Explicit, i, t, g, e) => self.s("Π(").i(i).s(": ").v(t).s(") ").g(g).c(e),
+      ValF::Lam(_, Vis::Explicit, i, t, g, e) => self.s("λ(").i(i).s(": ").v(t).s(") ").g(g).c(e),
 
-      ValF::Pi(_, Vis::Implicit, i, t, _, e) => self.s("Π{").i(i).s(": ").v(t).s("} ").c(e),
-      ValF::Lam(_, Vis::Implicit, i, t, _, e) => self.s("λ{").i(i).s(": ").v(t).s("} ").c(e),
+      ValF::Pi(_, Vis::Implicit, i, t, g, e) => self.s("Π{").i(i).s(": ").v(t).s("} ").g(g).c(e),
+      ValF::Lam(_, Vis::Implicit, i, t, g, e) => self.s("λ{").i(i).s(": ").v(t).s("} ").g(g).c(e),
 
       ValF::Sigma0(_) => self.s("Σ{}"),
       ValF::Obj0(_) => self.s("{}"),
-      ValF::Sigma(_, (n0, i0, ty0), _, es) => {
-        self.s("Σ{").name(n0).s("~").i(i0).s(": ").v(ty0);
+      ValF::Sigma(_, (n0, i0, ty0), g, es) => {
+        self.s("Σ{").name(n0).s("~").i(i0).s(": ").v(ty0).g(g);
         for (name, bind, t) in es {
           self.s(", ").name(name).s("~").i(bind).s(": ").c(t);
         }

@@ -52,10 +52,13 @@ impl<P, S> Solve<P, S> {
 }
 
 // TODO: optimize a lot!
-fn subst_hole_e<P: Tag, S: Tag>(m: &HashMap<HoleId, CE<P, S>>, e: CE<P, S>) -> CE<P, S> {
+fn subst_hole_e<P: Tag, S: Tag>(
+  m: &HashMap<HoleId, (CE<P, S>, RV<P, S>)>,
+  e: CE<P, S>,
+) -> CE<P, S> {
   match &e.0 {
     CExprF::Hole(i) => match m.get(&i) {
-      Some(e) => e.clone(),
+      Some((e, _)) => e.clone(),
       None => CE(CExprF::Hole(*i)),
     },
     CExprF::Bind(_) => e,
@@ -132,13 +135,12 @@ fn subst_hole_e<P: Tag, S: Tag>(m: &HashMap<HoleId, CE<P, S>>, e: CE<P, S>) -> C
 }
 
 fn subst_hole_v<P: Tag, S: Tag>(
-  m: &HashMap<HoleId, RV<P, S>>,
-  me: &HashMap<HoleId, CE<P, S>>,
+  m: &HashMap<HoleId, (CE<P, S>, RV<P, S>)>,
   v: RV<P, S>,
 ) -> RV<P, S> {
   let v = match &v.0 {
     ValF::Hole(i) => match m.get(&i) {
-      Some(v) => return v.clone(),
+      Some((_, v)) => return v.clone(),
       None => ValF::Hole(*i),
     },
     ValF::Neu(i, ks) => {
@@ -146,7 +148,7 @@ fn subst_hole_v<P: Tag, S: Tag>(
         .iter()
         .map(|k| match k {
           ContF::App(tag, vis, x) => {
-            ContF::App(tag.clone(), vis.clone(), subst_hole_v(m, me, x.clone()))
+            ContF::App(tag.clone(), vis.clone(), subst_hole_v(m, x.clone()))
           }
           ContF::Prop(tag, name) => ContF::Prop(tag.clone(), *name),
         })
@@ -158,7 +160,7 @@ fn subst_hole_v<P: Tag, S: Tag>(
         .iter()
         .map(|k| match k {
           ContF::App(tag, vis, x) => {
-            ContF::App(tag.clone(), vis.clone(), subst_hole_v(m, me, x.clone()))
+            ContF::App(tag.clone(), vis.clone(), subst_hole_v(m, x.clone()))
           }
           ContF::Prop(tag, name) => ContF::Prop(tag.clone(), *name),
         })
@@ -167,30 +169,30 @@ fn subst_hole_v<P: Tag, S: Tag>(
     }
     ValF::Uni => ValF::Uni,
     ValF::Pi(tag, vis, i, ty, g, bty) => {
-      let ty = subst_hole_v(m, me, ty.clone());
-      let bty = subst_hole_e(me, (**bty).clone());
+      let ty = subst_hole_v(m, ty.clone());
+      let bty = subst_hole_e(m, (**bty).clone());
       ValF::Pi(tag.clone(), vis.clone(), *i, ty, g.clone(), Rc::new(bty))
     }
     ValF::Lam(tag, vis, i, ty, g, body) => {
-      let ty = subst_hole_v(m, me, ty.clone());
-      let body = subst_hole_e(me, (**body).clone());
+      let ty = subst_hole_v(m, ty.clone());
+      let body = subst_hole_e(m, (**body).clone());
       ValF::Lam(tag.clone(), vis.clone(), *i, ty, g.clone(), Rc::new(body))
     }
     ValF::Sigma0(tag) => ValF::Sigma0(tag.clone()),
     ValF::Obj0(tag) => ValF::Obj0(tag.clone()),
     ValF::Sigma(tag, (n0, i0, ty0), g, props) => {
-      let ty0 = subst_hole_v(m, me, ty0.clone());
+      let ty0 = subst_hole_v(m, ty0.clone());
       let props = props
         .into_iter()
-        .map(|(name, i, ty)| (*name, *i, Rc::new(subst_hole_e(me, (**ty).clone()))))
+        .map(|(name, i, ty)| (*name, *i, Rc::new(subst_hole_e(m, (**ty).clone()))))
         .collect();
       ValF::Sigma(tag.clone(), (*n0, *i0, ty0), g.clone(), props)
     }
     ValF::Obj(tag, (n0, e0), props) => {
-      let e0 = subst_hole_v(m, me, e0.clone());
+      let e0 = subst_hole_v(m, e0.clone());
       let props = props
         .into_iter()
-        .map(|(name, e)| (*name, subst_hole_v(m, me, e.clone())))
+        .map(|(name, e)| (*name, subst_hole_v(m, e.clone())))
         .collect();
       ValF::Obj(tag.clone(), (*n0, e0), props)
     }
@@ -356,8 +358,12 @@ where
   }
 
   fn norm(&mut self, v: &Term<P, S>) -> Result<Term<P, S>> {
-    if let ValF::Lazy(i, ks) = &v.0 {
-      match self.lookup_def(*i) {
+    match &v.0 {
+      ValF::Hole(h) => match self.lookup_constraint(*h) {
+        Some(v) => self.norm(&v.clone()),
+        None => Ok(v.clone()),
+      },
+      ValF::Lazy(i, ks) => match self.lookup_def(*i) {
         Some((v, _)) => {
           let mut v = v.clone();
           for k in ks {
@@ -373,9 +379,8 @@ where
           self.norm(&v)
         }
         None => Err("weak_head: fail".to_string()),
-      }
-    } else {
-      Ok(v.clone())
+      },
+      _ => Ok(v.clone()),
     }
   }
 
@@ -661,7 +666,7 @@ where
   }
 
   fn unify(&mut self, v1: &Term<P, S>, v2: &Term<P, S>) -> Result<()> {
-    // eprintln!("unify: {} = {}", self.ppv(v1), self.ppv(v2));
+    eprintln!("unify: {} = {}", self.ppv(v1), self.ppv(v2));
     match (&v1.0, &v2.0) {
       (ValF::Hole(i1), ValF::Hole(i2)) if i1 == i2 => Ok(()),
       (ValF::Hole(i1), _) if self.lookup_constraint(*i1).is_some() => {
@@ -676,6 +681,7 @@ where
         if contains_hole_v(i1, v2) {
           return Err("unify: occurs check".to_string());
         }
+        eprintln!("add_constraint: {:?} = {}", i1, self.ppv(v2));
         self.solve().add_constraint(i1.clone(), v2.clone());
         Ok(())
       }
@@ -683,6 +689,7 @@ where
         if contains_hole_v(i2, v1) {
           return Err("unify: occurs check".to_string());
         }
+        eprintln!("add_constraint: {:?} = {}", i2, self.ppv(v1));
         self.solve().add_constraint(i2.clone(), v1.clone());
         Ok(())
       }
@@ -914,6 +921,31 @@ where
     self.check(e, &Rc::new(Val(ValF::Uni)))
   }
 
+  fn resolve_implicits(
+    &mut self,
+    c_f: CE<P, S>,
+    fty: Type<P, S>,
+  ) -> Result<(CE<P, S>, Type<P, S>)> {
+    match &self.norm(&fty)?.0 {
+      ValF::Pi(ftag, Vis::Implicit, i, ty, fg, bty) => {
+        // there should be implicit applications in between f and x
+        let h = self.fresh_hole();
+        self.solve().add_hole(h, ty.clone());
+        let c_fh = CE(CExprF::App(
+          ftag.clone(),
+          Vis::Implicit,
+          Rc::new(c_f),
+          Rc::new(CE(CExprF::Hole(h))),
+        ));
+        let mut fg = fg.clone();
+        fg.insert(*i, Rc::new(Val(ValF::Hole(h))));
+        let bty = self.eval(&fg, bty);
+        self.resolve_implicits(c_fh, bty)
+      }
+      _ => Ok((c_f, fty)),
+    }
+  }
+
   fn synth(&mut self, e: Expr<P, S>) -> Result<(CE<P, S>, Type<P, S>)> {
     use ExprF::*;
     match e.0 {
@@ -972,13 +1004,14 @@ where
       }
       App(tag, vis, f, x) => {
         let (c_f, fty) = self.synth(*f)?;
+        let (c_f, fty) = match vis {
+          Vis::Explicit => self.resolve_implicits(c_f, fty)?,
+          Vis::Implicit => (c_f, fty),
+        };
         match &self.norm(&fty)?.0 {
           ValF::Pi(ftag, fvis, i, ty, fg, bty) => {
-            if tag != *ftag {
+            if tag != *ftag || vis != *fvis {
               return Err("synth: app".to_string());
-            }
-            if vis != *fvis {
-              return Err("synth: app (may implicit app)".to_string());
             }
             let c_x = self.check(*x, &ty)?;
             let x = self.eval0(&c_x);
@@ -1072,7 +1105,7 @@ where
     }
   }
 
-  fn hole_resolve(&mut self, solve: Solve<P, S>) -> Result<HashMap<HoleId, RV<P, S>>> {
+  fn hole_resolve(&mut self, solve: Solve<P, S>) -> Result<HashMap<HoleId, (CE<P, S>, RV<P, S>)>> {
     eprintln!("[Solve]");
     eprintln!("- holes:");
     for (i, ty) in &solve.holes {
@@ -1094,7 +1127,12 @@ where
         }
       }
     }
-    Ok(solve.constraints)
+    let mut hole_map = HashMap::new();
+    for (i, v) in solve.constraints {
+      let e = self.quote(&v);
+      hole_map.insert(i, (e, v));
+    }
+    Ok(hole_map)
   }
 
   fn def(&mut self, e: Box<Expr<P, S>>) -> Result<(CE<P, S>, Term<P, S>, Type<P, S>)> {
@@ -1115,16 +1153,11 @@ where
     let solve = self.solves.pop().unwrap();
     let (ce, ty) = res?;
     let hole_map = self.hole_resolve(solve)?;
-    let mut hole_map_e = HashMap::new();
-    for (i, tm) in &hole_map {
-      let tm = self.quote(&tm);
-      hole_map_e.insert(*i, tm);
-    }
 
     eprintln!("- From");
     eprintln!("  - {}: {}", self.ppe(&ce), self.ppv(&ty));
-    let ce = subst_hole_e(&hole_map_e, ce);
-    let ty = subst_hole_v(&hole_map, &hole_map_e, ty);
+    let ce = subst_hole_e(&hole_map, ce);
+    let ty = subst_hole_v(&hole_map, ty);
     for i in hole_map.keys() {
       if contains_hole_e(i, &ce) || contains_hole_v(i, &ty) {
         return Err("hole remains unresolved".to_string());

@@ -4,7 +4,7 @@ syntax 0.1> (x: A) → B = Π(x: A) B
 id {a: U} (x: a): a = x
 id {a} (x: a): a = x
 const {a b: U}: a → b → a = λ(x: a, y: b) x
-id2 {a} (x: a): a = id {a} x
+id2 {a} (x: a): a = id x
 
 -- const {a b: U} (x: a, y: b) = x
 -- const {a b: U}: (a, b) → a = λ(x: a, y: b) x
@@ -23,7 +23,12 @@ id2 {a} (x: a): a = id {a} x
 --   : (x: a) → (y: b(x)) → c(x, y) = λ(x: a) λ(y: b(x)) f(x, y)
 -- flip {a b c: U} (f: (x: a) → (y: b) → c(x, y)): (y: b) → (x: a) → c(x, y) = λ(y: b) λ(x: a) f y x
 
-u = id id id id
+id2 = id id
+id3 = id id id
+id4 = id id id id
+id4 {a} = (id {_}) (id {_}) (id {_}) (id {a})
+
+module A = {}
 
 curry
   {a: U} {b: a → U} {c: Σ(x: a, b(x)) → U}
