@@ -13,3 +13,10 @@ module A = {
 
 n9 = A.nine
 n8 = A.eight
+
+module A = {
+  X = U
+  Y: X = (a: U) → a → a
+}
+k0: A.X = (a: U) → a → a
+k1: A.Y = λ(a: U) λ(v: a) v
