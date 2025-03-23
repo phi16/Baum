@@ -1,5 +1,5 @@
-syntax 0.1> A → B = Π(x: A) B
-syntax 0.1> (x: A) → B = Π(x: A) B
+syntax 1> A → B = Π(x: A) B
+syntax 1> (x: A) → B = Π(x: A) B
 
 id {a: U} (x: a): a = x
 id {a} (x: a): a = x

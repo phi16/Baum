@@ -1,5 +1,5 @@
-syntax 0.1> A → B = Π(x: A) B
-syntax 0.1> (x: A) → B = Π(x: A) B
+syntax 1> A → B = Π(x: A) B
+syntax 1> (x: A) → B = Π(x: A) B
 
 two {a} (f: a → a) (x: a): a = f (f x)
 three {a} (f: a → a) (x: a): a = f (f (f x))

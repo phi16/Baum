@@ -242,7 +242,7 @@ impl<'a> Builder<'a> {
             .get(sid)
             .cloned()
         };
-        if let SyntaxId::User(_) = sid {
+        /* if let SyntaxId::User(_) = sid {
           eprintln!("at {}, query: mod_name = {:?}", epos.to_string(), mod_name);
           eprintln!(
             "resolver: {}",
@@ -251,7 +251,7 @@ impl<'a> Builder<'a> {
               .map(|rez| format!("rez = {}", self.rez_to_str(&rez)))
               .unwrap_or("None".to_string())
           );
-        }
+        } */
 
         let resolver = rez.map(|rez| {
           let here = &self.cur_mod_name;
@@ -268,10 +268,10 @@ impl<'a> Builder<'a> {
               }
               let here_rest = here.len() - common;
 
-              eprintln!(
+              /* eprintln!(
                 "RESOLVE: r = {:?}, here = {:?} / common = {:?}, here_rest = {:?}",
                 r, here, common, here_rest
-              );
+              ); */
               let relative = r[common..].to_vec();
               (here_rest as ModLevel, relative)
             })
@@ -802,10 +802,10 @@ impl<'a> Builder<'a> {
           SyntaxExpr(se, e.1.clone())
         }
 
-        eprintln!("SYNTAX: {:?}", e);
+        // eprintln!("SYNTAX: {:?}", e);
         let e = replace(&e, &env);
         self.symbols = env.symbols;
-        eprintln!("SYNTAX: {:?}", e);
+        // eprintln!("SYNTAX: {:?}", e);
 
         let interpret = SyntaxInterpret::new(tokens, e);
         let handler: SyntaxHandler<'a> = Rc::new(move |_| Ok(interpret.clone()));
