@@ -9,22 +9,32 @@ type Result<T> = std::result::Result<T, String>;
 
 struct VarEnv<P, S> {
   lookup: HashMap<BindId, Type<P, S>>,
-  define: HashMap<DefId, (Term<P, S>, Type<P, S>)>,
 }
 
 impl<P, S> VarEnv<P, S> {
   fn new() -> Self {
     VarEnv {
       lookup: HashMap::new(),
-      define: HashMap::new(),
     }
   }
 
   fn add(&mut self, bind: BindId, ty: Type<P, S>) {
     self.lookup.insert(bind, ty);
   }
+}
 
-  fn def(&mut self, def: DefId, tm: Term<P, S>, ty: Type<P, S>) {
+struct DefEnv<P, S> {
+  define: HashMap<DefId, (Term<P, S>, Type<P, S>)>,
+}
+
+impl<P, S> DefEnv<P, S> {
+  fn new() -> Self {
+    DefEnv {
+      define: HashMap::new(),
+    }
+  }
+
+  fn add(&mut self, def: DefId, tm: Term<P, S>, ty: Type<P, S>) {
     self.define.insert(def, (tm, ty));
   }
 }
@@ -254,7 +264,8 @@ struct Checker<P, S> {
   def_symbols: HashMap<DefId, String>,
   bind_symbols: HashMap<BindId, String>,
   name_symbols: HashMap<NameId, String>,
-  envs: Vec<VarEnv<P, S>>,
+  varenvs: Vec<VarEnv<P, S>>,
+  defenvs: Vec<DefEnv<P, S>>,
   solves: Vec<Solve<P, S>>,
   next_bind_id: u32,
   next_hole_id: u32,
@@ -276,7 +287,8 @@ where
       def_symbols,
       bind_symbols,
       name_symbols,
-      envs: Vec::new(),
+      varenvs: Vec::new(),
+      defenvs: Vec::new(),
       solves: Vec::new(),
       next_bind_id,
       next_hole_id: 0,
@@ -288,8 +300,12 @@ where
     self.errors.push(msg.to_string());
   }
 
-  fn here(&mut self) -> &mut VarEnv<P, S> {
-    self.envs.last_mut().unwrap()
+  fn varenv(&mut self) -> &mut VarEnv<P, S> {
+    self.varenvs.last_mut().unwrap()
+  }
+
+  fn defenv(&mut self) -> &mut DefEnv<P, S> {
+    self.defenvs.last_mut().unwrap()
   }
 
   fn solve(&mut self) -> &mut Solve<P, S> {
@@ -317,7 +333,7 @@ where
   }
 
   fn lookup_bind(&self, bind: BindId) -> Option<&Type<P, S>> {
-    for env in self.envs.iter().rev() {
+    for env in self.varenvs.iter().rev() {
       if let Some(ty) = env.lookup.get(&bind) {
         return Some(ty);
       }
@@ -326,7 +342,7 @@ where
   }
 
   fn lookup_def(&self, def: DefId) -> Option<&(Term<P, S>, Type<P, S>)> {
-    for env in self.envs.iter().rev() {
+    for env in self.defenvs.iter().rev() {
       if let Some(tmty) = env.define.get(&def) {
         return Some(tmty);
       }
@@ -666,7 +682,7 @@ where
   }
 
   fn unify(&mut self, v1: &Term<P, S>, v2: &Term<P, S>) -> Result<()> {
-    eprintln!("unify: {} = {}", self.ppv(v1), self.ppv(v2));
+    // eprintln!("unify: {} = {}", self.ppv(v1), self.ppv(v2));
     match (&v1.0, &v2.0) {
       (ValF::Hole(i1), ValF::Hole(i2)) if i1 == i2 => Ok(()),
       (ValF::Hole(i1), _) if self.lookup_constraint(*i1).is_some() => {
@@ -681,7 +697,7 @@ where
         if contains_hole_v(i1, v2) {
           return Err("unify: occurs check".to_string());
         }
-        eprintln!("add_constraint: {:?} = {}", i1, self.ppv(v2));
+        // eprintln!("add_constraint: {:?} = {}", i1, self.ppv(v2));
         self.solve().add_constraint(i1.clone(), v2.clone());
         Ok(())
       }
@@ -689,7 +705,7 @@ where
         if contains_hole_v(i2, v1) {
           return Err("unify: occurs check".to_string());
         }
-        eprintln!("add_constraint: {:?} = {}", i2, self.ppv(v1));
+        // eprintln!("add_constraint: {:?} = {}", i2, self.ppv(v1));
         self.solve().add_constraint(i2.clone(), v1.clone());
         Ok(())
       }
@@ -846,13 +862,13 @@ where
           let c_ty = self.check_ty(*ty)?;
           let ty = self.eval0(&c_ty);
           self.unify(&ty, tty)?;
-          self.envs.push(VarEnv::new());
-          self.here().add(i, tty.clone());
+          self.varenvs.push(VarEnv::new());
+          self.varenv().add(i, tty.clone());
           let mut tg = tg.clone();
           tg.insert(*ti, Rc::new(Val(ValF::Neu(i, Vec::new()))));
           let bty = self.eval(&tg, bty);
           let c_body = self.check(*body, &bty)?;
-          self.envs.pop();
+          self.varenvs.pop();
           Ok(CE(CExprF::Lam(tag, vis, i, Rc::new(c_ty), Rc::new(c_body))))
         }
         _ => Err(format!("check: lam / {:?}", check_ty)),
@@ -880,8 +896,8 @@ where
           }
           let c_e0 = self.check(*e0, &tty0)?;
           let e0 = self.eval0(&c_e0);
-          self.envs.push(VarEnv::new());
-          self.here().add(*ti0, tty0.clone());
+          self.varenvs.push(VarEnv::new());
+          self.varenv().add(*ti0, tty0.clone());
           let mut tg = tg.clone();
           tg.insert(*ti0, e0);
           let mut ps = Vec::new();
@@ -895,12 +911,12 @@ where
             let ty = self.eval(&tg, ty);
             let c_e = self.check(*e, &ty)?;
             let e = self.eval0(&c_e);
-            self.here().add(*ti, ty.clone());
+            self.varenv().add(*ti, ty.clone());
             tg.insert(*ti, e.clone());
             ps.push((*ti, e));
             c_ps.push((n, Rc::new(c_e)));
           }
-          self.envs.pop();
+          self.varenvs.pop();
           if !len_match {
             // we defer this error to check the existing props as much as possible
             return Err("check: obj 3".to_string());
@@ -974,10 +990,10 @@ where
       Pi(tag, vis, i, ty, bty) => {
         let c_ty = self.check_ty(*ty)?;
         let ty = self.eval0(&c_ty);
-        self.envs.push(VarEnv::new());
-        self.here().add(i, ty.clone());
+        self.varenvs.push(VarEnv::new());
+        self.varenv().add(i, ty.clone());
         let c_bty = self.check_ty(*bty)?;
-        self.envs.pop();
+        self.varenvs.pop();
         Ok((
           CE(CExprF::Pi(tag, vis, i, Rc::new(c_ty), Rc::new(c_bty))),
           Rc::new(Val(ValF::Uni)),
@@ -986,11 +1002,11 @@ where
       Lam(tag, vis, i, ty, body) => {
         let c_ty = self.check_ty(*ty)?;
         let ty = self.eval0(&c_ty);
-        self.envs.push(VarEnv::new());
-        self.here().add(i, ty.clone());
+        self.varenvs.push(VarEnv::new());
+        self.varenv().add(i, ty.clone());
         let (c_body, bty) = self.synth(*body)?;
         let bty = self.quote(&bty);
-        self.envs.pop();
+        self.varenvs.pop();
         Ok((
           (CE(CExprF::Lam(
             tag.clone(),
@@ -1032,16 +1048,16 @@ where
         let (n0, i0, ty0) = pi.next().unwrap();
         let c_ty0 = self.check_ty(*ty0)?;
         let ty0 = self.eval0(&c_ty0);
-        self.envs.push(VarEnv::new());
-        self.here().add(i0, ty0);
+        self.varenvs.push(VarEnv::new());
+        self.varenv().add(i0, ty0);
         let mut c_props = Vec::new();
         for (name, i, ty) in pi {
           let c_ty = self.check_ty(*ty)?;
           let ty = self.eval0(&c_ty);
-          self.here().add(i, ty);
+          self.varenv().add(i, ty);
           c_props.push((name, i, Rc::new(c_ty)));
         }
-        self.envs.pop();
+        self.varenvs.pop();
         Ok((
           CE(CExprF::Sigma(tag, (n0, i0, Rc::new(c_ty0)), c_props)),
           Rc::new(Val(ValF::Uni)),
@@ -1131,17 +1147,19 @@ where
 
   fn def(&mut self, e: Box<Expr<P, S>>) -> Result<(CE<P, S>, Term<P, S>, Type<P, S>)> {
     self.solves.push(Solve::new());
-    let depth1 = (self.envs.len(), self.solves.len());
+    let depth1 = (self.varenvs.len(), self.defenvs.len(), self.solves.len());
     let res = self.synth(*e);
-    let depth2 = (self.envs.len(), self.solves.len());
+    let depth2 = (self.varenvs.len(), self.defenvs.len(), self.solves.len());
     match &res {
       Ok(_) => assert_eq!(depth1, depth2),
       Err(_) => {
         assert!(depth1.0 <= depth2.0);
         assert!(depth1.1 <= depth2.1);
+        assert!(depth1.2 <= depth2.2);
         // rollback
-        self.envs.truncate(depth1.0);
-        self.solves.truncate(depth1.1);
+        self.varenvs.truncate(depth1.0);
+        self.defenvs.truncate(depth1.1);
+        self.solves.truncate(depth1.2);
       }
     }
     let solve = self.solves.pop().unwrap();
@@ -1166,7 +1184,7 @@ where
   }
 
   fn defs(&mut self, defs: Vec<(DefId, Box<Expr<P, S>>)>) -> Vec<(DefId, CE<P, S>)> {
-    self.envs.push(VarEnv::new());
+    self.defenvs.push(DefEnv::new());
     let mut def_terms = Vec::new();
     for (id, expr) in defs {
       eprintln!("- Def[ {} ]", self.def_symbols[&id]);
@@ -1179,7 +1197,7 @@ where
         Ok((c_expr, tm, ty)) => {
           // let dtm = self.deep_norm(&tm).unwrap();
           // eprintln!("    {} = {}", self.def_symbols[&id], self.ppv(&dtm));
-          self.here().def(id, tm, ty);
+          self.defenv().add(id, tm, ty);
           def_terms.push((id, c_expr));
         }
         Err(e) => {
@@ -1189,7 +1207,7 @@ where
         }
       };
     }
-    self.envs.pop();
+    self.defenvs.pop();
     def_terms
   }
 }
