@@ -179,7 +179,6 @@ impl<'a> Pretty<'a> {
   }
 
   fn ks<P, S>(&mut self, ks: &Vec<ContF<P, S, Rc<Val<P, S>>>>) -> &mut Self {
-    let mut conts = Vec::new();
     for k in ks {
       match k {
         ContF::App(_, Vis::Explicit, e) => match &e.0 {
@@ -194,21 +193,16 @@ impl<'a> Pretty<'a> {
             self.s(" ").v(e);
           }
           _ => {
-            self.s(" (").v(e);
-            conts.push(")".to_string());
+            self.s(" (").v(e).s(")");
           }
         },
         ContF::App(_, Vis::Implicit, e) => {
-          self.s(" {").v(e);
-          conts.push("}".to_string());
+          self.s(" {").v(e).s("}");
         }
         ContF::Prop(_, name) => {
-          self.s(".").name(name);
+          self.s("#.").name(name);
         }
-      };
-    }
-    for cont in conts.iter().rev() {
-      self.s(cont);
+      }
     }
     self
   }

@@ -1,22 +1,220 @@
 syntax 1> A → B = Π(x: A) B
 syntax 1> (x: A) → B = Π(x: A) B
+syntax 2< a × b = Σ(a, b)
 
-two {a} (f: a → a) (x: a): a = f (f x)
-three {a} (f: a → a) (x: a): a = f (f (f x))
-nine = two three
-nine {a} = two (three {a})
+-- Valid
 
-module A = {
-  nine (a: U): (a → a) → a → a = (two {a → a}) (three {a})
-  eight (a: U) (f: a → a) (x: a): a = (three {a → a}) (two {a}) f x
-}
+id {a: U} (x: a): a = x
 
-n9 = A.nine
-n8 = A.eight
+const {a b: U} (x: a) (y: b): a = x
 
-module A = {
-  X = U
-  Y: X = (a: U) → a → a
-}
-k0: A.X = (a: U) → a → a
-k1: A.Y = λ(a: U) λ(v: a) v
+apply {a b: U} (f: a → b) (x: a): b = f x
+
+swap {a b c: U} (f: a → b → c) (x: b) (y: a): c = f y x
+
+compose {a b c: U} (f: b → c) (g: a → b) (x: a): c = f (g x)
+
+pair {a: U} {b: a → U} (x: a) (y: b x): Σ(x: a, b x) = (x, y)
+
+proj1 {a: U} {b: a → U} (p: Σ(x: a, b x)): a = p.0
+
+proj2 {a: U} {b: a → U} (p: Σ(x: a, b x)): b(p.0) = p.1
+
+iter {a: U} {P: a → U} (f: (x: a) → P x → P x) (x: a) (y: P x): P x = f x y
+
+flip' {a b c: U} (f: a → b → c) (y: b) (x: a): c = f x y
+
+identity' {a: U} (x: a): a = (λ(y: a) y) x
+
+selfApply {a: U} (x: a → a): a → a = λ(y: a) x y
+
+selectFirst {a b c: U} (x: a) (y: b) (z: c): a = x
+
+selectSecond {a b c: U} (x: a) (y: b) (z: c): b = y
+
+selectThird {a b c: U} (x: a) (y: b) (z: c): c = z
+
+assoc {a b c: U} (x: (a × b) × c): a × (b × c) = ((x.0).0, ((x.0).1, x.1))
+
+swapPair {a b: U} (p: a × b): b × a = (p.1, p.0)
+
+revCompose {a b c: U} (f: a → b) (g: b → c): a → c = λ(x: a) g (f x)
+
+flipCompose {a b c: U} (f: a → b → c): b → a → c = λ(x: b) λ(y: a) f y x
+
+nestedApply {a b c: U} (f: a → b → c) (x: a) (y: b): c = f x y
+
+-- Invalid
+
+-- wrongReturnType {a: U} (x: a): b = x  -- 存在しない型 b を返そうとしている
+
+-- wrongArgUsage {a: U} (x: a): a = y  -- 未定義変数 y を使用
+
+applyWrong {a b: U} (f: a → b) (x: b): b = f x  -- f に x の型が合わない
+
+swapMistake {a b c: U} (f: a → b → c) (x: b) (y: a): c = f x x  -- x の型が合わない
+
+nestedMistake {a b: U} (f: a → a) (x: b): a = f x  -- x の型が f の引数型と異なる
+
+flipIncorrect {a b c: U} (f: a → b → c): a → c → b = λ(x: a) λ(y: c) f y x  -- f の引数順序が不適切
+
+fstIncorrect {a: U} {b: a → U} (p: Σ(x: a, b x)): b = p.0  -- 返り値の型が間違い
+
+sndIncorrect {a: U} {b: a → U} (p: Σ(x: a, b x)): a = p.1  -- 返り値の型が間違い
+
+constInvalid {a b: U} (x: a) (y: b): b = x  -- x の型 a を b に返してしまう
+
+nestedFlipError {a b c: U} (f: a → b → c) (y: b) (x: a): c = f y y  -- f の適用が間違い
+
+selfApplyError {a: U} (x: a): a = x x  -- x が関数であるとは限らない
+
+composeWrong {a b c: U} (f: b → c) (g: a → b) (x: b): c = f (g x)  -- g の引数型が誤り
+
+revComposeError {a b c: U} (f: a → b) (g: b → c): a → c = g (f)  -- f を関数適用していない
+
+tupleMistake {a b: U} (x: a) (y: b): Σ(a, b) = (y, x)  -- 順番が逆で型エラー
+
+selectMistake {a b c: U} (x: a) (y: b) (z: c): a = y  -- 返り値の型が間違い
+
+assocError {a b c: U} (x: (a × b) × c): a × (b × c) = (x.1, x.0.0, x.0.1)  -- 順番が間違い
+
+swapPairError {a b: U} (p: a × b): a × b = (p.1, p.1)  -- 返り値の型が正しくない
+
+nestedApplyError {a b c: U} (f: a → b → c) (x: a) (y: a): c = f x y y  -- 引数の数が合わない
+
+flipComposeError {a b c: U} (f: a → b → c): a → b → c = λ(x: b) λ(y: a) f x y  -- 引数の順番が誤り
+
+misuseSigma {a: U} {b: a → U} (p: Σ(x: a, b x)): Σ(x: a, b x) = (p.1, p.0)  -- ペアの順番を逆にしている
+
+---
+
+-- 追加の valid な関数定義
+
+dup {a: U} (x: a): Σ(a, a) = (x, x)
+
+swapΣ {a b: U} (p: Σ(a, b)): Σ(b, a) = (p.1, p.0)
+
+mkTriple {a b c: U} (x: a) (y: b) (z: c): Σ(a, Σ(b, c)) = (x, (y, z))
+
+firstOfTriple {a b c: U} (p: Σ(a, Σ(b, c))): a = p.0
+
+secondOfTriple {a b c: U} (p: Σ(a, Σ(b, c))): b = p.1.0
+
+thirdOfTriple {a b c: U} (p: Σ(a, Σ(b, c))): c = p.1.1
+
+mkDependentPair {a: U} {b: a → U} (x: a) (y: b x): Σ(x: a, b x) = (x, y)
+
+projFirst {a: U} {b: a → U} (p: Σ(x: a, b x)): a = p.0
+
+projSecond {a: U} {b: a → U} (p: Σ(x: a, b x)): b(p.0) = p.1
+
+swapDependent {a: U} {b: a → U} (p: Σ(x: a, b x)): Σ(y: b p.0, a) = (p.1, p.0)
+
+nestedDependent {a: U} {b: a → U} {c: (x: a) → b x → U} 
+  (p: Σ(x: a, Σ(y: b x, c x y))): Σ(y: b p.0, Σ(z: c p.0 y, a)) 
+  = (p.1.0, (p.1.1, p.0))
+
+mkNamedPair {a b: U} (x: a) (y: b): Σ{x: a, y: b} = {x: x, y: y}
+
+mkNamedTriple {a b c: U} (x: a) (y: b) (z: c): Σ{x: a, y: b, z: c} = {x: x, y: y, z: z}
+
+projX {a b: U} (p: Σ{x: a, y: b}): a = p.x
+
+projY {a b: U} (p: Σ{x: a, y: b}): b = p.y
+
+swapNamed {a b: U} (p: Σ{x: a, y: b}): Σ{x: b, y: a} = {x: p.y, y: p.x}
+
+emptyObject: Σ{} = {}
+
+mkFourTuple {a b c d: U} (w: a) (x: b) (y: c) (z: d): Σ{w: a, x: b, y: c, z: d} 
+  = {w: w, x: x, y: y, z: z}
+
+projFourX {a b c d: U} (p: Σ{w: a, x: b, y: c, z: d}): b = p.x
+
+nestedNamed {a b c: U} (p: Σ{x: a, y: Σ{a: b, b: c}}): Σ{first: a, second: c} 
+  = {first: p.x, second: p.y.b}
+
+mergeObjects {a b c: U} (p: Σ{x: a, y: b}) (q: Σ{z: c}): Σ{x: a, y: b, z: c} 
+  = {x: p.x, y: p.y, z: q.z}
+
+duplicateNamed {a: U} (x: a): Σ{x: a, y: a} = {x: x, y: x}
+
+mkNestedPair {a b c: U} (x: a) (y: b) (z: c): Σ{x: a, yz: Σ(y: b, z: c)} 
+  = {x: x, yz: (y, z)}
+
+projYZ {a b c: U} (p: Σ{x: a, yz: Σ(y: b, z: c)}): Σ(y: b, z: c) = p.yz
+
+assocPair {a b c: U} (p: Σ(a, Σ(b, c))): Σ(Σ(a, b), c) = ((p.0, p.1.0), p.1.1)
+
+assocNamed {a b c: U} (p: Σ{x: a, yz: Σ{y: b, z: c}}): Σ{xy: Σ{x: a, y: b}, z: c} 
+  = {xy: {x: p.x, y: p.yz.y}, z: p.yz.z}
+
+revAssocNamed {a b c: U} (p: Σ{xy: Σ{x: a, y: b}, z: c}): Σ{x: a, yz: Σ{y: b, z: c}} 
+  = {x: p.xy.x, yz: {y: p.xy.y, z: p.z}}
+
+-- trivialDependent {a: U} (x: a): Σ(y: a, y = x) = (x, refl)
+
+-- dependentNamed {a: U} (x: a): Σ{x: a, eq: x = x} = {x: x, eq: refl}
+
+-- 追加の valid な関数定義
+
+-- 1つだけのペア (末尾にカンマ)
+
+singletonTuple {a: U} (x: a): Σ(a,) = (x,)
+
+projSingleton {a: U} (p: Σ(a,)): a = p.0
+
+nestedSingleton {a b: U} (x: a) (y: b): Σ(Σ(a,), b) = ((x,), y)
+
+revSingleton {a b: U} (p: Σ(Σ(a,), b)): Σ(a, b) = (p.0.0, p.1)
+
+assocSingleton {a b: U} (p: Σ(a, Σ(b,))): Σ(Σ(a, b),) = ((p.0, p.1.0),)
+
+-- 3つの要素を持つペア
+tripleTuple {a b c: U} (x: a) (y: b) (z: c): Σ(a, b, c) = (x, y, z)
+
+projFirstTriple {a b c: U} (p: Σ(a, b, c)): a = p.0
+projSecondTriple {a b c: U} (p: Σ(a, b, c)): b = p.1
+projThirdTriple {a b c: U} (p: Σ(a, b, c)): c = p.2
+
+swapTriple {a b c: U} (p: Σ(a, b, c)): Σ(c, b, a) = (p.2, p.1, p.0)
+
+assocTriple {a b c d: U} (p: Σ(a, b, Σ(c, d))): Σ(Σ(a, b), c, d) = ((p.0, p.1), p.2.0, p.2.1)
+
+-- 依存型を持つ3つ組のペア
+dependentTriple {a: U} {b: a → U} {c: (x: a) → b x → U}
+  (x: a) (y: b x) (z: c x y): Σ(x: a, y: b x, z: c x y) = (x, y, z)
+
+projDepFirst {a: U} {b: a → U} {c: (x: a) → b x → U} 
+  (p: Σ(x: a, y: b x, z: c x y)): a = p.0
+
+projDepSecond {a: U} {b: a → U} {c: (x: a) → b x → U} 
+  (p: Σ(x: a, y: b x, z: c x y)): b p.0 = p.1
+
+projDepThird {a: U} {b: a → U} {c: (x: a) → b x → U} 
+  (p: Σ(x: a, y: b x, z: c x y)): c p.0 p.1 = p.2
+
+swapDepTriple {a: U} {b: a → U} {c: (x: a) → b x → U} 
+  (p: Σ(x: a, y: b x, z: c x y)): Σ(y: b p.0, x: a, z: c p.0 y) = (p.1, p.0, p.2)
+
+assocDepTriple {a: U} {b: a → U} {c: (x: a) → b x → U} {d: (x: a) → (y: b x) → c x y → U} 
+  (p: Σ(x: a, y: b x, Σ(z: c x y, w: d x y z))): Σ(Σ(x: a, y: b x), z: c p.0 p.1, w: d p.0 p.1 z)
+  = ((p.0, p.1), p.2.0, p.2.1)
+
+-- 名前付きオブジェクトの 3 要素バージョン
+namedTriple {a b c: U} (x: a) (y: b) (z: c): Σ{x: a, y: b, z: c} = {x: x, y: y, z: z}
+
+projNamedFirst {a b c: U} (p: Σ{x: a, y: b, z: c}): a = p.x
+projNamedSecond {a b c: U} (p: Σ{x: a, y: b, z: c}): b = p.y
+projNamedThird {a b c: U} (p: Σ{x: a, y: b, z: c}): c = p.z
+
+swapNamedTriple {a b c: U} (p: Σ{x: a, y: b, z: c}): Σ{x: c, y: b, z: a} = {x: p.z, y: p.y, z: p.x}
+
+assocNamedTriple {a b c d: U} (p: Σ{x: a, y: b, z: Σ{w: c, v: d}}): Σ{xw: Σ{x: a, y: b}, v: c, z: d} 
+  = {xw: {x: p.x, y: p.y}, v: p.z.w, z: p.z.v}
+
+nestedNamedTriple {a b c d: U} (p: Σ{x: a, yz: Σ{y: b, z: Σ{w: c, v: d}}}): Σ{x: a, y: b, wv: Σ{w: c, v: d}} 
+  = {x: p.x, y: p.yz.y, wv: {w: p.yz.z.w, v: p.yz.z.v}}
+
+mergeNamedObjects {a b c d: U} (p: Σ{x: a, y: b}) (q: Σ{z: c, w: d}): Σ{x: a, y: b, z: c, w: d} 
+  = {x: p.x, y: p.y, z: q.z, w: q.w}

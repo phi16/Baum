@@ -264,14 +264,15 @@ impl<'b, P: Tag, S: Tag> SubstEnv<'b, P, S> {
       ValF::Uni => unchanged,
       ValF::Pi(tag, vis, i, ty, g, bty) => {
         let ty = self.subst_v(ty);
+        let g = self.subst_g(g);
         let bty = self.subst_e(bty);
-        if ty.is_changed() || bty.is_changed() {
+        if ty.is_changed() || g.is_changed() || bty.is_changed() {
           Subst::Changed(Rc::new(Val(ValF::Pi(
             tag.clone(),
             vis.clone(),
             *i,
             ty.into(),
-            g.clone(),
+            g.into(),
             bty.into(),
           ))))
         } else {
@@ -280,14 +281,15 @@ impl<'b, P: Tag, S: Tag> SubstEnv<'b, P, S> {
       }
       ValF::Lam(tag, vis, i, ty, g, body) => {
         let ty = self.subst_v(ty);
+        let g = self.subst_g(g);
         let body = self.subst_e(body);
-        if ty.is_changed() || body.is_changed() {
+        if ty.is_changed() || g.is_changed() || body.is_changed() {
           Subst::Changed(Rc::new(Val(ValF::Lam(
             tag.clone(),
             vis.clone(),
             *i,
             ty.into(),
-            g.clone(),
+            g.into(),
             body.into(),
           ))))
         } else {
@@ -298,6 +300,7 @@ impl<'b, P: Tag, S: Tag> SubstEnv<'b, P, S> {
       ValF::Obj0(_) => unchanged,
       ValF::Sigma(tag, (n0, i0, ty0), g, props) => {
         let ty0 = self.subst_v(ty0);
+        let g = self.subst_g(g);
         let mut changed = false;
         let mut rprops = Vec::new();
         for (n, i, ty) in props {
@@ -307,11 +310,11 @@ impl<'b, P: Tag, S: Tag> SubstEnv<'b, P, S> {
           }
           rprops.push((*n, *i, ty.into()));
         }
-        if ty0.is_changed() || changed {
+        if ty0.is_changed() || g.is_changed() || changed {
           Subst::Changed(Rc::new(Val(ValF::Sigma(
             tag.clone(),
             (*n0, *i0, ty0.into()),
-            g.clone(),
+            g.into(),
             rprops,
           ))))
         } else {
@@ -339,6 +342,34 @@ impl<'b, P: Tag, S: Tag> SubstEnv<'b, P, S> {
           unchanged
         }
       }
+    }
+  }
+
+  fn subst_g<'a>(&mut self, g: &'a Env<P, S>) -> Subst<'a, Env<P, S>> {
+    let mut changed = false;
+    let mut rlookup = HashMap::new();
+    for (i, v) in &g.lookup {
+      let v = self.subst_v(v);
+      if v.is_changed() {
+        changed = true;
+      }
+      rlookup.insert(*i, v.into());
+    }
+    let mut rdefine = HashMap::new();
+    for (i, v) in &g.define {
+      let v = self.subst_v(v);
+      if v.is_changed() {
+        changed = true;
+      }
+      rdefine.insert(*i, v.into());
+    }
+    if changed {
+      Subst::Changed(Env {
+        lookup: rlookup,
+        define: rdefine,
+      })
+    } else {
+      Subst::Unchanged(g)
     }
   }
 }

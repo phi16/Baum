@@ -527,7 +527,7 @@ where
   }
 
   fn unify(&mut self, v1: &Term<P, S>, v2: &Term<P, S>) -> Result<()> {
-    // eprintln!("unify: {} = {}", self.ppv(v1), self.ppv(v2));
+    eprintln!("unify: {} = {}", self.ppv(v1), self.ppv(v2));
     match (&v1.0, &v2.0) {
       (ValF::Hole(i1), ValF::Hole(i2)) if i1 == i2 => Ok(()),
       (ValF::Hole(i1), _) if self.lookup_constraint(*i1).is_some() => {
@@ -542,7 +542,7 @@ where
         if contains_hole_v(i1, v2) {
           return Err("unify: occurs check".to_string());
         }
-        // eprintln!("add_constraint: {:?} = {}", i1, self.ppv(v2));
+        eprintln!("add_constraint: {:?} = {}", i1, self.ppv(v2));
         self.solve().add_constraint(i1.clone(), v2.clone());
         Ok(())
       }
@@ -684,10 +684,11 @@ where
           Err("unify: obj".to_string())
         }
       }
-      _ => {
-        eprintln!("unify: {:?} = {:?}", v1, v2);
-        Err("unify: failed".to_string())
-      }
+      _ => Err(format!(
+        "unify: failed: {} ~ {}",
+        self.ppv(v1),
+        self.ppv(v2)
+      )),
     }
   }
 
@@ -1056,8 +1057,8 @@ where
       }
       match res {
         Ok((c_expr, tm, ty)) => {
-          // let dtm = self.deep_norm(&tm).unwrap();
-          // eprintln!("    {} = {}", self.def_symbols[&id], self.ppv(&dtm));
+          let dtm = self.deep_norm(&tm).unwrap();
+          eprintln!("    {} = {}", self.def_symbols[&id], self.ppv(&dtm));
           self.defenv().add(id, tm.clone(), ty);
           def_terms.push((id, c_expr));
         }

@@ -1,0 +1,29 @@
+syntax 1> A → B = Π(x: A) B
+syntax 1> (x: A) → B = Π(x: A) B
+syntax 1> (x y: A) → B = Π(x y: A) B
+syntax 1> {x: A} → B = Π{x: A} B
+
+nat = (a: U) → (a → a) → a → a
+
+zero: nat = λ(a: U) λ(f: a → a) λ(x: a) x
+one: nat = λ(a: U) λ(f: a → a) λ(x: a) f x
+two: nat = λ(a: U) λ(f: a → a) λ(x: a) f (f x)
+three: nat = λ(a: U) λ(f: a → a) λ(x: a) f (f (f x))
+
+add: nat → nat → nat = λ(m: nat) λ(n: nat) λ(a: U) λ(f: a → a) λ(x: a) m a f (n a f x)
+mul: nat → nat → nat = λ(m: nat) λ(n: nat) λ(a: U) λ(f: a → a) λ(x: a) m a (n a f) x
+pow: nat → nat → nat = λ(m: nat) λ(n: nat) λ(a: U) λ(f: a → a) λ(x: a) n _ (m _) f x
+
+five: nat = add two three
+six: nat = mul two three
+eight: nat = pow two three
+
+module X (Id: {a: U} → (x y: a) → U) (refl: {a: U} → (x: a) → Id {a} x x) = {
+  syntax 1 a ~ b = Id a b  
+  test: (add three five) ~ eight = refl _
+}
+
+module Y (Id: {a: U} → (x y: a) → U) (refl: {a: U} → (x: a) → Id {_} x x) = {
+  syntax 1 a ~ b = Id a b  
+  test: zero ~ zero = refl _
+}
