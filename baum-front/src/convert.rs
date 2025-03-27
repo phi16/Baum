@@ -562,7 +562,7 @@ pub fn convert<T>(p: Program<T>) -> (core::Program<PTag, STag>, Vec<String>) {
           (
             *k,
             match v.name {
-              Some(ref s) => format!("{}{:?}", s, k),
+              Some(ref s) => format!("{}", s),
               None => format!("{:?}", k),
             },
           )
@@ -575,7 +575,7 @@ pub fn convert<T>(p: Program<T>) -> (core::Program<PTag, STag>, Vec<String>) {
           (
             *k,
             match v.name {
-              Some(ref s) => format!("{}{:?}", s, k),
+              Some(ref s) => format!("{}", s),
               None => format!("{:?}", k),
             },
           )

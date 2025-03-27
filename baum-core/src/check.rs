@@ -42,7 +42,7 @@ impl<P, S> DefEnv<P, S> {
 
 struct Solve<P, S> {
   holes: HashMap<HoleId, Type<P, S>>,
-  constraints: HashMap<HoleId, Term<P, S>>,
+  constraints: HashMap<HoleId, RE<P, S>>,
 }
 
 impl<P, S> Solve<P, S> {
@@ -57,8 +57,8 @@ impl<P, S> Solve<P, S> {
     self.holes.insert(hole, ty);
   }
 
-  fn add_constraint(&mut self, hole: HoleId, v: Term<P, S>) {
-    self.constraints.insert(hole, v);
+  fn add_constraint(&mut self, hole: HoleId, e: RE<P, S>) {
+    self.constraints.insert(hole, e);
   }
 }
 
@@ -121,6 +121,7 @@ pub struct Checker<P, S> {
   solves: Vec<Solve<P, S>>,
   next_bind_id: u32,
   next_hole_id: u32,
+  log_head: String,
   errors: Vec<String>,
 }
 
@@ -144,8 +145,20 @@ where
       solves: Vec::new(),
       next_bind_id,
       next_hole_id: 0,
+      log_head: String::new(),
       errors: Vec::new(),
     }
+  }
+
+  fn log(&self, msg: String) {
+    eprintln!("{}{}", self.log_head, msg);
+  }
+  fn push_indent(&mut self) {
+    self.log_head.push_str("  ");
+  }
+  fn pop_indent(&mut self) {
+    self.log_head.pop();
+    self.log_head.pop();
   }
 
   fn add_error(&mut self, msg: &str) {
@@ -202,7 +215,7 @@ where
     None
   }
 
-  fn lookup_constraint(&self, hole: HoleId) -> Option<&RV<P, S>> {
+  fn lookup_constraint(&self, hole: HoleId) -> Option<&RE<P, S>> {
     for solve in self.solves.iter().rev() {
       if let Some(v) = solve.constraints.get(&hole) {
         return Some(v);
@@ -228,7 +241,10 @@ where
   fn norm(&mut self, v: &Term<P, S>) -> Result<Term<P, S>> {
     match &v.0 {
       ValF::Hole(h) => match self.lookup_constraint(*h) {
-        Some(v) => self.norm(&v.clone()),
+        Some(e) => {
+          let v = self.eval0(&e.clone());
+          self.norm(&v)
+        }
         None => Ok(v.clone()),
       },
       ValF::Lazy(i, ks) => match self.lookup_def(*i) {
@@ -380,7 +396,7 @@ where
     use CExprF::*;
     let v = match &e.0 {
       Hole(i) => match self.lookup_constraint(*i) {
-        Some(v) => return v.clone(),
+        Some(e) => return self.eval(g, &e.clone()),
         None => ValF::Hole(i.clone()),
       },
       Bind(i) => match g.lookup_bind(i) {
@@ -527,36 +543,47 @@ where
   }
 
   fn unify(&mut self, v1: &Term<P, S>, v2: &Term<P, S>) -> Result<()> {
-    eprintln!("unify: {} = {}", self.ppv(v1), self.ppv(v2));
+    self.push_indent();
+    let res = self.unify_internal(v1, v2);
+    self.pop_indent();
+    res
+  }
+
+  fn unify_internal(&mut self, v1: &Term<P, S>, v2: &Term<P, S>) -> Result<()> {
+    // self.log(format!("unify: {} ≟ {}", self.ppv(v1), self.ppv(v2)));
     match (&v1.0, &v2.0) {
       (ValF::Hole(i1), ValF::Hole(i2)) if i1 == i2 => Ok(()),
       (ValF::Hole(i1), _) if self.lookup_constraint(*i1).is_some() => {
-        let v1 = self.lookup_constraint(*i1).unwrap().clone();
+        let e1 = self.lookup_constraint(*i1).unwrap().clone();
+        let v1 = self.eval0(&e1);
         self.unify(&v1, v2)
       }
       (_, ValF::Hole(i2)) if self.lookup_constraint(*i2).is_some() => {
-        let v2 = self.lookup_constraint(*i2).unwrap().clone();
+        let e2 = self.lookup_constraint(*i2).unwrap().clone();
+        let v2 = self.eval0(&e2);
         self.unify(v1, &v2)
       }
       (ValF::Hole(i1), _) => {
-        if contains_hole_v(i1, v2) {
+        let e2 = self.quote(v2);
+        if contains_hole_e(i1, &e2) {
           return Err("unify: occurs check".to_string());
         }
-        eprintln!("add_constraint: {:?} = {}", i1, self.ppv(v2));
-        self.solve().add_constraint(i1.clone(), v2.clone());
+        // self.log(format!("add_constraint: {:?} = {}", i1, self.ppe(&e2)));
+        self.solve().add_constraint(i1.clone(), e2);
         Ok(())
       }
       (_, ValF::Hole(i2)) => {
-        if contains_hole_v(i2, v1) {
+        let e1 = self.quote(v1);
+        if contains_hole_e(i2, &e1) {
           return Err("unify: occurs check".to_string());
         }
-        // eprintln!("add_constraint: {:?} = {}", i2, self.ppv(v1));
-        self.solve().add_constraint(i2.clone(), v1.clone());
+        // self.log(format!("add_constraint: {:?} = {}", i2, self.ppe(&e1)));
+        self.solve().add_constraint(i2.clone(), e1);
         Ok(())
       }
       (ValF::Neu(i1, ks1), ValF::Neu(i2, ks2)) => {
         if i1 != i2 {
-          return Err(format!("unify: {:?} != {:?}", i1, i2));
+          return Err(format!("unify: neu {:?} != {:?}", i1, i2));
         }
         if ks1.len() != ks2.len() {
           return Err("unify: neu: len".to_string());
@@ -992,7 +1019,7 @@ where
     }
     eprintln!("- constraints:");
     for (i, tm) in &solve.constraints {
-      eprintln!("  - {:?} = {}", i, self.ppv(tm));
+      eprintln!("  - {:?} = {}", i, self.ppe(tm));
     }
     for (j, _) in &solve.holes {
       if !solve.constraints.contains_key(j) {
@@ -1001,8 +1028,8 @@ where
     } */
     // TODO: resolve hole-in-hole constraints at this point
     let mut hole_map = HashMap::new();
-    for (i, v) in solve.constraints {
-      let e = self.quote(&v);
+    for (i, e) in solve.constraints {
+      let v = self.eval0(&e);
       hole_map.insert(i, (e, v));
     }
     Ok(hole_map)
@@ -1029,13 +1056,13 @@ where
     let (ce, ty) = res?;
     let hole_map = self.hole_resolve(solve)?;
 
-    /* eprintln!("- From");
-    eprintln!("  - {}: {}", self.ppe(&ce), self.ppv(&ty)); */
+    // eprintln!("- From");
+    // eprintln!("  - {}: {}", self.ppe(&ce), self.ppv(&ty));
     let mut senv = SubstEnv::from_holes(hole_map.clone(), self);
     let ce = senv.subst_e(&ce).into();
     let ty = senv.subst_v(&ty).into();
-    /* eprintln!("- To");
-    eprintln!("  - {}: {}", self.ppe(&ce), self.ppv(&ty)); */
+    // eprintln!("- To");
+    // eprintln!("  - {}: {}", self.ppe(&ce), self.ppv(&ty));
     for i in hole_map.keys() {
       if contains_hole_e(i, &ce) || contains_hole_v(i, &ty) {
         return Err("hole remains unresolved".to_string());

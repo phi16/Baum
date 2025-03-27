@@ -14,16 +14,30 @@ add: nat → nat → nat = λ(m: nat) λ(n: nat) λ(a: U) λ(f: a → a) λ(x: a
 mul: nat → nat → nat = λ(m: nat) λ(n: nat) λ(a: U) λ(f: a → a) λ(x: a) m a (n a f) x
 pow: nat → nat → nat = λ(m: nat) λ(n: nat) λ(a: U) λ(f: a → a) λ(x: a) n _ (m _) f x
 
+module Nat (m n: nat) = {
+  add: nat = λ(a: U) λ(f: a → a) λ(x: a) m a f (n a f x)
+  mul: nat = λ(a: U) λ(f: a → a) λ(x: a) m a (n a f) x
+  pow: nat = λ(a: U) λ(f: a → a) λ(x: a) n _ (m _) f x
+}
+
 five: nat = add two three
 six: nat = mul two three
 eight: nat = pow two three
 
+module N = Nat two three
+Nfive: nat = N.add
+Nsix: nat = N.mul
+Neight: nat = N.pow
+
 module X (Id: {a: U} → (x y: a) → U) (refl: {a: U} → (x: a) → Id {a} x x) = {
   syntax 1 a ~ b = Id a b  
-  test: (add three five) ~ eight = refl _
+  test1: add three five ~ eight = refl _
+  test2: Nfive ~ five = refl _
 }
 
-module Y (Id: {a: U} → (x y: a) → U) (refl: {a: U} → (x: a) → Id {_} x x) = {
+module Z (Id: {a: U} → (x y: a) → U) (refl: {a: U} → (x: a) → Id {_} x x) = X Id refl
+
+module Y (Id: {a: U} → (x y: a) → U) (refl: {a: U} → (x: a) → Id x x) = {
   syntax 1 a ~ b = Id a b  
   test: zero ~ zero = refl _
 }
