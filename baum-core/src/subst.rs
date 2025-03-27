@@ -74,7 +74,7 @@ impl<'b, P: Tag, S: Tag> SubstEnv<'b, P, S> {
           unchanged
         }
       }
-      CExprF::Uni => unchanged,
+      CExprF::Uni(_) => unchanged,
       CExprF::Let(defs, body) => {
         let mut changed = false;
         let mut rdefs = Vec::new();
@@ -261,7 +261,7 @@ impl<'b, P: Tag, S: Tag> SubstEnv<'b, P, S> {
           }
         }
       },
-      ValF::Uni => unchanged,
+      ValF::Uni(_) => unchanged,
       ValF::Pi(tag, vis, i, ty, g, bty) => {
         let ty = self.subst_v(ty);
         let g = self.subst_g(g);

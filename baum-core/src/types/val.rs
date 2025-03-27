@@ -8,7 +8,7 @@ pub enum CExprF<PTag, STag, E> {
   Bind(BindId),
   Def(DefId),
   Ann(E, E),
-  Uni,
+  Uni(LevelId),
   Let(Vec<(DefId, E)>, E),
 
   Pi(PTag, Vis, BindId, E, E),
@@ -38,7 +38,7 @@ pub enum ValF<PTag, STag, V, E, D> {
   Hole(HoleId),
   Neu(BindId, Vec<ContF<PTag, STag, V>>),
   Lazy(DefId, Vec<ContF<PTag, STag, V>>),
-  Uni,
+  Uni(LevelId),
 
   Pi(PTag, Vis, BindId, V, E, D),
   Lam(PTag, Vis, BindId, V, E, D),

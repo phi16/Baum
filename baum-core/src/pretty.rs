@@ -41,8 +41,12 @@ impl<'a> Pretty<'a> {
   }
 
   fn hi(&mut self, hole: &HoleId) -> &mut Self {
-    self.s("?");
-    self.line.push(hole.0.to_string());
+    self.line.push(format!("{:?}", hole));
+    self
+  }
+
+  fn li(&mut self, level: &LevelId) -> &mut Self {
+    self.line.push(format!("{:?}", level));
     self
   }
 
@@ -138,7 +142,7 @@ impl<'a> Pretty<'a> {
       CExprF::Bind(i) => self.i(i),
       CExprF::Def(i) => self.di(i),
       CExprF::Ann(v, t) => self.c(v).s(" of ").c(t),
-      CExprF::Uni => self.s("𝒰"),
+      CExprF::Uni(i) => self.s("𝒰").li(i),
       CExprF::Let(defs, e) => self.s("let").open().defs_c(defs).close().s("in ").c(e),
 
       CExprF::Pi(_, Vis::Explicit, i, t, e) => self.s("Π(").i(i).s(": ").c(t).s(") ").c(e),
@@ -147,7 +151,7 @@ impl<'a> Pretty<'a> {
         CExprF::Hole(_)
         | CExprF::Bind(_)
         | CExprF::Def(_)
-        | CExprF::Uni
+        | CExprF::Uni(_)
         | CExprF::Sigma0(_)
         | CExprF::Obj0(_)
         | CExprF::Sigma(_, _, _)
@@ -186,7 +190,7 @@ impl<'a> Pretty<'a> {
           ValF::Neu(_, kks) if kks.is_empty() => {
             self.s(" ").v(e);
           }
-          ValF::Uni
+          ValF::Uni(_)
           | ValF::Sigma0(_)
           | ValF::Obj0(_)
           | ValF::Sigma(_, _, _, _)
@@ -237,7 +241,7 @@ impl<'a> Pretty<'a> {
       ValF::Hole(i) => self.hi(i),
       ValF::Neu(i, ks) => self.i(i).ks(ks),
       ValF::Lazy(i, ks) => self.di(i).ks(ks),
-      ValF::Uni => self.s("𝒰"),
+      ValF::Uni(i) => self.s("𝒰").li(i),
 
       ValF::Pi(_, Vis::Explicit, i, t, g, e) => self.s("Π(").i(i).s(": ").v(t).s(") ").g(g).c(e),
       ValF::Lam(_, Vis::Explicit, i, t, g, e) => self.s("λ(").i(i).s(": ").v(t).s(") ").g(g).c(e),

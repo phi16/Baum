@@ -5,7 +5,9 @@ use crate::types::tree::*;
 use crate::types::val::*;
 use colored::Colorize;
 use std::collections::HashMap;
+use std::collections::HashSet;
 use std::rc::Rc;
+use union_find::{QuickFindUf, UnionBySize, UnionFind};
 
 #[derive(Debug, Clone)]
 enum Error {
@@ -47,16 +49,26 @@ impl<P, S> DefEnv<P, S> {
   }
 }
 
+enum LevelRel {
+  Eq,
+  Le,
+  Lt,
+}
+
 struct Solve<P, S> {
   holes: HashMap<HoleId, Type<P, S>>,
-  constraints: HashMap<HoleId, RE<P, S>>,
+  hole_assign: HashMap<HoleId, RE<P, S>>,
+  levels: HashSet<LevelId>,
+  level_constraints: Vec<(LevelId, LevelRel, LevelId)>,
 }
 
 impl<P, S> Solve<P, S> {
   fn new() -> Self {
     Solve {
       holes: HashMap::new(),
-      constraints: HashMap::new(),
+      hole_assign: HashMap::new(),
+      levels: HashSet::new(),
+      level_constraints: Vec::new(),
     }
   }
 
@@ -64,8 +76,16 @@ impl<P, S> Solve<P, S> {
     self.holes.insert(hole, ty);
   }
 
-  fn add_constraint(&mut self, hole: HoleId, e: RE<P, S>) {
-    self.constraints.insert(hole, e);
+  fn add_assign(&mut self, hole: HoleId, e: RE<P, S>) {
+    self.hole_assign.insert(hole, e);
+  }
+
+  fn add_level(&mut self, level: LevelId) {
+    self.levels.insert(level);
+  }
+
+  fn add_constraint(&mut self, l1: LevelId, rel: LevelRel, l2: LevelId) {
+    self.level_constraints.push((l1, rel, l2));
   }
 }
 
@@ -75,7 +95,7 @@ fn contains_hole_e<P, S>(i: &HoleId, e: &RE<P, S>) -> bool {
     CExprF::Bind(_) => false,
     CExprF::Def(_) => false,
     CExprF::Ann(e, _) => contains_hole_e(i, e),
-    CExprF::Uni => false,
+    CExprF::Uni(_) => false,
     CExprF::Let(defs, body) => {
       defs.iter().any(|(_, e)| contains_hole_e(i, e)) || contains_hole_e(i, body)
     }
@@ -103,6 +123,7 @@ pub struct Checker<P, S> {
   solves: Vec<Solve<P, S>>,
   next_bind_id: u32,
   next_hole_id: u32,
+  next_level_id: u32,
   log_head: String,
   errors: Vec<String>,
 }
@@ -127,6 +148,7 @@ where
       solves: Vec::new(),
       next_bind_id,
       next_hole_id: 0,
+      next_level_id: 0,
       log_head: String::new(),
       errors: Vec::new(),
     }
@@ -179,6 +201,13 @@ where
     id
   }
 
+  fn fresh_level(&mut self) -> LevelId {
+    let id = LevelId(self.next_level_id);
+    self.next_level_id += 1;
+    self.solve().add_level(id);
+    id
+  }
+
   fn lookup_bind(&self, bind: BindId) -> Option<&Type<P, S>> {
     for env in self.varenvs.iter().rev() {
       if let Some(ty) = env.lookup.get(&bind) {
@@ -197,9 +226,9 @@ where
     None
   }
 
-  fn lookup_constraint(&self, hole: HoleId) -> Option<&RE<P, S>> {
+  fn lookup_assignment(&self, hole: HoleId) -> Option<&RE<P, S>> {
     for solve in self.solves.iter().rev() {
-      if let Some(v) = solve.constraints.get(&hole) {
+      if let Some(v) = solve.hole_assign.get(&hole) {
         return Some(v);
       }
     }
@@ -222,7 +251,7 @@ where
 
   fn norm(&mut self, v: &Term<P, S>) -> Result<Term<P, S>> {
     match &v.0 {
-      ValF::Hole(h) => match self.lookup_constraint(*h) {
+      ValF::Hole(h) => match self.lookup_assignment(*h) {
         Some(e) => {
           let v = self.eval0(&e.clone());
           self.norm(&v)
@@ -268,7 +297,7 @@ where
         }
         return Ok(v);
       }
-      ValF::Uni => ValF::Uni,
+      ValF::Uni(i) => ValF::Uni(*i),
       ValF::Pi(tag, vis, i, ty, g, bty) => {
         let ty = self.deep_norm(ty)?;
         let mut g = g.clone();
@@ -377,7 +406,7 @@ where
     // Note: e may contain unresolved bindings
     use CExprF::*;
     let v = match &e.0 {
-      Hole(i) => match self.lookup_constraint(*i) {
+      Hole(i) => match self.lookup_assignment(*i) {
         Some(e) => return self.eval(g, &e.clone()),
         None => ValF::Hole(i.clone()),
       },
@@ -390,7 +419,7 @@ where
         None => ValF::Lazy(i.clone(), Vec::new()),
       },
       Ann(t, _) => return self.eval(g, t),
-      Uni => ValF::Uni,
+      Uni(i) => ValF::Uni(*i),
       Let(defs, body) => {
         let mut g = g.clone();
         for (i, e) in defs {
@@ -476,7 +505,7 @@ where
         let e = Rc::new(CExpr(CExprF::Def(i.clone())));
         quote_ks(self, ks, e)
       }
-      Uni => Rc::new(CExpr(CExprF::Uni)),
+      Uni(i) => Rc::new(CExpr(CExprF::Uni(i.clone()))),
       Pi(tag, vis, i, ty, g, bty) => {
         let ty = self.quote(ty);
         let mut g = g.clone();
@@ -543,13 +572,13 @@ where
     // self.log(format!("unify: {} ≟ {}", self.ppv(v1), self.ppv(v2)));
     match (&v1.0, &v2.0) {
       (ValF::Hole(i1), ValF::Hole(i2)) if i1 == i2 => Ok(()),
-      (ValF::Hole(i1), _) if self.lookup_constraint(*i1).is_some() => {
-        let e1 = self.lookup_constraint(*i1).unwrap().clone();
+      (ValF::Hole(i1), _) if self.lookup_assignment(*i1).is_some() => {
+        let e1 = self.lookup_assignment(*i1).unwrap().clone();
         let v1 = self.eval0(&e1);
         self.unify(&v1, v2)
       }
-      (_, ValF::Hole(i2)) if self.lookup_constraint(*i2).is_some() => {
-        let e2 = self.lookup_constraint(*i2).unwrap().clone();
+      (_, ValF::Hole(i2)) if self.lookup_assignment(*i2).is_some() => {
+        let e2 = self.lookup_assignment(*i2).unwrap().clone();
         let v2 = self.eval0(&e2);
         self.unify(v1, &v2)
       }
@@ -558,8 +587,8 @@ where
         if contains_hole_e(i1, &e2) {
           return fail(self, "recursive hole");
         }
-        // self.log(format!("add_constraint: {:?} = {}", i1, self.ppe(&e2)));
-        self.solve().add_constraint(i1.clone(), e2);
+        // self.log(format!("add_assign: {:?} = {}", i1, self.ppe(&e2)));
+        self.solve().add_assign(i1.clone(), e2);
         Ok(())
       }
       (_, ValF::Hole(i2)) => {
@@ -567,8 +596,8 @@ where
         if contains_hole_e(i2, &e1) {
           return fail(self, "recursive hole");
         }
-        // self.log(format!("add_constraint: {:?} = {}", i2, self.ppe(&e1)));
-        self.solve().add_constraint(i2.clone(), e1);
+        // self.log(format!("add_assign: {:?} = {}", i2, self.ppe(&e1)));
+        self.solve().add_assign(i2.clone(), e1);
         Ok(())
       }
       (ValF::Neu(i1, ks1), ValF::Neu(i2, ks2)) => {
@@ -613,7 +642,10 @@ where
         let v2 = self.norm(v2)?;
         self.unify(v1, &v2)
       }
-      (ValF::Uni, ValF::Uni) => Ok(()),
+      (ValF::Uni(i1), ValF::Uni(i2)) => {
+        self.solve().add_constraint(*i1, LevelRel::Eq, *i2);
+        Ok(())
+      }
       (ValF::Pi(t1, v1, i1, ty1, g1, bty1), ValF::Pi(t2, v2, i2, ty2, g2, bty2)) => {
         if t1 != t2 {
           return fail(self, "Π / role mismatch");
@@ -710,6 +742,14 @@ where
   }
 
   fn check(&mut self, e: Expr<P, S>, check_ty: &Type<P, S>) -> Result<RE<P, S>> {
+    let res = self.check_internal(e, check_ty);
+    /* if let Ok(e) = &res {
+      self.log(format!("CHECK {}: {}", self.ppe(e), self.ppv(check_ty)));
+    } */
+    res
+  }
+
+  fn check_internal(&mut self, e: Expr<P, S>, check_ty: &Type<P, S>) -> Result<RE<P, S>> {
     let ec = e.clone(); // TODO: redundant?
     let fail = |this: &Checker<P, S>, msg: &str| -> Result<_> {
       Err(Error::Loc(format!(
@@ -741,7 +781,7 @@ where
           if vis != *tvis {
             return fail(self, "λ / visibility mismatch");
           }
-          let c_ty = self.check_ty(*ty)?;
+          let (c_ty, _) = self.check_ty(*ty)?;
           let ty = self.eval0(&c_ty);
           self.unify(&ty, tty)?;
           self.varenvs.push(VarEnv::new());
@@ -813,8 +853,10 @@ where
     }
   }
 
-  fn check_ty(&mut self, e: Expr<P, S>) -> Result<RE<P, S>> {
-    self.check(e, &Rc::new(Val(ValF::Uni)))
+  fn check_ty(&mut self, e: Expr<P, S>) -> Result<(RE<P, S>, LevelId)> {
+    let li = self.fresh_level();
+    let e = self.check(e, &Rc::new(Val(ValF::Uni(li))))?;
+    Ok((e, li))
   }
 
   fn resolve_implicits(
@@ -843,6 +885,14 @@ where
   }
 
   fn synth(&mut self, e: Expr<P, S>) -> Result<(RE<P, S>, Type<P, S>)> {
+    let res = self.synth_internal(e);
+    /* if let Ok((c_e, ty)) = &res {
+      self.log(format!("SYNTH {}: {}", self.ppe(c_e), self.ppv(ty)));
+    } */
+    res
+  }
+
+  fn synth_internal(&mut self, e: Expr<P, S>) -> Result<(RE<P, S>, Type<P, S>)> {
     let ec = e.clone(); // TODO: redundant?
     let fail = |_this: &Checker<P, S>, msg: &str| -> Result<_> {
       Err(Error::Loc(format!(
@@ -862,12 +912,20 @@ where
         None => Err(Error::Fail),
       },
       Ann(tm, ty) => {
-        let c_ty = self.check_ty(*ty)?;
+        let (c_ty, _) = self.check_ty(*ty)?;
         let ty = self.eval0(&c_ty);
         let c_tm = self.check(*tm, &ty)?;
         Ok((Rc::new(CExpr(CExprF::Ann(c_tm, c_ty))), ty))
       }
-      Uni => Ok(((Rc::new(CExpr(CExprF::Uni))), Rc::new(Val(ValF::Uni)))),
+      Uni => {
+        let tml = self.fresh_level();
+        let tyl = self.fresh_level();
+        self.solve().add_constraint(tml, LevelRel::Lt, tyl);
+        Ok((
+          (Rc::new(CExpr(CExprF::Uni(tml)))),
+          Rc::new(Val(ValF::Uni(tyl))),
+        ))
+      }
 
       Let(defs, body) => {
         self.defenvs.push(DefEnv::new());
@@ -885,19 +943,22 @@ where
       }
 
       Pi(tag, vis, i, ty, bty) => {
-        let c_ty = self.check_ty(*ty)?;
+        let li = self.fresh_level();
+        let (c_ty, l_ty) = self.check_ty(*ty)?;
+        self.solve().add_constraint(l_ty, LevelRel::Le, li);
         let ty = self.eval0(&c_ty);
         self.varenvs.push(VarEnv::new());
         self.varenv().add(i, ty.clone());
-        let c_bty = self.check_ty(*bty)?;
+        let (c_bty, l_bty) = self.check_ty(*bty)?;
+        self.solve().add_constraint(l_bty, LevelRel::Le, li);
         self.varenvs.pop();
         Ok((
           Rc::new(CExpr(CExprF::Pi(tag, vis, i, c_ty, c_bty))),
-          Rc::new(Val(ValF::Uni)),
+          Rc::new(Val(ValF::Uni(li))),
         ))
       }
       Lam(tag, vis, i, ty, body) => {
-        let c_ty = self.check_ty(*ty)?;
+        let (c_ty, _) = self.check_ty(*ty)?;
         let ty = self.eval0(&c_ty);
         self.varenvs.push(VarEnv::new());
         self.varenv().add(i, ty.clone());
@@ -941,18 +1002,24 @@ where
       }
 
       Sigma(tag, props) => {
+        let li = self.fresh_level();
         if props.is_empty() {
-          return Ok((Rc::new(CExpr(CExprF::Sigma0(tag))), Rc::new(Val(ValF::Uni))));
+          return Ok((
+            Rc::new(CExpr(CExprF::Sigma0(tag))),
+            Rc::new(Val(ValF::Uni(li))),
+          ));
         }
         let mut pi = props.into_iter();
         let (n0, i0, ty0) = pi.next().unwrap();
-        let c_ty0 = self.check_ty(*ty0)?;
+        let (c_ty0, l_ty0) = self.check_ty(*ty0)?;
+        self.solve().add_constraint(l_ty0, LevelRel::Le, li);
         let ty0 = self.eval0(&c_ty0);
         self.varenvs.push(VarEnv::new());
         self.varenv().add(i0, ty0);
         let mut c_props = Vec::new();
         for (name, i, ty) in pi {
-          let c_ty = self.check_ty(*ty)?;
+          let (c_ty, l_ty) = self.check_ty(*ty)?;
+          self.solve().add_constraint(l_ty, LevelRel::Le, li);
           let ty = self.eval0(&c_ty);
           self.varenv().add(i, ty);
           c_props.push((name, i, c_ty));
@@ -960,7 +1027,7 @@ where
         self.varenvs.pop();
         Ok((
           Rc::new(CExpr(CExprF::Sigma(tag, (n0, i0, c_ty0), c_props))),
-          Rc::new(Val(ValF::Uni)),
+          Rc::new(Val(ValF::Uni(li))),
         ))
       }
       Obj(tag, props) => {
@@ -1021,27 +1088,90 @@ where
     }
   }
 
-  fn hole_resolve(&mut self, solve: Solve<P, S>) -> Result<HashMap<HoleId, (RE<P, S>, RV<P, S>)>> {
-    /* eprintln!("[Solve]");
-    eprintln!("- holes:");
+  fn resolve(&mut self, solve: Solve<P, S>) -> Result<HashMap<HoleId, (RE<P, S>, RV<P, S>)>> {
+    eprintln!("[Solve]");
+    /* eprintln!("- holes:");
     for (i, ty) in &solve.holes {
       eprintln!("  - {:?}: {}", i, self.ppv(ty));
     }
-    eprintln!("- constraints:");
-    for (i, tm) in &solve.constraints {
+    eprintln!("- assignments:");
+    for (i, tm) in &solve.hole_assign {
       eprintln!("  - {:?} = {}", i, self.ppe(tm));
-    }
-    for (j, _) in &solve.holes {
-      if !solve.constraints.contains_key(j) {
-        return Err("unresolved hole".to_string());
-      }
     } */
+
+    for (j, _) in &solve.holes {
+      if !solve.hole_assign.contains_key(j) {
+        return Err(Error::Loc(format!("Unresolved hole: {:?}", j)));
+      }
+    }
+    // TODO: ascend assignments for unused assignments
     // TODO: resolve hole-in-hole constraints at this point
     let mut hole_map = HashMap::new();
-    for (i, e) in solve.constraints {
+    for (i, e) in solve.hole_assign {
       let v = self.eval0(&e);
       hole_map.insert(i, (e, v));
     }
+
+    eprintln!("- levels: {:?}", solve.levels);
+    eprintln!("- constraints:");
+    for (i1, rel, i2) in &solve.level_constraints {
+      match rel {
+        LevelRel::Eq => eprintln!("  - {:?} = {:?}", i1, i2),
+        LevelRel::Le => eprintln!("  - {:?} ≤ {:?}", i1, i2),
+        LevelRel::Lt => eprintln!("  - {:?} < {:?}", i1, i2),
+      }
+    }
+
+    let level_map: HashMap<LevelId, usize> = solve
+      .levels
+      .iter()
+      .enumerate()
+      .map(|(i, &l)| (l, i))
+      .collect();
+    let mut uf = QuickFindUf::<UnionBySize>::new(solve.levels.len());
+    let mut constrs = Vec::new();
+    for (i1, rel, i2) in &solve.level_constraints {
+      let g1 = level_map.get(i1);
+      let g2 = level_map.get(i2);
+      let (g1, g2) = match (g1, g2) {
+        (Some(g1), Some(g2)) => (g1, g2),
+        _ => {
+          let rel_str = match rel {
+            LevelRel::Eq => "=",
+            LevelRel::Le => "≤",
+            LevelRel::Lt => "<",
+          };
+          eprintln!("Raw: {:?} {} {:?}", i1, rel_str, i2);
+          continue;
+        }
+      };
+      match rel {
+        LevelRel::Eq => {
+          uf.union(*g1, *g2);
+        }
+        LevelRel::Le => {
+          constrs.push((*g1, LevelRel::Le, *g2));
+        }
+        LevelRel::Lt => {
+          constrs.push((*g1, LevelRel::Lt, *g2));
+        }
+      }
+    }
+    eprintln!("- groups:");
+    for i in &solve.levels {
+      eprintln!("  - {:?} -> #{:?}", i, uf.find(level_map[i]));
+    }
+    eprintln!("- group constraints:");
+    for (g1, rel, g2) in &constrs {
+      let g1 = uf.find(*g1);
+      let g2 = uf.find(*g2);
+      match rel {
+        LevelRel::Eq => eprintln!("  - #{:?} = #{:?}", g1, g2),
+        LevelRel::Le => eprintln!("  - #{:?} ≤ #{:?}", g1, g2),
+        LevelRel::Lt => eprintln!("  - #{:?} < #{:?}", g1, g2),
+      }
+    }
+
     Ok(hole_map)
   }
 
@@ -1064,7 +1194,7 @@ where
     }
     let solve = self.solves.pop().unwrap();
     let (ce, ty) = res?;
-    let hole_map = self.hole_resolve(solve)?;
+    let hole_map = self.resolve(solve)?;
 
     // eprintln!("- From");
     // eprintln!("  - {}: {}", self.ppe(&ce), self.ppv(&ty));

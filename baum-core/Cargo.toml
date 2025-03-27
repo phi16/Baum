@@ -5,3 +5,4 @@ edition = "2021"
 
 [dependencies]
 colored = "3.0.0"
+union-find = "0.4.3"
