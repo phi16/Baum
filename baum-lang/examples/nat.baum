@@ -37,7 +37,9 @@ module X (Id: {a: U} → (x y: a) → U) (refl: {a: U} → (x: a) → Id {a} x x
 
 module Z (Id: {a: U} → (x y: a) → U) (refl: {a: U} → (x: a) → Id {_} x x) = X Id refl
 
-module Y (Id: {a: U} → (x y: a) → U) (refl: {a: U} → (x: a) → Id x x) = {
+module Y
+    (Id: {a: U} → (x y: a) → U) 
+    (refl: {a: U} → (x: a) → Id x x) = {
   syntax 1 a ~ b = Id a b  
   test: zero ~ zero = refl _
 }

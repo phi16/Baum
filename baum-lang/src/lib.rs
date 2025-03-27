@@ -49,6 +49,7 @@ pub fn run(code: &str) -> Result<front::Program<TokenRange>, Vec<(ErrorPos, Stri
       eprintln!("--------");
     }
     Err(es) => {
+      eprintln!("--------");
       return Err(
         es.iter()
           .map(|e| {
@@ -74,5 +75,6 @@ fn test_dev() {
       }
     }
   }
+  eprintln!();
   assert!(false);
 }

@@ -3,10 +3,17 @@ use crate::subst::SubstEnv;
 use crate::types::common::*;
 use crate::types::tree::*;
 use crate::types::val::*;
+use colored::Colorize;
 use std::collections::HashMap;
 use std::rc::Rc;
 
-type Result<T> = std::result::Result<T, String>;
+#[derive(Debug, Clone)]
+enum Error {
+  Loc(String),
+  Fail,
+}
+
+type Result<T> = std::result::Result<T, Error>;
 
 struct VarEnv<P, S> {
   lookup: HashMap<BindId, Type<P, S>>,
@@ -84,31 +91,6 @@ fn contains_hole_e<P, S>(i: &HoleId, e: &RE<P, S>) -> bool {
       contains_hole_e(i, e) || props.iter().any(|(_, e)| contains_hole_e(i, e))
     }
     CExprF::Prop(_, e, _) => contains_hole_e(i, e),
-  }
-}
-
-fn contains_hole_v<P, S>(i: &HoleId, v: &Term<P, S>) -> bool {
-  match &v.0 {
-    ValF::Hole(j) => i == j,
-    ValF::Neu(_, ks) => ks.iter().any(|k| match k {
-      ContF::App(_, _, x) => contains_hole_v(i, x),
-      ContF::Prop(_, _) => false,
-    }),
-    ValF::Lazy(_, ks) => ks.iter().any(|k| match k {
-      ContF::App(_, _, x) => contains_hole_v(i, x),
-      ContF::Prop(_, _) => false,
-    }),
-    ValF::Uni => false,
-    ValF::Pi(_, _, _, ty, _, bty) => contains_hole_v(i, ty) || contains_hole_e(i, bty),
-    ValF::Lam(_, _, _, ty, _, body) => contains_hole_v(i, ty) || contains_hole_e(i, body),
-    ValF::Sigma0(_) => false,
-    ValF::Obj0(_) => false,
-    ValF::Sigma(_, (_, _, ty), _, props) => {
-      contains_hole_v(i, ty) || props.iter().any(|(_, _, ty)| contains_hole_e(i, ty))
-    }
-    ValF::Obj(_, (_, e), props) => {
-      contains_hole_v(i, e) || props.iter().any(|(_, e)| contains_hole_v(i, e))
-    }
   }
 }
 
@@ -262,7 +244,7 @@ where
           }
           self.norm(&v)
         }
-        None => Err("weak_head: fail".to_string()),
+        None => Err(Error::Fail),
       },
       _ => Ok(v.clone()),
     }
@@ -550,6 +532,14 @@ where
   }
 
   fn unify_internal(&mut self, v1: &Term<P, S>, v2: &Term<P, S>) -> Result<()> {
+    let fail = |this: &Checker<P, S>, msg: &str| -> Result<_> {
+      Err(Error::Loc(format!(
+        "Failed to unify ({}): {} ≟ {}",
+        msg,
+        this.ppv(v1),
+        this.ppv(v2)
+      )))
+    };
     // self.log(format!("unify: {} ≟ {}", self.ppv(v1), self.ppv(v2)));
     match (&v1.0, &v2.0) {
       (ValF::Hole(i1), ValF::Hole(i2)) if i1 == i2 => Ok(()),
@@ -566,7 +556,7 @@ where
       (ValF::Hole(i1), _) => {
         let e2 = self.quote(v2);
         if contains_hole_e(i1, &e2) {
-          return Err("unify: occurs check".to_string());
+          return fail(self, "recursive hole");
         }
         // self.log(format!("add_constraint: {:?} = {}", i1, self.ppe(&e2)));
         self.solve().add_constraint(i1.clone(), e2);
@@ -575,36 +565,40 @@ where
       (_, ValF::Hole(i2)) => {
         let e1 = self.quote(v1);
         if contains_hole_e(i2, &e1) {
-          return Err("unify: occurs check".to_string());
+          return fail(self, "recursive hole");
         }
         // self.log(format!("add_constraint: {:?} = {}", i2, self.ppe(&e1)));
         self.solve().add_constraint(i2.clone(), e1);
         Ok(())
       }
       (ValF::Neu(i1, ks1), ValF::Neu(i2, ks2)) => {
-        if i1 != i2 {
-          return Err(format!("unify: neu {:?} != {:?}", i1, i2));
-        }
         if ks1.len() != ks2.len() {
-          return Err("unify: neu: len".to_string());
+          return fail(self, &format!("continuation length mismatch (TODO)"));
+        }
+        if i1 != i2 {
+          return fail(self, &format!("identifier mismatch: {:?} ≟ {:?}", i1, i2));
         }
         for (k1, k2) in ks1.iter().zip(ks2.iter()) {
           match (k1, k2) {
             (ContF::App(p1, v1, t1), ContF::App(p2, v2, t2)) => {
-              if p1 == p2 && v1 == v2 {
-                self.unify(t1, t2)?;
-              } else {
-                return Err("unify: app".to_string());
+              if p1 != p2 {
+                return fail(self, "app / role mismatch");
               }
+              if v1 != v2 {
+                return fail(self, "app / visibility mismatch");
+              }
+              self.unify(t1, t2)?;
             }
             (ContF::Prop(s1, n1), ContF::Prop(s2, n2)) => {
-              if s1 == s2 && n1 == n2 {
-                // ok
-              } else {
-                return Err("unify: prop".to_string());
+              if s1 != s2 {
+                return fail(self, "prop / role mismatch");
               }
+              if n1 != n2 {
+                return fail(self, &format!("prop / name mismatch: {:?} ≟ {:?}", n1, n2));
+              }
+              // ok
             }
-            _ => return Err("unify: cont".to_string()),
+            _ => return fail(self, "continuation mismatch"),
           }
         }
         Ok(())
@@ -621,51 +615,51 @@ where
       }
       (ValF::Uni, ValF::Uni) => Ok(()),
       (ValF::Pi(t1, v1, i1, ty1, g1, bty1), ValF::Pi(t2, v2, i2, ty2, g2, bty2)) => {
-        if t1 == t2 && v1 == v2 {
-          self.unify(ty1, ty2)?;
-          let mut g1 = g1.clone();
-          let mut g2 = g2.clone();
-          let fi = self.fresh_id(&i1);
-          g1.add_bind(*i1, Rc::new(Val(ValF::Neu(fi.clone(), Vec::new()))));
-          g2.add_bind(*i2, Rc::new(Val(ValF::Neu(fi.clone(), Vec::new()))));
-          let bty1 = self.eval(&g1, bty1);
-          let bty2 = self.eval(&g2, bty2);
-          self.unify(&bty1, &bty2)?;
-          Ok(())
-        } else {
-          if t1 == t2 {
-            Err("unify: pi (implicit?)".to_string())
-          } else {
-            Err("unify: pi".to_string())
-          }
+        if t1 != t2 {
+          return fail(self, "Π / role mismatch");
         }
+        if v1 != v2 {
+          return fail(self, "Π / visibility mismatch");
+        }
+        self.unify(ty1, ty2)?;
+        let mut g1 = g1.clone();
+        let mut g2 = g2.clone();
+        let fi = self.fresh_id(&i1);
+        g1.add_bind(*i1, Rc::new(Val(ValF::Neu(fi.clone(), Vec::new()))));
+        g2.add_bind(*i2, Rc::new(Val(ValF::Neu(fi.clone(), Vec::new()))));
+        let bty1 = self.eval(&g1, bty1);
+        let bty2 = self.eval(&g2, bty2);
+        self.unify(&bty1, &bty2)?;
+        Ok(())
       }
       (ValF::Lam(t1, v1, i1, ty1, g1, bty1), ValF::Lam(t2, v2, i2, ty2, g2, bty2)) => {
-        if t1 == t2 && v1 == v2 {
-          self.unify(ty1, ty2)?;
-          let mut g1 = g1.clone();
-          let mut g2 = g2.clone();
-          let fi = self.fresh_id(&i1);
-          g1.add_bind(*i1, Rc::new(Val(ValF::Neu(fi.clone(), Vec::new()))));
-          g2.add_bind(*i2, Rc::new(Val(ValF::Neu(fi.clone(), Vec::new()))));
-          let bty1 = self.eval(&g1, bty1);
-          let bty2 = self.eval(&g2, bty2);
-          self.unify(&bty1, &bty2)?;
-          Ok(())
-        } else {
-          Err("unify: pi".to_string())
+        if t1 != t2 {
+          return fail(self, "λ / role mismatch");
         }
+        if v1 != v2 {
+          return fail(self, "λ / visibility mismatch");
+        }
+        self.unify(ty1, ty2)?;
+        let mut g1 = g1.clone();
+        let mut g2 = g2.clone();
+        let fi = self.fresh_id(&i1);
+        g1.add_bind(*i1, Rc::new(Val(ValF::Neu(fi.clone(), Vec::new()))));
+        g2.add_bind(*i2, Rc::new(Val(ValF::Neu(fi.clone(), Vec::new()))));
+        let bty1 = self.eval(&g1, bty1);
+        let bty2 = self.eval(&g2, bty2);
+        self.unify(&bty1, &bty2)?;
+        Ok(())
       }
       (
         ValF::Sigma(t1, (n01, i01, ty01), g1, props1),
         ValF::Sigma(t2, (n02, i02, ty02), g2, props2),
       ) => {
         if t1 != t2 {
-          return Err("unify: sigma".to_string());
+          return fail(self, "Σ / role mismatch");
         }
         self.unify(ty01, ty02)?;
         if n01 != n02 {
-          return Err("unify: sigma".to_string());
+          return fail(self, &format!("Σ / name mismatch: {:?} ≟ {:?}", n01, n02));
         }
         let mut g1 = g1.clone();
         let mut g2 = g2.clone();
@@ -673,53 +667,58 @@ where
         g1.add_bind(*i01, Rc::new(Val(ValF::Neu(fi0.clone(), Vec::new()))));
         g2.add_bind(*i02, Rc::new(Val(ValF::Neu(fi0.clone(), Vec::new()))));
         for ((n1, i1, ty1), (n2, i2, ty2)) in props1.iter().zip(props2.iter()) {
-          if n1 == n2 {
-            let ty1 = self.eval(&g1, ty1);
-            let ty2 = self.eval(&g2, ty2);
-            self.unify(&ty1, &ty2)?;
-            let fi = self.fresh_id(&i01);
-            g1.add_bind(*i1, Rc::new(Val(ValF::Neu(fi.clone(), Vec::new()))));
-            g2.add_bind(*i2, Rc::new(Val(ValF::Neu(fi.clone(), Vec::new()))));
-          } else {
-            return Err("unify: sigma".to_string());
+          if n1 != n2 {
+            return fail(self, &format!("Σ / name mismatch: {:?} ≟ {:?}", n1, n2));
           }
+          let ty1 = self.eval(&g1, ty1);
+          let ty2 = self.eval(&g2, ty2);
+          self.unify(&ty1, &ty2)?;
+          let fi = self.fresh_id(&i01);
+          g1.add_bind(*i1, Rc::new(Val(ValF::Neu(fi.clone(), Vec::new()))));
+          g2.add_bind(*i2, Rc::new(Val(ValF::Neu(fi.clone(), Vec::new()))));
         }
-        if props1.len() == props2.len() {
-          Ok(())
-        } else {
-          Err("unify: sigma".to_string())
+        if props1.len() != props2.len() {
+          return fail(self, "Σ / length mismatch");
         }
+        Ok(())
       }
       (ValF::Obj(t1, (n01, e01), props1), ValF::Obj(t2, (n02, e02), props2)) => {
         if t1 != t2 {
-          return Err("unify: obj".to_string());
+          return fail(self, "obj / role mismatch");
         }
         if n01 != n02 {
-          return Err("unify: obj".to_string());
+          return fail(self, &format!("obj / name mismatch: {:?} ≟ {:?}", n01, n02));
         }
         self.unify(e01, e02)?;
         for ((n1, e1), (n2, e2)) in props1.iter().zip(props2.iter()) {
-          if n1 == n2 {
-            self.unify(e1, e2)?;
-          } else {
-            return Err("unify: obj".to_string());
+          if n1 != n2 {
+            return fail(self, &format!("obj / name mismatch: {:?} ≟ {:?}", n1, n2));
           }
+          self.unify(e1, e2)?;
         }
-        if props1.len() == props2.len() {
-          Ok(())
-        } else {
-          Err("unify: obj".to_string())
+        if props1.len() != props2.len() {
+          return fail(self, "obj / length mismatch");
         }
+        Ok(())
       }
-      _ => Err(format!(
-        "unify: failed: {} ~ {}",
+      _ => Err(Error::Loc(format!(
+        "Failed to unify: {} ≟ {}",
         self.ppv(v1),
         self.ppv(v2)
-      )),
+      ))),
     }
   }
 
   fn check(&mut self, e: Expr<P, S>, check_ty: &Type<P, S>) -> Result<RE<P, S>> {
+    let ec = e.clone(); // TODO: redundant?
+    let fail = |this: &Checker<P, S>, msg: &str| -> Result<_> {
+      Err(Error::Loc(format!(
+        "Failed to check type ({}): {:?}: {}",
+        msg,
+        ec,
+        this.ppv(check_ty)
+      )))
+    };
     use ExprF::*;
     match e.0 {
       Hole => {
@@ -736,8 +735,11 @@ where
       }
       Lam(tag, vis, i, ty, body) => match &self.norm(check_ty)?.0 {
         ValF::Pi(ttag, tvis, ti, tty, tg, bty) => {
-          if tag != *ttag || vis != *tvis {
-            return Err("check: lam".to_string());
+          if tag != *ttag {
+            return fail(self, "λ / role mismatch");
+          }
+          if vis != *tvis {
+            return fail(self, "λ / visibility mismatch");
           }
           let c_ty = self.check_ty(*ty)?;
           let ty = self.eval0(&c_ty);
@@ -751,28 +753,27 @@ where
           self.varenvs.pop();
           Ok(Rc::new(CExpr(CExprF::Lam(tag, vis, i, c_ty, c_body))))
         }
-        _ => Err(format!("check: lam / {:?}", check_ty)),
+        _ => fail(self, "λ / not Π"),
       },
       Obj(tag, props) => match &self.norm(check_ty)?.0 {
         ValF::Sigma0(ttag) => {
           if tag != *ttag {
-            return Err("check: obj 0".to_string());
+            return fail(self, "obj / role mismatch");
           }
           if !props.is_empty() {
-            return Err("check: obj 0 (not length 0)".to_string());
+            return fail(self, "obj / length mismatch");
           }
           return Ok(Rc::new(CExpr(CExprF::Obj0(tag))));
         }
         ValF::Sigma(ttag, (tn0, ti0, tty0), tg, tprops) => {
           if tag != *ttag {
-            return Err("check: obj 1".to_string());
+            return fail(self, "obj / role mismatch");
           }
           let len_match = props.len() == tprops.len() + 1;
           let mut pi = props.into_iter();
           let (n0, e0) = pi.next().unwrap();
           if n0 != *tn0 {
-            eprintln!("{:?} != {:?}", n0, tn0);
-            return Err("check: obj 2 head".to_string());
+            return fail(self, &format!("obj / name mismatch: {:?} ≟ {:?}", n0, tn0));
           }
           let c_e0 = self.check(*e0, &tty0)?;
           let e0 = self.eval0(&c_e0);
@@ -784,8 +785,7 @@ where
           let mut c_ps = Vec::new();
           for ((n, e), (tn, ti, ty)) in pi.zip(tprops.iter()) {
             if n != *tn {
-              eprintln!("{:?} != {:?}", n, tn);
-              return Err("check: obj 2".to_string());
+              return fail(self, &format!("obj / name mismatch: {:?} ≟ {:?}", n, tn));
             }
             // ty may depend on previous props
             let ty = self.eval(&tg, ty);
@@ -799,11 +799,11 @@ where
           self.varenvs.pop();
           if !len_match {
             // we defer this error to check the existing props as much as possible
-            return Err("check: obj 3".to_string());
+            return fail(self, "obj / length mismatch");
           }
           Ok(Rc::new(CExpr(CExprF::Obj(tag, (n0, c_e0), c_ps))))
         }
-        _ => return Err("check: obj 4".to_string()),
+        _ => fail(self, "obj / not Σ"),
       },
       _ => {
         let (c_e, ty) = self.synth(e)?;
@@ -843,16 +843,23 @@ where
   }
 
   fn synth(&mut self, e: Expr<P, S>) -> Result<(RE<P, S>, Type<P, S>)> {
+    let ec = e.clone(); // TODO: redundant?
+    let fail = |_this: &Checker<P, S>, msg: &str| -> Result<_> {
+      Err(Error::Loc(format!(
+        "Failed to synthesize type ({}): {:?}",
+        msg, ec,
+      )))
+    };
     use ExprF::*;
     match e.0 {
-      Hole => Err("synth: hole".to_string()),
+      Hole => fail(self, "hole"),
       Bind(i) => match self.lookup_bind(i) {
         Some(ty) => Ok((Rc::new(CExpr(CExprF::Bind(i))), ty.clone())),
-        None => Err("synth: bind".to_string()),
+        None => unreachable!(),
       },
       Def(i) => match self.lookup_def(i) {
         Some((_, ty)) => Ok((Rc::new(CExpr(CExprF::Def(i))), ty.clone())),
-        None => Err("synth: failed def".to_string()),
+        None => Err(Error::Fail),
       },
       Ann(tm, ty) => {
         let c_ty = self.check_ty(*ty)?;
@@ -916,8 +923,11 @@ where
         };
         match &self.norm(&fty)?.0 {
           ValF::Pi(ftag, fvis, i, ty, fg, bty) => {
-            if tag != *ftag || vis != *fvis {
-              return Err("synth: app".to_string());
+            if tag != *ftag {
+              return fail(self, "app / role mismatch");
+            }
+            if vis != *fvis {
+              return fail(self, "app / visibility mismatch");
             }
             let c_x = self.check(*x, &ty)?;
             let x = self.eval0(&c_x);
@@ -926,7 +936,7 @@ where
             let bty = self.eval(&fg, bty);
             Ok((Rc::new(CExpr(CExprF::App(tag, vis, c_f, c_x))), bty))
           }
-          _ => Err(format!("synth: app / {:?}", fty)),
+          _ => fail(self, "app / not a function"),
         }
       }
 
@@ -983,7 +993,7 @@ where
         match &self.norm(&ty)?.0 {
           ValF::Sigma(etag, (n0, i0, ty0), eg, props) => {
             if tag != *etag {
-              return Err("synth: prop".to_string());
+              return fail(self, "prop / role mismatch");
             }
             if name == *n0 {
               return Ok((Rc::new(CExpr(CExprF::Prop(tag, c_e, name))), ty0.clone()));
@@ -1003,9 +1013,9 @@ where
                 return Ok((Rc::new(CExpr(CExprF::Prop(tag, c_e, name))), ty));
               }
             }
-            Err("synth: prop".to_string())
+            fail(self, &format!("prop / name not found: {:?}", name))
           }
-          _ => Err("synth: prop".to_string()),
+          _ => fail(self, "prop / not an object"),
         }
       }
     }
@@ -1064,8 +1074,12 @@ where
     // eprintln!("- To");
     // eprintln!("  - {}: {}", self.ppe(&ce), self.ppv(&ty));
     for i in hole_map.keys() {
-      if contains_hole_e(i, &ce) || contains_hole_v(i, &ty) {
-        return Err("hole remains unresolved".to_string());
+      if contains_hole_e(i, &ce) {
+        return Err(Error::Loc(format!(
+          "Hole {:?} remains unresolved in {}",
+          i,
+          self.ppe(&ce)
+        )));
       }
     }
     // TODO: scope check?
@@ -1080,17 +1094,31 @@ where
       eprintln!("- Def[ {} ]", self.def_symbols[&id]);
       let res = self.def(expr);
       match &res {
-        Ok((_, _, ty)) => eprintln!("[o] {}: {}", self.def_symbols[&id], self.ppv(ty)),
-        Err(e) => eprintln!("[x] {}: {}", self.def_symbols[&id], e),
+        Ok((_, _, ty)) => eprintln!(
+          "[{}] {}: {}",
+          "o".green(),
+          self.def_symbols[&id],
+          self.ppv(ty)
+        ),
+        Err(Error::Fail) => eprintln!(
+          "[{}] {}",
+          "_".yellow(),
+          &format!("{} (failed def)", self.def_symbols[&id]).black()
+        ),
+        Err(Error::Loc(e)) => eprintln!("[{}] {}: {}", "x".red(), self.def_symbols[&id], e),
       }
       match res {
         Ok((c_expr, tm, ty)) => {
           let dtm = self.deep_norm(&tm).unwrap();
-          eprintln!("    {} = {}", self.def_symbols[&id], self.ppv(&dtm));
+          eprintln!(
+            "{}",
+            format!("    {} = {}", self.def_symbols[&id], self.ppv(&dtm)).black()
+          );
           self.defenv().add(id, tm.clone(), ty);
           def_terms.push((id, c_expr));
         }
-        Err(e) => {
+        Err(Error::Fail) => {}
+        Err(Error::Loc(e)) => {
           self
             .errors
             .push(format!("def {}: {}", self.def_symbols[&id], e));
