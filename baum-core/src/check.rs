@@ -1,3 +1,4 @@
+use crate::levels::*;
 use crate::pretty::{pretty_expr, pretty_val};
 use crate::subst::SubstEnv;
 use crate::types::common::*;
@@ -7,7 +8,6 @@ use colored::Colorize;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::rc::Rc;
-use union_find::{QuickFindUf, UnionBySize, UnionFind};
 
 #[derive(Debug, Clone)]
 enum Error {
@@ -47,12 +47,6 @@ impl<P, S> DefEnv<P, S> {
   fn add(&mut self, def: DefId, tm: Term<P, S>, ty: Type<P, S>) {
     self.define.insert(def, (tm, ty));
   }
-}
-
-enum LevelRel {
-  Eq,
-  Le,
-  Lt,
 }
 
 struct Solve<P, S> {
@@ -1104,7 +1098,6 @@ where
         return Err(Error::Loc(format!("Unresolved hole: {:?}", j)));
       }
     }
-    // TODO: ascend assignments for unused assignments
     // TODO: resolve hole-in-hole constraints at this point
     let mut hole_map = HashMap::new();
     for (i, e) in solve.hole_assign {
@@ -1121,56 +1114,9 @@ where
         LevelRel::Lt => eprintln!("  - {:?} < {:?}", i1, i2),
       }
     }
-
-    let level_map: HashMap<LevelId, usize> = solve
-      .levels
-      .iter()
-      .enumerate()
-      .map(|(i, &l)| (l, i))
-      .collect();
-    let mut uf = QuickFindUf::<UnionBySize>::new(solve.levels.len());
-    let mut constrs = Vec::new();
-    for (i1, rel, i2) in &solve.level_constraints {
-      let g1 = level_map.get(i1);
-      let g2 = level_map.get(i2);
-      let (g1, g2) = match (g1, g2) {
-        (Some(g1), Some(g2)) => (g1, g2),
-        _ => {
-          let rel_str = match rel {
-            LevelRel::Eq => "=",
-            LevelRel::Le => "≤",
-            LevelRel::Lt => "<",
-          };
-          eprintln!("Raw: {:?} {} {:?}", i1, rel_str, i2);
-          continue;
-        }
-      };
-      match rel {
-        LevelRel::Eq => {
-          uf.union(*g1, *g2);
-        }
-        LevelRel::Le => {
-          constrs.push((*g1, LevelRel::Le, *g2));
-        }
-        LevelRel::Lt => {
-          constrs.push((*g1, LevelRel::Lt, *g2));
-        }
-      }
-    }
-    eprintln!("- groups:");
-    for i in &solve.levels {
-      eprintln!("  - {:?} -> #{:?}", i, uf.find(level_map[i]));
-    }
-    eprintln!("- group constraints:");
-    for (g1, rel, g2) in &constrs {
-      let g1 = uf.find(*g1);
-      let g2 = uf.find(*g2);
-      match rel {
-        LevelRel::Eq => eprintln!("  - #{:?} = #{:?}", g1, g2),
-        LevelRel::Le => eprintln!("  - #{:?} ≤ #{:?}", g1, g2),
-        LevelRel::Lt => eprintln!("  - #{:?} < #{:?}", g1, g2),
-      }
-    }
+    let level_solution = solve_levels(&solve.levels, &solve.level_constraints)
+      .map_err(|e| Error::Loc(format!("Failed to solve level constraints: {}", e)))?;
+    // TODO
 
     Ok(hole_map)
   }
