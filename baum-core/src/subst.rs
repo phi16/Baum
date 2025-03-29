@@ -1,5 +1,6 @@
 use crate::check::Checker;
 use crate::types::common::*;
+use crate::types::level::*;
 use crate::types::val::*;
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -26,7 +27,7 @@ impl<'a, T: Clone> Subst<'a, T> {
 
 pub struct SubstEnv<'b, P, S> {
   holes: HashMap<HoleId, (RE<P, S>, RV<P, S>)>,
-  defs: HashMap<DefId, (RE<P, S>, RV<P, S>)>,
+  defs: HashMap<DefId, (Solution, RE<P, S>, RV<P, S>)>,
   levels: HashMap<LevelId, LevelId>,
   checker: &'b mut Checker<P, S>,
 }
@@ -45,7 +46,7 @@ impl<'b, P: Tag, S: Tag> SubstEnv<'b, P, S> {
   }
 
   pub fn from_defs(
-    defs: HashMap<DefId, (RE<P, S>, RV<P, S>)>,
+    defs: HashMap<DefId, (Solution, RE<P, S>, RV<P, S>)>,
     checker: &'b mut Checker<P, S>,
   ) -> Self {
     SubstEnv {
@@ -65,6 +66,25 @@ impl<'b, P: Tag, S: Tag> SubstEnv<'b, P, S> {
     }
   }
 
+  fn extend(&mut self, ls_m: HashMap<LevelId, LevelId>) -> HashMap<LevelId, LevelId> {
+    let old = self.levels.clone();
+    for (i, j) in &ls_m {
+      if self.levels.contains_key(i) || self.levels.contains_key(j) {
+        panic!("Level already exists in subst env: {:?} {:?}", i, j);
+      }
+    }
+    for (i, j) in &self.levels {
+      if ls_m.contains_key(i) || ls_m.contains_key(j) {
+        panic!("Level already exists in subst env: {:?} {:?}", i, j);
+      }
+    }
+    self.levels.extend(ls_m);
+    old
+  }
+  fn revert(&mut self, old: HashMap<LevelId, LevelId>) {
+    self.levels = old;
+  }
+
   pub fn subst_e<'a>(&mut self, e: &'a RE<P, S>) -> Subst<'a, RE<P, S>> {
     let unchanged = Subst::Unchanged(e);
     match &e.0 {
@@ -73,8 +93,14 @@ impl<'b, P: Tag, S: Tag> SubstEnv<'b, P, S> {
         None => unchanged,
       },
       CExprF::Bind(_) => unchanged,
-      CExprF::Def(i) => match self.defs.get(&i).cloned() {
-        Some((e, _)) => Subst::Changed(self.subst_e(&e).into()),
+      CExprF::Def(i, ls) => match self.defs.get(&i).cloned() {
+        Some((sol, e, _)) => {
+          let ls_m = self.checker.map_solution(&sol, &ls);
+          let lm = self.extend(ls_m);
+          let s = Subst::Changed(self.subst_e(&e).into());
+          self.revert(lm);
+          s
+        }
         None => unchanged,
       },
       CExprF::Ann(e, ty) => {
@@ -236,8 +262,10 @@ impl<'b, P: Tag, S: Tag> SubstEnv<'b, P, S> {
           unchanged
         }
       }
-      ValF::Lazy(i, ks) => match self.defs.get(&i).cloned() {
-        Some((_, v)) => {
+      ValF::Lazy(i, ls, ks) => match self.defs.get(&i).cloned() {
+        Some((sol, _, v)) => {
+          let ls_m = self.checker.map_solution(&sol, &ls);
+          let lm = self.extend(ls_m);
           let mut v = self.subst_v(&v).into();
           for k in ks {
             match k {
@@ -250,6 +278,7 @@ impl<'b, P: Tag, S: Tag> SubstEnv<'b, P, S> {
               }
             }
           }
+          self.revert(lm);
           return Subst::Changed(v);
         }
         None => {
@@ -270,7 +299,7 @@ impl<'b, P: Tag, S: Tag> SubstEnv<'b, P, S> {
             }
           }
           if changed {
-            Subst::Changed(Rc::new(Val(ValF::Lazy(*i, rks))))
+            Subst::Changed(Rc::new(Val(ValF::Lazy(*i, ls.clone(), rks))))
           } else {
             unchanged
           }

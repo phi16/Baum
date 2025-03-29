@@ -7,7 +7,7 @@ use std::rc::Rc;
 pub enum CExprF<PTag, STag, E> {
   Hole(HoleId),
   Bind(BindId),
-  Def(DefId),
+  Def(DefId, Vec<LevelId>),
   Ann(E, E),
   Uni(LevelId),
   Let(Vec<(DefId, Solution, E)>, E),
@@ -38,7 +38,7 @@ pub enum ContF<PTag, STag, V> {
 pub enum ValF<PTag, STag, V, E, D> {
   Hole(HoleId),
   Neu(BindId, Vec<ContF<PTag, STag, V>>),
-  Lazy(DefId, Vec<ContF<PTag, STag, V>>),
+  Lazy(DefId, Vec<LevelId>, Vec<ContF<PTag, STag, V>>),
   Uni(LevelId),
 
   Pi(PTag, Vis, BindId, V, E, D),

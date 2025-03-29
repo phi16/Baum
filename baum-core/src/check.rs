@@ -91,7 +91,7 @@ fn contains_hole_e<P, S>(i: &HoleId, e: &RE<P, S>) -> bool {
   match &e.0 {
     CExprF::Hole(j) => i == j,
     CExprF::Bind(_) => false,
-    CExprF::Def(_) => false,
+    CExprF::Def(_, _) => false,
     CExprF::Ann(e, _) => contains_hole_e(i, e),
     CExprF::Uni(_) => false,
     CExprF::Let(defs, body) => {
@@ -239,26 +239,30 @@ where
     id
   }
 
-  fn fresh_levels(&mut self, sol: &Solution) -> HashMap<LevelId, LevelId> {
+  fn fresh_levels(&mut self, sol: &Solution) -> Vec<LevelId> {
     let ls = (0..sol.groups)
-      .map(|i| (i, self.fresh_level()))
-      .collect::<HashMap<_, _>>();
-    let m = sol
-      .scope
-      .iter()
-      .map(|i| (i.0, *ls.get(&i.1).unwrap()))
-      .collect::<HashMap<_, _>>();
+      .map(|_| self.fresh_level())
+      .collect::<Vec<_>>();
     for (r1, rel, r2) in &sol.constraints {
       let l1 = match r1 {
         LevelRef::Id(i1) => *i1,
-        LevelRef::Group(g1) => *ls.get(g1).unwrap(),
+        LevelRef::Group(g1) => ls[*g1 as usize],
       };
       let l2 = match r2 {
         LevelRef::Id(i2) => *i2,
-        LevelRef::Group(g2) => *ls.get(g2).unwrap(),
+        LevelRef::Group(g2) => ls[*g2 as usize],
       };
       self.solve().add_constraint(l1, rel.clone(), l2);
     }
+    ls
+  }
+
+  pub fn map_solution(&self, sol: &Solution, ls: &Vec<LevelId>) -> HashMap<LevelId, LevelId> {
+    let m = sol
+      .scope
+      .iter()
+      .map(|i| (i.0, ls[i.1 as usize]))
+      .collect::<HashMap<_, _>>();
     m
   }
 
@@ -279,10 +283,10 @@ where
         }
         None => Ok(v.clone()),
       },
-      ValF::Lazy(i, ks) => match self.lookup_def(*i).cloned() {
+      ValF::Lazy(i, ls, ks) => match self.lookup_def(*i).cloned() {
         Some((sol, e, _)) => {
-          let ls = self.fresh_levels(&sol);
-          let mut subst = SubstEnv::from_levels(ls, self);
+          let ls_m = self.map_solution(&sol, &ls);
+          let mut subst = SubstEnv::from_levels(ls_m, self);
           let e = subst.subst_e(&e).into();
           let mut v = self.eval0(&e.clone());
           for k in ks {
@@ -382,10 +386,10 @@ where
         ks.push(ContF::App(tag, vis, x));
         Rc::new(Val(ValF::Neu(i.clone(), ks)))
       }
-      ValF::Lazy(d, ks) => {
+      ValF::Lazy(d, ls, ks) => {
         let mut ks = ks.clone();
         ks.push(ContF::App(tag, vis, x));
-        Rc::new(Val(ValF::Lazy(*d, ks)))
+        Rc::new(Val(ValF::Lazy(*d, ls.clone(), ks)))
       }
       ValF::Lam(ftag, fvis, i, _, g, body) => {
         assert_eq!(tag, *ftag);
@@ -405,10 +409,10 @@ where
         ks.push(ContF::Prop(tag, name));
         Rc::new(Val(ValF::Neu(i.clone(), ks)))
       }
-      ValF::Lazy(i, ks) => {
+      ValF::Lazy(i, ls, ks) => {
         let mut ks = ks.clone();
         ks.push(ContF::Prop(tag, name));
-        Rc::new(Val(ValF::Lazy(i.clone(), ks)))
+        Rc::new(Val(ValF::Lazy(i.clone(), ls.clone(), ks)))
       }
       ValF::Obj(otag, (n0, e0), props) => {
         assert_eq!(tag, *otag);
@@ -438,9 +442,9 @@ where
         Some(v) => return v.clone(),
         None => ValF::Neu(i.clone(), Vec::new()),
       },
-      Def(i) => match g.lookup_def(i) {
+      Def(i, ls) => match g.lookup_def(i) {
         Some(v) => return v.clone(),
-        None => ValF::Lazy(i.clone(), Vec::new()),
+        None => ValF::Lazy(i.clone(), ls.clone(), Vec::new()),
       },
       Ann(t, _) => return self.eval(g, t),
       Uni(i) => ValF::Uni(*i),
@@ -448,7 +452,8 @@ where
         let mut g = g.clone();
         for (i, sol, e) in defs {
           let ls = self.fresh_levels(&sol);
-          let mut subst = SubstEnv::from_levels(ls, self);
+          let ls_m = self.map_solution(&sol, &ls);
+          let mut subst = SubstEnv::from_levels(ls_m, self);
           let e = subst.subst_e(e).into();
           let v = self.eval(&g, &e);
           g.add_def(*i, v);
@@ -528,8 +533,8 @@ where
         let e = Rc::new(CExpr(CExprF::Bind(i.clone())));
         quote_ks(self, ks, e)
       }
-      Lazy(i, ks) => {
-        let e = Rc::new(CExpr(CExprF::Def(i.clone())));
+      Lazy(i, ls, ks) => {
+        let e = Rc::new(CExpr(CExprF::Def(i.clone(), ls.clone())));
         quote_ks(self, ks, e)
       }
       Uni(i) => Rc::new(CExpr(CExprF::Uni(i.clone()))),
@@ -659,12 +664,12 @@ where
         }
         Ok(())
       }
-      (ValF::Lazy(_, _), _) => {
+      (ValF::Lazy(_, _, _), _) => {
         // TODO: optimize
         let v1 = self.norm(v1)?;
         self.unify(&v1, v2)
       }
-      (_, ValF::Lazy(_, _)) => {
+      (_, ValF::Lazy(_, _, _)) => {
         // TODO: optimize
         let v2 = self.norm(v2)?;
         self.unify(v1, &v2)
@@ -945,9 +950,10 @@ where
       Def(i) => match self.lookup_def(i).cloned() {
         Some((sol, _, ty)) => {
           let ls = self.fresh_levels(&sol);
-          let mut subst = SubstEnv::from_levels(ls, self);
+          let ls_m = self.map_solution(&sol, &ls);
+          let mut subst = SubstEnv::from_levels(ls_m, self);
           let ty = subst.subst_v(&ty).into();
-          Ok((Rc::new(CExpr(CExprF::Def(i))), ty.clone()))
+          Ok((Rc::new(CExpr(CExprF::Def(i, ls))), ty.clone()))
         }
         None => Err(Error::Fail),
       },
@@ -975,10 +981,11 @@ where
         let mut def_map = HashMap::new();
         for (i, sol, e) in &ds {
           let ls = self.fresh_levels(&sol);
-          let mut subst = SubstEnv::from_levels(ls, self);
+          let ls_m = self.map_solution(&sol, &ls);
+          let mut subst = SubstEnv::from_levels(ls_m, self);
           let e = subst.subst_e(e).into();
           let v = self.eval0(&e);
-          def_map.insert(*i, (e.clone(), v));
+          def_map.insert(*i, (sol.clone(), e.clone(), v));
         }
         // not optimal, maybe...
         let ty = SubstEnv::from_defs(def_map, self).subst_v(&ty).into();
@@ -1163,7 +1170,7 @@ where
 
     let level_solution = {
       let constraints = solve.constraints_accum.unwrap();
-      /* eprintln!("- levels: {:?}", solve.levels);
+      eprintln!("- levels: {:?}", solve.levels);
       eprintln!("- constraints:");
       for (i1, rel, i2) in &constraints {
         match rel {
@@ -1171,10 +1178,11 @@ where
           LevelRel::Le => eprintln!("  - {:?} ≤ {:?}", i1, i2),
           LevelRel::Lt => eprintln!("  - {:?} < {:?}", i1, i2),
         }
-      } */
+      }
       // TODO: extract essential levels
+      let scope = solve.levels;
       // ^TODO: pickup all constraints in solve_levels
-      let level_solution = solve_levels(&constraints, &solve.levels)
+      let level_solution = solve_levels(&constraints, &scope)
         .map_err(|e| Error::Loc(format!("Failed to solve level constraints: {}", e)))?;
       level_solution
     };
@@ -1268,12 +1276,12 @@ where
       }
       match res {
         Ok((sol, c_expr, ty)) => {
-          // let tm = self.eval0(&c_expr);
-          // let dtm = self.deep_norm(&tm).unwrap();
-          // eprintln!(
-          //   "{}",
-          //   format!("    {} = {}", self.def_symbols[&id], self.ppv(&dtm)).black()
-          // );
+          let tm = self.eval0(&c_expr);
+          let dtm = self.deep_norm(&tm).unwrap();
+          eprintln!(
+            "{}",
+            format!("    {} = {}", self.def_symbols[&id], self.ppv(&dtm)).black()
+          );
           self.defenv().add(id, (sol.clone(), c_expr.clone(), ty));
           def_terms.push((id, sol, c_expr));
         }

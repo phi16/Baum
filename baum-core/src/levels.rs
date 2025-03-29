@@ -48,7 +48,7 @@ pub fn solve_levels(constraints: &Constraints, scope: &HashSet<LevelId>) -> Resu
     let g = uf.find(*i);
     groups.entry(g).or_insert_with(Vec::new).push(l);
   }
-  /* eprintln!("- groups:");
+  eprintln!("- groups:");
   for g in groups {
     eprintln!("  - #{:?} => {:?}", g.0, g.1);
   }
@@ -60,7 +60,7 @@ pub fn solve_levels(constraints: &Constraints, scope: &HashSet<LevelId>) -> Resu
       Edge::Le => eprintln!("  - #{:?} ≤ #{:?}", g1, g2),
       Edge::Lt => eprintln!("  - #{:?} < #{:?}", g1, g2),
     }
-  } */
+  }
 
   let mut gs_count = 0;
   let mut gs = HashMap::new();

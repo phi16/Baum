@@ -141,7 +141,7 @@ impl<'a> Pretty<'a> {
     match &e.0 {
       CExprF::Hole(i) => self.hi(i),
       CExprF::Bind(i) => self.i(i),
-      CExprF::Def(i) => self.di(i),
+      CExprF::Def(i, ls) => self.di(i),
       CExprF::Ann(v, t) => self.c(v).s(" of ").c(t),
       CExprF::Uni(i) => self.s("𝒰").li(i),
       CExprF::Let(defs, e) => self.s("let").open().defs_c(defs).close().s("in ").c(e),
@@ -151,7 +151,7 @@ impl<'a> Pretty<'a> {
       CExprF::App(_, Vis::Explicit, e1, e2) => match e2.0 {
         CExprF::Hole(_)
         | CExprF::Bind(_)
-        | CExprF::Def(_)
+        | CExprF::Def(_, _)
         | CExprF::Uni(_)
         | CExprF::Sigma0(_)
         | CExprF::Obj0(_)
@@ -241,7 +241,7 @@ impl<'a> Pretty<'a> {
     match &v.0 {
       ValF::Hole(i) => self.hi(i),
       ValF::Neu(i, ks) => self.i(i).ks(ks),
-      ValF::Lazy(i, ks) => self.di(i).ks(ks),
+      ValF::Lazy(i, ls, ks) => self.di(i).ks(ks),
       ValF::Uni(i) => self.s("𝒰").li(i),
 
       ValF::Pi(_, Vis::Explicit, i, t, g, e) => self.s("Π(").i(i).s(": ").v(t).s(") ").g(g).c(e),

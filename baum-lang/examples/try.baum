@@ -13,4 +13,3 @@ Y = id U U
 nat = (a: U) → (a → a) → a → a
 
 one: nat = λ(a: U) λ(f: a → a) λ(x: a) f x
-
