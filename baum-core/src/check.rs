@@ -968,7 +968,10 @@ where
         let tyl = self.fresh_level();
         self.solve().add_constraint(tml, LevelRel::Lt, tyl);
         Ok((
-          (Rc::new(CExpr(CExprF::Uni(tml)))),
+          (Rc::new(CExpr(CExprF::Ann(
+            Rc::new(CExpr(CExprF::Uni(tml))),
+            Rc::new(CExpr(CExprF::Uni(tyl))),
+          )))),
           Rc::new(Val(ValF::Uni(tyl))),
         ))
       }
@@ -1003,7 +1006,10 @@ where
         self.solve().add_constraint(l_bty, LevelRel::Le, li);
         self.varenvs.pop();
         Ok((
-          Rc::new(CExpr(CExprF::Pi(tag, vis, i, c_ty, c_bty))),
+          Rc::new(CExpr(CExprF::Ann(
+            Rc::new(CExpr(CExprF::Pi(tag, vis, i, c_ty, c_bty))),
+            Rc::new(CExpr(CExprF::Uni(li))),
+          ))),
           Rc::new(Val(ValF::Uni(li))),
         ))
       }
@@ -1055,7 +1061,10 @@ where
         let li = self.fresh_level();
         if props.is_empty() {
           return Ok((
-            Rc::new(CExpr(CExprF::Sigma0(tag))),
+            Rc::new(CExpr(CExprF::Ann(
+              Rc::new(CExpr(CExprF::Sigma0(tag))),
+              Rc::new(CExpr(CExprF::Uni(li))),
+            ))),
             Rc::new(Val(ValF::Uni(li))),
           ));
         }
@@ -1076,7 +1085,10 @@ where
         }
         self.varenvs.pop();
         Ok((
-          Rc::new(CExpr(CExprF::Sigma(tag, (n0, i0, c_ty0), c_props))),
+          Rc::new(CExpr(CExprF::Ann(
+            Rc::new(CExpr(CExprF::Sigma(tag, (n0, i0, c_ty0), c_props))),
+            Rc::new(CExpr(CExprF::Uni(li))),
+          ))),
           Rc::new(Val(ValF::Uni(li))),
         ))
       }
@@ -1276,12 +1288,12 @@ where
       }
       match res {
         Ok((sol, c_expr, ty)) => {
-          let tm = self.eval0(&c_expr);
-          let dtm = self.deep_norm(&tm).unwrap();
-          eprintln!(
-            "{}",
-            format!("    {} = {}", self.def_symbols[&id], self.ppv(&dtm)).black()
-          );
+          // let tm = self.eval0(&c_expr);
+          // let dtm = self.deep_norm(&tm).unwrap();
+          // eprintln!(
+          //   "{}",
+          //   format!("    {} = {}", self.def_symbols[&id], self.ppv(&dtm)).black()
+          // );
           self.defenv().add(id, (sol.clone(), c_expr.clone(), ty));
           def_terms.push((id, sol, c_expr));
         }
