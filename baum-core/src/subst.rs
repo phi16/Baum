@@ -133,7 +133,7 @@ impl<'b, P: Tag, S: Tag> SubstEnv<'b, P, S> {
           unchanged
         }
       }
-      CExprF::Pi(tag, vis, i, ty, bty) => {
+      CExprF::Pi(tag, vis, i, ty, bty, l_bty) => {
         let ty = self.subst_e(ty);
         let bty = self.subst_e(bty);
         if ty.is_changed() || bty.is_changed() {
@@ -143,6 +143,7 @@ impl<'b, P: Tag, S: Tag> SubstEnv<'b, P, S> {
             *i,
             ty.into(),
             bty.into(),
+            *l_bty,
           ))))
         } else {
           unchanged
@@ -179,21 +180,21 @@ impl<'b, P: Tag, S: Tag> SubstEnv<'b, P, S> {
       }
       CExprF::Sigma0(_) => unchanged,
       CExprF::Obj0(_) => unchanged,
-      CExprF::Sigma(tag, (n0, i0, ty0), props) => {
+      CExprF::Sigma(tag, (n0, i0, ty0, l_ty0), props) => {
         let ty0 = self.subst_e(ty0);
         let mut changed = false;
         let mut rprops = Vec::new();
-        for (n, i, ty) in props {
+        for (n, i, ty, l_ty) in props {
           let ty = self.subst_e(ty);
           if ty.is_changed() {
             changed = true;
           }
-          rprops.push((*n, *i, ty.into()));
+          rprops.push((*n, *i, ty.into(), *l_ty));
         }
         if ty0.is_changed() || changed {
           Subst::Changed(Rc::new(CExpr(CExprF::Sigma(
             tag.clone(),
-            (*n0, *i0, ty0.into()),
+            (*n0, *i0, ty0.into(), *l_ty0),
             rprops,
           ))))
         } else {
@@ -309,7 +310,7 @@ impl<'b, P: Tag, S: Tag> SubstEnv<'b, P, S> {
         Some(i) => Subst::Changed(Rc::new(Val(ValF::Uni(i)))),
         None => unchanged,
       },
-      ValF::Pi(tag, vis, i, ty, g, bty) => {
+      ValF::Pi(tag, vis, i, ty, g, bty, l_bty) => {
         let ty = self.subst_v(ty);
         let g = self.subst_g(g);
         let bty = self.subst_e(bty);
@@ -321,6 +322,7 @@ impl<'b, P: Tag, S: Tag> SubstEnv<'b, P, S> {
             ty.into(),
             g.into(),
             bty.into(),
+            *l_bty,
           ))))
         } else {
           unchanged
@@ -345,22 +347,22 @@ impl<'b, P: Tag, S: Tag> SubstEnv<'b, P, S> {
       }
       ValF::Sigma0(_) => unchanged,
       ValF::Obj0(_) => unchanged,
-      ValF::Sigma(tag, (n0, i0, ty0), g, props) => {
+      ValF::Sigma(tag, (n0, i0, ty0, l_ty0), g, props) => {
         let ty0 = self.subst_v(ty0);
         let g = self.subst_g(g);
         let mut changed = false;
         let mut rprops = Vec::new();
-        for (n, i, ty) in props {
+        for (n, i, ty, l_ty) in props {
           let ty = self.subst_e(ty);
           if ty.is_changed() {
             changed = true;
           }
-          rprops.push((*n, *i, ty.into()));
+          rprops.push((*n, *i, ty.into(), *l_ty));
         }
         if ty0.is_changed() || g.is_changed() || changed {
           Subst::Changed(Rc::new(Val(ValF::Sigma(
             tag.clone(),
-            (*n0, *i0, ty0.into()),
+            (*n0, *i0, ty0.into(), *l_ty0),
             g.into(),
             rprops,
           ))))

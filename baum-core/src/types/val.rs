@@ -12,13 +12,17 @@ pub enum CExprF<PTag, STag, E> {
   Uni(LevelId),
   Let(Vec<(DefId, Solution, E)>, E),
 
-  Pi(PTag, Vis, BindId, E, E),
+  Pi(PTag, Vis, BindId, E, E, LevelId),
   Lam(PTag, Vis, BindId, E, E),
   App(PTag, Vis, E, E),
 
   Sigma0(STag),
   Obj0(STag),
-  Sigma(STag, (NameId, BindId, E), Vec<(NameId, BindId, E)>),
+  Sigma(
+    STag,
+    (NameId, BindId, E, LevelId),
+    Vec<(NameId, BindId, E, LevelId)>,
+  ),
   Obj(STag, (NameId, E), Vec<(NameId, E)>),
   Prop(STag, E, NameId),
 }
@@ -41,12 +45,17 @@ pub enum ValF<PTag, STag, V, E, D> {
   Lazy(DefId, Vec<LevelId>, Vec<ContF<PTag, STag, V>>),
   Uni(LevelId),
 
-  Pi(PTag, Vis, BindId, V, E, D),
+  Pi(PTag, Vis, BindId, V, E, D, LevelId),
   Lam(PTag, Vis, BindId, V, E, D),
 
   Sigma0(STag),
   Obj0(STag),
-  Sigma(STag, (NameId, BindId, V), E, Vec<(NameId, BindId, D)>),
+  Sigma(
+    STag,
+    (NameId, BindId, V, LevelId),
+    E,
+    Vec<(NameId, BindId, D, LevelId)>,
+  ),
   Obj(STag, (NameId, V), Vec<(NameId, V)>),
 }
 
@@ -91,3 +100,5 @@ pub type Conts<P, S> = Vec<ContF<P, S, RV<P, S>>>;
 
 pub type Term<P, S> = RV<P, S>;
 pub type Type<P, S> = RV<P, S>;
+
+pub type TyUni<P, S> = (Type<P, S>, LevelId);
