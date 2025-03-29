@@ -27,6 +27,7 @@ impl<'a, T: Clone> Subst<'a, T> {
 pub struct SubstEnv<'b, P, S> {
   holes: HashMap<HoleId, (RE<P, S>, RV<P, S>)>,
   defs: HashMap<DefId, (RE<P, S>, RV<P, S>)>,
+  levels: HashMap<LevelId, LevelId>,
   checker: &'b mut Checker<P, S>,
 }
 
@@ -38,6 +39,7 @@ impl<'b, P: Tag, S: Tag> SubstEnv<'b, P, S> {
     SubstEnv {
       holes,
       defs: HashMap::new(),
+      levels: HashMap::new(),
       checker,
     }
   }
@@ -49,6 +51,16 @@ impl<'b, P: Tag, S: Tag> SubstEnv<'b, P, S> {
     SubstEnv {
       holes: HashMap::new(),
       defs,
+      levels: HashMap::new(),
+      checker,
+    }
+  }
+
+  pub fn from_levels(levels: HashMap<LevelId, LevelId>, checker: &'b mut Checker<P, S>) -> Self {
+    SubstEnv {
+      holes: HashMap::new(),
+      defs: HashMap::new(),
+      levels,
       checker,
     }
   }
@@ -74,16 +86,19 @@ impl<'b, P: Tag, S: Tag> SubstEnv<'b, P, S> {
           unchanged
         }
       }
-      CExprF::Uni(_) => unchanged,
+      CExprF::Uni(i) => match self.levels.get(&i).cloned() {
+        Some(i) => Subst::Changed(Rc::new(CExpr(CExprF::Uni(i)))),
+        None => unchanged,
+      },
       CExprF::Let(defs, body) => {
         let mut changed = false;
         let mut rdefs = Vec::new();
-        for (def, e) in defs {
+        for (def, sol, e) in defs {
           let e = self.subst_e(e);
           if e.is_changed() {
             changed = true;
           }
-          rdefs.push((*def, e.into()));
+          rdefs.push((*def, sol.clone(), e.into()));
         }
         let body = self.subst_e(body);
         if changed || body.is_changed() {
@@ -261,7 +276,10 @@ impl<'b, P: Tag, S: Tag> SubstEnv<'b, P, S> {
           }
         }
       },
-      ValF::Uni(_) => unchanged,
+      ValF::Uni(i) => match self.levels.get(&i).cloned() {
+        Some(i) => Subst::Changed(Rc::new(Val(ValF::Uni(i)))),
+        None => unchanged,
+      },
       ValF::Pi(tag, vis, i, ty, g, bty) => {
         let ty = self.subst_v(ty);
         let g = self.subst_g(g);

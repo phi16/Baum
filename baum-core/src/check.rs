@@ -2,6 +2,7 @@ use crate::levels::*;
 use crate::pretty::{pretty_expr, pretty_val};
 use crate::subst::SubstEnv;
 use crate::types::common::*;
+use crate::types::level::*;
 use crate::types::tree::*;
 use crate::types::val::*;
 use colored::Colorize;
@@ -34,7 +35,7 @@ impl<P, S> VarEnv<P, S> {
 }
 
 struct DefEnv<P, S> {
-  define: HashMap<DefId, (Term<P, S>, Type<P, S>)>,
+  define: HashMap<DefId, (Solution, RE<P, S>, Type<P, S>)>,
 }
 
 impl<P, S> DefEnv<P, S> {
@@ -44,8 +45,8 @@ impl<P, S> DefEnv<P, S> {
     }
   }
 
-  fn add(&mut self, def: DefId, tm: Term<P, S>, ty: Type<P, S>) {
-    self.define.insert(def, (tm, ty));
+  fn add(&mut self, def: DefId, d: (Solution, RE<P, S>, Type<P, S>)) {
+    self.define.insert(def, d);
   }
 }
 
@@ -54,6 +55,7 @@ struct Solve<P, S> {
   hole_assign: HashMap<HoleId, RE<P, S>>,
   levels: HashSet<LevelId>,
   level_constraints: Vec<(LevelId, LevelRel, LevelId)>,
+  constraints_accum: Option<Vec<(LevelId, LevelRel, LevelId)>>,
 }
 
 impl<P, S> Solve<P, S> {
@@ -63,6 +65,7 @@ impl<P, S> Solve<P, S> {
       hole_assign: HashMap::new(),
       levels: HashSet::new(),
       level_constraints: Vec::new(),
+      constraints_accum: None,
     }
   }
 
@@ -80,6 +83,7 @@ impl<P, S> Solve<P, S> {
 
   fn add_constraint(&mut self, l1: LevelId, rel: LevelRel, l2: LevelId) {
     self.level_constraints.push((l1, rel, l2));
+    self.constraints_accum = None;
   }
 }
 
@@ -91,7 +95,7 @@ fn contains_hole_e<P, S>(i: &HoleId, e: &RE<P, S>) -> bool {
     CExprF::Ann(e, _) => contains_hole_e(i, e),
     CExprF::Uni(_) => false,
     CExprF::Let(defs, body) => {
-      defs.iter().any(|(_, e)| contains_hole_e(i, e)) || contains_hole_e(i, body)
+      defs.iter().any(|(_, _, e)| contains_hole_e(i, e)) || contains_hole_e(i, body)
     }
     CExprF::Pi(_, _, _, ty, body) => contains_hole_e(i, ty) || contains_hole_e(i, body),
     CExprF::Lam(_, _, _, ty, body) => contains_hole_e(i, ty) || contains_hole_e(i, body),
@@ -211,16 +215,16 @@ where
     None
   }
 
-  fn lookup_def(&self, def: DefId) -> Option<&(Term<P, S>, Type<P, S>)> {
+  fn lookup_def(&self, def: DefId) -> Option<&(Solution, RE<P, S>, Type<P, S>)> {
     for env in self.defenvs.iter().rev() {
-      if let Some(tmty) = env.define.get(&def) {
-        return Some(tmty);
+      if let Some(d) = env.define.get(&def) {
+        return Some(d);
       }
     }
     None
   }
 
-  fn lookup_assignment(&self, hole: HoleId) -> Option<&RE<P, S>> {
+  fn lookup_assign(&self, hole: HoleId) -> Option<&RE<P, S>> {
     for solve in self.solves.iter().rev() {
       if let Some(v) = solve.hole_assign.get(&hole) {
         return Some(v);
@@ -235,6 +239,29 @@ where
     id
   }
 
+  fn fresh_levels(&mut self, sol: &Solution) -> HashMap<LevelId, LevelId> {
+    let ls = (0..sol.groups)
+      .map(|i| (i, self.fresh_level()))
+      .collect::<HashMap<_, _>>();
+    let m = sol
+      .scope
+      .iter()
+      .map(|i| (i.0, *ls.get(&i.1).unwrap()))
+      .collect::<HashMap<_, _>>();
+    for (r1, rel, r2) in &sol.constraints {
+      let l1 = match r1 {
+        LevelRef::Id(i1) => *i1,
+        LevelRef::Group(g1) => *ls.get(g1).unwrap(),
+      };
+      let l2 = match r2 {
+        LevelRef::Id(i2) => *i2,
+        LevelRef::Group(g2) => *ls.get(g2).unwrap(),
+      };
+      self.solve().add_constraint(l1, rel.clone(), l2);
+    }
+    m
+  }
+
   fn ppe(&self, e: &RE<P, S>) -> String {
     pretty_expr(&self.def_symbols, &self.bind_symbols, &self.name_symbols, e)
   }
@@ -245,16 +272,19 @@ where
 
   fn norm(&mut self, v: &Term<P, S>) -> Result<Term<P, S>> {
     match &v.0 {
-      ValF::Hole(h) => match self.lookup_assignment(*h) {
+      ValF::Hole(h) => match self.lookup_assign(*h) {
         Some(e) => {
           let v = self.eval0(&e.clone());
           self.norm(&v)
         }
         None => Ok(v.clone()),
       },
-      ValF::Lazy(i, ks) => match self.lookup_def(*i) {
-        Some((v, _)) => {
-          let mut v = v.clone();
+      ValF::Lazy(i, ks) => match self.lookup_def(*i).cloned() {
+        Some((sol, e, _)) => {
+          let ls = self.fresh_levels(&sol);
+          let mut subst = SubstEnv::from_levels(ls, self);
+          let e = subst.subst_e(&e).into();
+          let mut v = self.eval0(&e.clone());
           for k in ks {
             match k {
               ContF::App(tag, vis, x) => {
@@ -400,7 +430,7 @@ where
     // Note: e may contain unresolved bindings
     use CExprF::*;
     let v = match &e.0 {
-      Hole(i) => match self.lookup_assignment(*i) {
+      Hole(i) => match self.lookup_assign(*i) {
         Some(e) => return self.eval(g, &e.clone()),
         None => ValF::Hole(i.clone()),
       },
@@ -416,8 +446,11 @@ where
       Uni(i) => ValF::Uni(*i),
       Let(defs, body) => {
         let mut g = g.clone();
-        for (i, e) in defs {
-          let v = self.eval(&g, e);
+        for (i, sol, e) in defs {
+          let ls = self.fresh_levels(&sol);
+          let mut subst = SubstEnv::from_levels(ls, self);
+          let e = subst.subst_e(e).into();
+          let v = self.eval(&g, &e);
           g.add_def(*i, v);
         }
         return self.eval(&g, body);
@@ -566,13 +599,13 @@ where
     // self.log(format!("unify: {} ≟ {}", self.ppv(v1), self.ppv(v2)));
     match (&v1.0, &v2.0) {
       (ValF::Hole(i1), ValF::Hole(i2)) if i1 == i2 => Ok(()),
-      (ValF::Hole(i1), _) if self.lookup_assignment(*i1).is_some() => {
-        let e1 = self.lookup_assignment(*i1).unwrap().clone();
+      (ValF::Hole(i1), _) if self.lookup_assign(*i1).is_some() => {
+        let e1 = self.lookup_assign(*i1).unwrap().clone();
         let v1 = self.eval0(&e1);
         self.unify(&v1, v2)
       }
-      (_, ValF::Hole(i2)) if self.lookup_assignment(*i2).is_some() => {
-        let e2 = self.lookup_assignment(*i2).unwrap().clone();
+      (_, ValF::Hole(i2)) if self.lookup_assign(*i2).is_some() => {
+        let e2 = self.lookup_assign(*i2).unwrap().clone();
         let v2 = self.eval0(&e2);
         self.unify(v1, &v2)
       }
@@ -760,6 +793,14 @@ where
         self.solve().add_hole(h, check_ty.clone());
         Ok(Rc::new(CExpr(CExprF::Hole(h))))
       }
+      Uni => match &self.norm(check_ty)?.0 {
+        ValF::Uni(tyl) => {
+          let tml = self.fresh_level();
+          self.solve().add_constraint(tml, LevelRel::Lt, *tyl);
+          Ok(Rc::new(CExpr(CExprF::Uni(tml))))
+        }
+        _ => fail(self, "𝒰 / not 𝒰"),
+      },
       Let(defs, body) => {
         self.defenvs.push(DefEnv::new());
         let ds = self.defs(defs);
@@ -901,8 +942,13 @@ where
         Some(ty) => Ok((Rc::new(CExpr(CExprF::Bind(i))), ty.clone())),
         None => unreachable!(),
       },
-      Def(i) => match self.lookup_def(i) {
-        Some((_, ty)) => Ok((Rc::new(CExpr(CExprF::Def(i))), ty.clone())),
+      Def(i) => match self.lookup_def(i).cloned() {
+        Some((sol, _, ty)) => {
+          let ls = self.fresh_levels(&sol);
+          let mut subst = SubstEnv::from_levels(ls, self);
+          let ty = subst.subst_v(&ty).into();
+          Ok((Rc::new(CExpr(CExprF::Def(i))), ty.clone()))
+        }
         None => Err(Error::Fail),
       },
       Ann(tm, ty) => {
@@ -927,7 +973,10 @@ where
         let (body, ty) = self.synth(*body)?;
         self.defenvs.pop();
         let mut def_map = HashMap::new();
-        for (i, e) in &ds {
+        for (i, sol, e) in &ds {
+          let ls = self.fresh_levels(&sol);
+          let mut subst = SubstEnv::from_levels(ls, self);
+          let e = subst.subst_e(e).into();
           let v = self.eval0(&e);
           def_map.insert(*i, (e.clone(), v));
         }
@@ -1082,46 +1131,58 @@ where
     }
   }
 
-  fn resolve(&mut self, solve: Solve<P, S>) -> Result<HashMap<HoleId, (RE<P, S>, RV<P, S>)>> {
-    eprintln!("[Solve]");
-    /* eprintln!("- holes:");
-    for (i, ty) in &solve.holes {
-      eprintln!("  - {:?}: {}", i, self.ppv(ty));
-    }
-    eprintln!("- assignments:");
-    for (i, tm) in &solve.hole_assign {
-      eprintln!("  - {:?} = {}", i, self.ppe(tm));
-    } */
+  fn resolve(
+    &mut self,
+    solve: Solve<P, S>,
+  ) -> Result<(HashMap<HoleId, (RE<P, S>, RV<P, S>)>, Solution)> {
+    eprintln!("[Resolve]");
 
-    for (j, _) in &solve.holes {
-      if !solve.hole_assign.contains_key(j) {
-        return Err(Error::Loc(format!("Unresolved hole: {:?}", j)));
+    let hole_map = {
+      /* eprintln!("- holes:");
+      for (i, ty) in &solve.holes {
+        eprintln!("  - {:?}: {}", i, self.ppv(ty));
       }
-    }
-    // TODO: resolve hole-in-hole constraints at this point
-    let mut hole_map = HashMap::new();
-    for (i, e) in solve.hole_assign {
-      let v = self.eval0(&e);
-      hole_map.insert(i, (e, v));
-    }
+      eprintln!("- assignments:");
+      for (i, tm) in &solve.hole_assign {
+        eprintln!("  - {:?} = {}", i, self.ppe(tm));
+      } */
 
-    eprintln!("- levels: {:?}", solve.levels);
-    eprintln!("- constraints:");
-    for (i1, rel, i2) in &solve.level_constraints {
-      match rel {
-        LevelRel::Eq => eprintln!("  - {:?} = {:?}", i1, i2),
-        LevelRel::Le => eprintln!("  - {:?} ≤ {:?}", i1, i2),
-        LevelRel::Lt => eprintln!("  - {:?} < {:?}", i1, i2),
+      for (j, _) in &solve.holes {
+        if !solve.hole_assign.contains_key(j) {
+          return Err(Error::Loc(format!("Unresolved hole: {:?}", j)));
+        }
       }
-    }
-    let level_solution = solve_levels(&solve.levels, &solve.level_constraints)
-      .map_err(|e| Error::Loc(format!("Failed to solve level constraints: {}", e)))?;
-    // TODO
+      // TODO: resolve hole-in-hole constraints at this point
+      let mut hole_map = HashMap::new();
+      for (i, e) in solve.hole_assign {
+        let v = self.eval0(&e);
+        hole_map.insert(i, (e, v));
+      }
+      hole_map
+    };
 
-    Ok(hole_map)
+    let level_solution = {
+      let constraints = solve.constraints_accum.unwrap();
+      /* eprintln!("- levels: {:?}", solve.levels);
+      eprintln!("- constraints:");
+      for (i1, rel, i2) in &constraints {
+        match rel {
+          LevelRel::Eq => eprintln!("  - {:?} = {:?}", i1, i2),
+          LevelRel::Le => eprintln!("  - {:?} ≤ {:?}", i1, i2),
+          LevelRel::Lt => eprintln!("  - {:?} < {:?}", i1, i2),
+        }
+      } */
+      // TODO: extract essential levels
+      // ^TODO: pickup all constraints in solve_levels
+      let level_solution = solve_levels(&constraints, &solve.levels)
+        .map_err(|e| Error::Loc(format!("Failed to solve level constraints: {}", e)))?;
+      level_solution
+    };
+
+    Ok((hole_map, level_solution))
   }
 
-  fn def(&mut self, e: Box<Expr<P, S>>) -> Result<(RE<P, S>, Term<P, S>, Type<P, S>)> {
+  fn def(&mut self, e: Box<Expr<P, S>>) -> Result<(Solution, RE<P, S>, Type<P, S>)> {
     self.solves.push(Solve::new());
     let depth1 = (self.varenvs.len(), self.defenvs.len(), self.solves.len());
     let res = self.synth(*e);
@@ -1138,9 +1199,32 @@ where
         self.solves.truncate(depth1.2);
       }
     }
+    {
+      // accumulate constraints
+      for i in 0..self.solves.len() {
+        if self.solves[i].constraints_accum.is_none() {
+          let parent = if i != 0 {
+            self
+              .solves
+              .get(i - 1)
+              .map(|s| s.constraints_accum.clone().unwrap())
+          } else {
+            None
+          };
+          let s = &mut self.solves[i];
+          s.constraints_accum = Some(match parent {
+            Some(mut ps) => {
+              ps.extend(s.level_constraints.clone());
+              ps
+            }
+            None => s.level_constraints.clone(),
+          });
+        }
+      }
+    }
     let solve = self.solves.pop().unwrap();
     let (ce, ty) = res?;
-    let hole_map = self.resolve(solve)?;
+    let (hole_map, level_solution) = self.resolve(solve)?;
 
     // eprintln!("- From");
     // eprintln!("  - {}: {}", self.ppe(&ce), self.ppv(&ty));
@@ -1160,11 +1244,10 @@ where
     }
     // TODO: scope check?
 
-    let tm = self.eval0(&ce);
-    Ok((ce, tm, ty))
+    Ok((level_solution, ce, ty))
   }
 
-  fn defs(&mut self, defs: Vec<(DefId, Box<Expr<P, S>>)>) -> Vec<(DefId, RE<P, S>)> {
+  fn defs(&mut self, defs: Vec<(DefId, Box<Expr<P, S>>)>) -> Vec<(DefId, Solution, RE<P, S>)> {
     let mut def_terms = Vec::new();
     for (id, expr) in defs {
       eprintln!("- Def[ {} ]", self.def_symbols[&id]);
@@ -1184,14 +1267,15 @@ where
         Err(Error::Loc(e)) => eprintln!("[{}] {}: {}", "x".red(), self.def_symbols[&id], e),
       }
       match res {
-        Ok((c_expr, tm, ty)) => {
-          let dtm = self.deep_norm(&tm).unwrap();
-          eprintln!(
-            "{}",
-            format!("    {} = {}", self.def_symbols[&id], self.ppv(&dtm)).black()
-          );
-          self.defenv().add(id, tm.clone(), ty);
-          def_terms.push((id, c_expr));
+        Ok((sol, c_expr, ty)) => {
+          // let tm = self.eval0(&c_expr);
+          // let dtm = self.deep_norm(&tm).unwrap();
+          // eprintln!(
+          //   "{}",
+          //   format!("    {} = {}", self.def_symbols[&id], self.ppv(&dtm)).black()
+          // );
+          self.defenv().add(id, (sol.clone(), c_expr.clone(), ty));
+          def_terms.push((id, sol, c_expr));
         }
         Err(Error::Fail) => {}
         Err(Error::Loc(e)) => {

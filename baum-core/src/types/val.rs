@@ -1,4 +1,5 @@
 use crate::types::common::*;
+use crate::types::level::*;
 use std::collections::HashMap;
 use std::rc::Rc;
 
@@ -9,7 +10,7 @@ pub enum CExprF<PTag, STag, E> {
   Def(DefId),
   Ann(E, E),
   Uni(LevelId),
-  Let(Vec<(DefId, E)>, E),
+  Let(Vec<(DefId, Solution, E)>, E),
 
   Pi(PTag, Vis, BindId, E, E),
   Lam(PTag, Vis, BindId, E, E),

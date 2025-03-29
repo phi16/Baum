@@ -1,4 +1,5 @@
 use crate::types::common::*;
+use crate::types::level::*;
 use crate::types::tree::*;
 use crate::types::val::*;
 use std::collections::HashMap;
@@ -86,8 +87,8 @@ impl<'a> Pretty<'a> {
     self
   }
 
-  fn defs_c<P, S>(&mut self, ds: &Vec<(DefId, Rc<CExpr<P, S>>)>) -> &mut Self {
-    for (i, e) in ds {
+  fn defs_c<P, S>(&mut self, ds: &Vec<(DefId, Solution, Rc<CExpr<P, S>>)>) -> &mut Self {
+    for (i, sol, e) in ds {
       self.di(i).s(" = ").c(e).ln();
     }
     self
