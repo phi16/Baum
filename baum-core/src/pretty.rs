@@ -142,7 +142,7 @@ impl<'a> Pretty<'a> {
       CExprF::Hole(i) => self.hi(i),
       CExprF::Bind(i) => self.i(i),
       CExprF::Def(i, ls) => self.di(i),
-      CExprF::Ann(v, t) => self.c(v).s(" of ").c(t),
+      CExprF::Ann(v, t) => self.s("(").c(v).s(" of ").c(t).s(")"),
       CExprF::Uni(i) => self.s("𝒰").li(i),
       CExprF::Let(defs, e) => self.s("let").open().defs_c(defs).close().s("in ").c(e),
 

@@ -896,7 +896,10 @@ where
   fn check_ty(&mut self, e: Expr<P, S>) -> Result<(RE<P, S>, LevelId)> {
     let li = self.fresh_level();
     let e = self.check(e, &Rc::new(Val(ValF::Uni(li))))?;
-    Ok((e, li))
+    Ok((
+      Rc::new(CExpr(CExprF::Ann(e, Rc::new(CExpr(CExprF::Uni(li)))))),
+      li,
+    ))
   }
 
   fn resolve_implicits(
@@ -1288,6 +1291,10 @@ where
       }
       match res {
         Ok((sol, c_expr, ty)) => {
+          eprintln!(
+            "{}",
+            format!("    {} = {}", self.def_symbols[&id], self.ppe(&c_expr)).black()
+          );
           // let tm = self.eval0(&c_expr);
           // let dtm = self.deep_norm(&tm).unwrap();
           // eprintln!(
