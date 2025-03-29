@@ -281,10 +281,7 @@ where
           let v = self.eval0(&e.clone());
           self.norm(&v)
         }
-        None => {
-          // Ok(v.clone())
-          Err(Error::Loc("Found hole".to_string()))
-        }
+        None => Err(Error::Loc("Found hole in normalization".to_string())),
       },
       ValF::Lazy(i, ls, ks) => match self.lookup_def(*i).cloned() {
         Some((sol, e, _)) => {
