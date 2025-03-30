@@ -88,7 +88,7 @@ impl<'b, P: Tag, S: Tag> SubstEnv<'b, P, S> {
   pub fn subst_e<'a>(&mut self, e: &'a RE<P, S>) -> Subst<'a, RE<P, S>> {
     let unchanged = Subst::Unchanged(e);
     match &e.0 {
-      CExprF::Hole(i) => match self.holes.get(&i).cloned() {
+      CExprF::Hole(i, l_hi) => match self.holes.get(&i).cloned() {
         Some((e, _)) => Subst::Changed(self.subst_e(&e).into()),
         None => unchanged,
       },
@@ -133,7 +133,7 @@ impl<'b, P: Tag, S: Tag> SubstEnv<'b, P, S> {
           unchanged
         }
       }
-      CExprF::Pi(tag, vis, i, ty, bty, l_bty) => {
+      CExprF::Pi(tag, vis, i, ty, l_ty, bty, l_bty) => {
         let ty = self.subst_e(ty);
         let bty = self.subst_e(bty);
         if ty.is_changed() || bty.is_changed() {
@@ -142,6 +142,7 @@ impl<'b, P: Tag, S: Tag> SubstEnv<'b, P, S> {
             vis.clone(),
             *i,
             ty.into(),
+            *l_ty,
             bty.into(),
             *l_bty,
           ))))
@@ -236,7 +237,7 @@ impl<'b, P: Tag, S: Tag> SubstEnv<'b, P, S> {
   pub fn subst_v<'a>(&mut self, v: &'a RV<P, S>) -> Subst<'a, RV<P, S>> {
     let unchanged = Subst::Unchanged(v);
     match &v.0 {
-      ValF::Hole(i) => match self.holes.get(&i).cloned() {
+      ValF::Hole(i, l_h) => match self.holes.get(&i).cloned() {
         Some((_, v)) => Subst::Changed(self.subst_v(&v).into()),
         None => unchanged,
       },
@@ -310,7 +311,7 @@ impl<'b, P: Tag, S: Tag> SubstEnv<'b, P, S> {
         Some(i) => Subst::Changed(Rc::new(Val(ValF::Uni(i)))),
         None => unchanged,
       },
-      ValF::Pi(tag, vis, i, ty, g, bty, l_bty) => {
+      ValF::Pi(tag, vis, i, ty, l_ty, g, bty, l_bty) => {
         let ty = self.subst_v(ty);
         let g = self.subst_g(g);
         let bty = self.subst_e(bty);
@@ -320,6 +321,7 @@ impl<'b, P: Tag, S: Tag> SubstEnv<'b, P, S> {
             vis.clone(),
             *i,
             ty.into(),
+            *l_ty,
             g.into(),
             bty.into(),
             *l_bty,

@@ -5,11 +5,18 @@ syntax 1> {x: A} → B = Π{x: A} B
 
 id (A: U) (a: A): A = a
 
-X1 = U → U
-X2 (A: U) = U
+x = let
+  b = U
+  in (id U b, id b U)
 
-Y = id U U
+-- y = (λ(b) (id U b, id b U)) U
+-- z = (λ(b: U) (id U b, id b U)) U
 
-nat = (a: U) → (a → a) → a → a
-
-one: nat = λ(a: U) λ(f: a → a) λ(x: a) f x
+-- X1 = U → U
+-- X2 (A: U) = U
+-- 
+-- Y = id U U
+-- 
+-- nat = (a: U) → (a → a) → a → a
+-- 
+-- one: nat = λ(a: U) λ(f: a → a) λ(x: a) f x

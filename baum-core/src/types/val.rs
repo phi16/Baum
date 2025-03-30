@@ -5,14 +5,14 @@ use std::rc::Rc;
 
 #[derive(Debug, Clone)]
 pub enum CExprF<PTag, STag, E> {
-  Hole(HoleId),
+  Hole(HoleId, LevelId),
   Bind(BindId),
   Def(DefId, Vec<LevelId>),
   Ann(E, E),
   Uni(LevelId),
   Let(Vec<(DefId, Solution, E)>, E),
 
-  Pi(PTag, Vis, BindId, E, E, LevelId),
+  Pi(PTag, Vis, BindId, E, LevelId, E, LevelId),
   Lam(PTag, Vis, BindId, E, E),
   App(PTag, Vis, E, E),
 
@@ -40,12 +40,12 @@ pub enum ContF<PTag, STag, V> {
 
 #[derive(Debug, Clone)]
 pub enum ValF<PTag, STag, V, E, D> {
-  Hole(HoleId),
+  Hole(HoleId, LevelId),
   Neu(BindId, Vec<ContF<PTag, STag, V>>),
   Lazy(DefId, Vec<LevelId>, Vec<ContF<PTag, STag, V>>),
   Uni(LevelId),
 
-  Pi(PTag, Vis, BindId, V, E, D, LevelId),
+  Pi(PTag, Vis, BindId, V, LevelId, E, D, LevelId),
   Lam(PTag, Vis, BindId, V, E, D),
 
   Sigma0(STag),

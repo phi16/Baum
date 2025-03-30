@@ -120,22 +120,25 @@ pub fn solve_levels(constraints: &Constraints, scope: &HashSet<LevelId>) -> Resu
   assert!(!constrs.is_empty());
 
   let mut edges = Vec::new();
-  let mut verts = HashMap::new();
+  let mut verts = Vec::new();
+  let mut vert_map = HashMap::new();
   let mut next_node_index: u32 = 0;
   for (g1, rel, g2) in &constrs {
-    let g1 = *verts.entry(uf.find(*g1)).or_insert({
+    let n1 = *vert_map.entry(uf.find(*g1)).or_insert_with_key(|k| {
       let idx = next_node_index;
+      verts.push(*k);
       next_node_index += 1;
       idx
     });
-    let g2 = *verts.entry(uf.find(*g2)).or_insert({
+    let n2 = *vert_map.entry(uf.find(*g2)).or_insert_with_key(|k| {
       let idx = next_node_index;
+      verts.push(*k);
       next_node_index += 1;
       idx
     });
     edges.push((
-      g1,
-      g2,
+      n1,
+      n2,
       match rel {
         Edge::Le => 0.,
         Edge::Lt => -1.,
@@ -143,13 +146,14 @@ pub fn solve_levels(constraints: &Constraints, scope: &HashSet<LevelId>) -> Resu
     ));
   }
   let root = next_node_index;
-  for (_, v) in verts {
-    edges.push((root, v, 0.));
+  for (_, n) in vert_map {
+    edges.push((root, n, 0.));
   }
 
   let g = Graph::<(), f32>::from_edges(&edges);
   if let Some(cycle) = find_negative_cycle(&g, NodeIndex::new(root as usize)) {
-    return Err(format!("Cycle detected: {:?}", cycle));
+    let cycle = cycle.iter().map(|i| verts[i.index()]).collect::<Vec<_>>();
+    return Err(format!("Cycle detected: #{:?}", cycle));
   }
   Ok(sol)
 }

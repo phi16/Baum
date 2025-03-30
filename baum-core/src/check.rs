@@ -51,7 +51,7 @@ impl<P, S> DefEnv<P, S> {
 }
 
 struct Solve<P, S> {
-  holes: HashMap<HoleId, Type<P, S>>,
+  holes: HashMap<HoleId, TyUni<P, S>>,
   hole_assign: HashMap<HoleId, RE<P, S>>,
   levels: HashSet<LevelId>,
   level_constraints: Vec<(LevelId, LevelRel, LevelId)>,
@@ -69,7 +69,7 @@ impl<P, S> Solve<P, S> {
     }
   }
 
-  fn add_hole(&mut self, hole: HoleId, ty: Type<P, S>) {
+  fn add_hole(&mut self, hole: HoleId, ty: TyUni<P, S>) {
     self.holes.insert(hole, ty);
   }
 
@@ -89,7 +89,7 @@ impl<P, S> Solve<P, S> {
 
 fn contains_hole_e<P, S>(i: &HoleId, e: &RE<P, S>) -> bool {
   match &e.0 {
-    CExprF::Hole(j) => i == j,
+    CExprF::Hole(j, _) => i == j,
     CExprF::Bind(_) => false,
     CExprF::Def(_, _) => false,
     CExprF::Ann(e, _) => contains_hole_e(i, e),
@@ -97,7 +97,7 @@ fn contains_hole_e<P, S>(i: &HoleId, e: &RE<P, S>) -> bool {
     CExprF::Let(defs, body) => {
       defs.iter().any(|(_, _, e)| contains_hole_e(i, e)) || contains_hole_e(i, body)
     }
-    CExprF::Pi(_, _, _, ty, body, _) => contains_hole_e(i, ty) || contains_hole_e(i, body),
+    CExprF::Pi(_, _, _, ty, _, body, _) => contains_hole_e(i, ty) || contains_hole_e(i, body),
     CExprF::Lam(_, _, _, ty, body) => contains_hole_e(i, ty) || contains_hole_e(i, body),
     CExprF::App(_, _, f, x) => contains_hole_e(i, f) || contains_hole_e(i, x),
     CExprF::Sigma0(_) => false,
@@ -276,7 +276,7 @@ where
 
   fn norm(&mut self, v: &Term<P, S>) -> Result<Term<P, S>> {
     match &v.0 {
-      ValF::Hole(h) => match self.lookup_assign(*h) {
+      ValF::Hole(h, _) => match self.lookup_assign(*h) {
         Some(e) => {
           let v = self.eval0(&e.clone());
           self.norm(&v)
@@ -309,7 +309,7 @@ where
 
   fn deep_norm(&mut self, v: &Term<P, S>) -> Result<Term<P, S>> {
     let v = match &self.norm(v)?.0 {
-      ValF::Hole(i) => ValF::Hole(i.clone()),
+      ValF::Hole(i, l_h) => ValF::Hole(i.clone(), *l_h),
       ValF::Neu(i, ks) => {
         let mut v = Rc::new(Val(ValF::Neu(i.clone(), Vec::new())));
         for k in ks {
@@ -326,7 +326,7 @@ where
         return Ok(v);
       }
       ValF::Uni(i) => ValF::Uni(*i),
-      ValF::Pi(tag, vis, i, ty, g, bty, l_bty) => {
+      ValF::Pi(tag, vis, i, ty, l_ty, g, bty, l_bty) => {
         let ty = self.deep_norm(ty)?;
         let mut g = g.clone();
         let fi = self.fresh_id(i);
@@ -334,7 +334,7 @@ where
         let bty = self.eval(&g, bty);
         let bty = self.deep_norm(&bty)?;
         let bty = self.quote(&bty);
-        ValF::Pi(tag.clone(), vis.clone(), fi, ty, g, bty, *l_bty)
+        ValF::Pi(tag.clone(), vis.clone(), fi, ty, *l_ty, g, bty, *l_bty)
       }
       ValF::Lam(tag, vis, i, ty, g, body) => {
         let ty = self.deep_norm(ty)?;
@@ -434,9 +434,9 @@ where
     // Note: e may contain unresolved bindings
     use CExprF::*;
     let v = match &e.0 {
-      Hole(i) => match self.lookup_assign(*i) {
+      Hole(i, l_h) => match self.lookup_assign(*i) {
         Some(e) => return self.eval(g, &e.clone()),
-        None => ValF::Hole(i.clone()),
+        None => ValF::Hole(i.clone(), *l_h),
       },
       Bind(i) => match g.lookup_bind(i) {
         Some(v) => return v.clone(),
@@ -461,13 +461,14 @@ where
         return self.eval(&g, body);
       }
 
-      Pi(tag, vis, i, ty, bty, l_bty) => {
+      Pi(tag, vis, i, ty, l_ty, bty, l_bty) => {
         let ty = self.eval(g, ty);
         ValF::Pi(
           tag.clone(),
           vis.clone(),
           *i,
           ty,
+          *l_ty,
           g.clone(),
           bty.clone(),
           *l_bty,
@@ -536,7 +537,7 @@ where
       e
     }
     match &v.0 {
-      Hole(i) => Rc::new(CExpr(CExprF::Hole(i.clone()))),
+      Hole(i, l_h) => Rc::new(CExpr(CExprF::Hole(i.clone(), *l_h))),
       Neu(i, ks) => {
         let e = Rc::new(CExpr(CExprF::Bind(i.clone())));
         quote_ks(self, ks, e)
@@ -546,7 +547,7 @@ where
         quote_ks(self, ks, e)
       }
       Uni(i) => Rc::new(CExpr(CExprF::Uni(i.clone()))),
-      Pi(tag, vis, i, ty, g, bty, l_bty) => {
+      Pi(tag, vis, i, ty, l_ty, g, bty, l_bty) => {
         let ty = self.quote(ty);
         let mut g = g.clone();
         let fi = self.fresh_id(i);
@@ -558,6 +559,7 @@ where
           vis.clone(),
           fi,
           ty,
+          *l_ty,
           bty,
           *l_bty,
         )))
@@ -622,18 +624,21 @@ where
     };
     // self.log(format!("unify: {} ≟ {}", self.ppv(v1), self.ppv(v2)));
     match (&v1.0, &v2.0) {
-      (ValF::Hole(i1), ValF::Hole(i2)) if i1 == i2 => Ok(()),
-      (ValF::Hole(i1), _) if self.lookup_assign(*i1).is_some() => {
+      (ValF::Hole(i1, l_h1), ValF::Hole(i2, l_h2)) if i1 == i2 => {
+        self.solve().add_constraint(*l_h1, LevelRel::Eq, *l_h2);
+        Ok(())
+      }
+      (ValF::Hole(i1, l_h1), _) if self.lookup_assign(*i1).is_some() => {
         let e1 = self.lookup_assign(*i1).unwrap().clone();
         let v1 = self.eval0(&e1);
         self.unify(&v1, v2)
       }
-      (_, ValF::Hole(i2)) if self.lookup_assign(*i2).is_some() => {
+      (_, ValF::Hole(i2, l_h2)) if self.lookup_assign(*i2).is_some() => {
         let e2 = self.lookup_assign(*i2).unwrap().clone();
         let v2 = self.eval0(&e2);
         self.unify(v1, &v2)
       }
-      (ValF::Hole(i1), _) => {
+      (ValF::Hole(i1, l_h1), _) => {
         let e2 = self.quote(v2);
         if contains_hole_e(i1, &e2) {
           return fail(self, "recursive hole");
@@ -642,7 +647,7 @@ where
         self.solve().add_assign(i1.clone(), e2);
         Ok(())
       }
-      (_, ValF::Hole(i2)) => {
+      (_, ValF::Hole(i2, l_h2)) => {
         let e1 = self.quote(v1);
         if contains_hole_e(i2, &e1) {
           return fail(self, "recursive hole");
@@ -698,8 +703,8 @@ where
         Ok(())
       }
       (
-        ValF::Pi(t1, v1, i1, ty1, g1, bty1, l_bty1),
-        ValF::Pi(t2, v2, i2, ty2, g2, bty2, l_bty2),
+        ValF::Pi(t1, v1, i1, ty1, l_ty1, g1, bty1, l_bty1),
+        ValF::Pi(t2, v2, i2, ty2, l_ty2, g2, bty2, l_bty2),
       ) => {
         if t1 != t2 {
           return fail(self, "Π / role mismatch");
@@ -708,6 +713,7 @@ where
           return fail(self, "Π / visibility mismatch");
         }
         self.unify(ty1, ty2)?;
+        self.solve().add_constraint(*l_ty1, LevelRel::Eq, *l_ty2);
         let mut g1 = g1.clone();
         let mut g2 = g2.clone();
         let fi = self.fresh_id(&i1);
@@ -798,30 +804,41 @@ where
     }
   }
 
-  fn check(&mut self, e: Expr<P, S>, check_ty: &Type<P, S>) -> Result<RE<P, S>> {
-    let res = self.check_internal(e, check_ty);
+  fn check(
+    &mut self,
+    e: Expr<P, S>,
+    check_ty: &Type<P, S>,
+    l_check_ty: LevelId,
+  ) -> Result<RE<P, S>> {
+    let res = self.check_internal(e, check_ty, l_check_ty);
     /* if let Ok(e) = &res {
       self.log(format!("CHECK {}: {}", self.ppe(e), self.ppv(check_ty)));
     } */
     res
   }
 
-  fn check_internal(&mut self, e: Expr<P, S>, check_ty: &Type<P, S>) -> Result<RE<P, S>> {
+  fn check_internal(
+    &mut self,
+    e: Expr<P, S>,
+    check_ty: &Type<P, S>,
+    l_check_ty: LevelId,
+  ) -> Result<RE<P, S>> {
     let ec = e.clone(); // TODO: redundant?
     let fail = |this: &Checker<P, S>, msg: &str| -> Result<_> {
       Err(Error::Loc(format!(
-        "Failed to check type ({}): {:?}: {}",
+        "Failed to check type ({}): {:?}: {}: {:?}",
         msg,
         ec,
-        this.ppv(check_ty)
+        this.ppv(&check_ty),
+        l_check_ty
       )))
     };
     use ExprF::*;
     match e.0 {
       Hole => {
         let h = self.fresh_hole();
-        self.solve().add_hole(h, check_ty.clone());
-        Ok(Rc::new(CExpr(CExprF::Hole(h))))
+        self.solve().add_hole(h, (check_ty.clone(), l_check_ty));
+        Ok(Rc::new(CExpr(CExprF::Hole(h, l_check_ty))))
       }
       Uni => match &self.norm(check_ty)?.0 {
         ValF::Uni(tyl) => {
@@ -834,12 +851,12 @@ where
       Let(defs, body) => {
         self.defenvs.push(DefEnv::new());
         let ds = self.defs(defs);
-        let body = self.check(*body, check_ty)?;
+        let body = self.check(*body, check_ty, l_check_ty)?;
         self.defenvs.pop();
         Ok(Rc::new(CExpr(CExprF::Let(ds, body))))
       }
       Lam(tag, vis, i, ty, body) => match &self.norm(check_ty)?.0 {
-        ValF::Pi(ttag, tvis, ti, tty, tg, bty, _) => {
+        ValF::Pi(ttag, tvis, ti, tty, l_tty, tg, bty, l_bty) => {
           if tag != *ttag {
             return fail(self, "λ / role mismatch");
           }
@@ -849,12 +866,13 @@ where
           let (c_ty, l_ty) = self.check_ty(*ty)?;
           let ty = self.eval0(&c_ty);
           self.unify(&ty, tty)?;
+          self.solve().add_constraint(l_ty, LevelRel::Eq, *l_tty);
           self.varenvs.push(VarEnv::new());
           self.varenv().add(i, (tty.clone(), l_ty));
           let mut tg = tg.clone();
           tg.add_bind(*ti, Rc::new(Val(ValF::Neu(i, Vec::new()))));
           let bty = self.eval(&tg, bty);
-          let c_body = self.check(*body, &bty)?;
+          let c_body = self.check(*body, &bty, *l_bty)?;
           self.varenvs.pop();
           Ok(Rc::new(CExpr(CExprF::Lam(tag, vis, i, c_ty, c_body))))
         }
@@ -880,7 +898,7 @@ where
           if n0 != *tn0 {
             return fail(self, &format!("obj / name mismatch: {:?} ≟ {:?}", n0, tn0));
           }
-          let c_e0 = self.check(*e0, &tty0)?;
+          let c_e0 = self.check(*e0, &tty0, *l_tty0)?;
           let e0 = self.eval0(&c_e0);
           self.varenvs.push(VarEnv::new());
           self.varenv().add(*ti0, (tty0.clone(), *l_tty0));
@@ -894,7 +912,7 @@ where
             }
             // ty may depend on previous props
             let ty = self.eval(&tg, ty);
-            let c_e = self.check(*e, &ty)?;
+            let c_e = self.check(*e, &ty, *l_ty)?;
             let e = self.eval0(&c_e);
             self.varenv().add(*ti, (ty.clone(), *l_ty));
             tg.add_bind(*ti, e.clone());
@@ -911,8 +929,9 @@ where
         _ => fail(self, "obj / not Σ"),
       },
       _ => {
-        let (c_e, ty) = self.synth(e)?;
-        self.unify(&ty.0, check_ty)?;
+        let (c_e, (ty, l_ty)) = self.synth(e)?;
+        self.unify(&ty, check_ty)?;
+        self.solve().add_constraint(l_ty, LevelRel::Eq, l_check_ty);
         Ok(c_e)
       }
     }
@@ -920,7 +939,9 @@ where
 
   fn check_ty(&mut self, e: Expr<P, S>) -> Result<(RE<P, S>, LevelId)> {
     let li = self.fresh_level();
-    let e = self.check(e, &Rc::new(Val(ValF::Uni(li))))?;
+    let unil = self.fresh_level();
+    self.solve().add_constraint(li, LevelRel::Lt, unil);
+    let e = self.check(e, &Rc::new(Val(ValF::Uni(li))), unil)?;
     Ok((
       Rc::new(CExpr(CExprF::Ann(e, Rc::new(CExpr(CExprF::Uni(li)))))),
       li,
@@ -933,18 +954,18 @@ where
     fty: TyUni<P, S>,
   ) -> Result<(RE<P, S>, TyUni<P, S>)> {
     match &self.norm(&fty.0)?.0 {
-      ValF::Pi(ftag, Vis::Implicit, i, ty, fg, bty, l_bty) => {
+      ValF::Pi(ftag, Vis::Implicit, i, ty, l_ty, fg, bty, l_bty) => {
         // there should be implicit applications in between f and x
         let h = self.fresh_hole();
-        self.solve().add_hole(h, ty.clone());
+        self.solve().add_hole(h, (ty.clone(), *l_ty));
         let c_fh = Rc::new(CExpr(CExprF::App(
           ftag.clone(),
           Vis::Implicit,
           c_f,
-          Rc::new(CExpr(CExprF::Hole(h))),
+          Rc::new(CExpr(CExprF::Hole(h, *l_ty))),
         )));
         let mut fg = fg.clone();
-        fg.add_bind(*i, Rc::new(Val(ValF::Hole(h))));
+        fg.add_bind(*i, Rc::new(Val(ValF::Hole(h, *l_ty))));
         let bty = self.eval(&fg, bty);
         self.resolve_implicits(c_fh, (bty, *l_bty))
       }
@@ -989,7 +1010,7 @@ where
       Ann(tm, ty) => {
         let (c_ty, l_ty) = self.check_ty(*ty)?;
         let ty = self.eval0(&c_ty);
-        let c_tm = self.check(*tm, &ty)?;
+        let c_tm = self.check(*tm, &ty, l_ty)?;
         Ok((Rc::new(CExpr(CExprF::Ann(c_tm, c_ty))), (ty, l_ty)))
       }
       Uni => {
@@ -1039,7 +1060,7 @@ where
         self.varenvs.pop();
         Ok((
           Rc::new(CExpr(CExprF::Ann(
-            Rc::new(CExpr(CExprF::Pi(tag, vis, i, c_ty, c_bty, l_bty))),
+            Rc::new(CExpr(CExprF::Pi(tag, vis, i, c_ty, l_ty, c_bty, l_bty))),
             Rc::new(CExpr(CExprF::Uni(li))),
           ))),
           (Rc::new(Val(ValF::Uni(li))), unil),
@@ -1065,7 +1086,7 @@ where
             c_body,
           )))),
           (
-            Rc::new(Val(ValF::Pi(tag, vis, i, ty, Env::new(), bty, l_bty))),
+            Rc::new(Val(ValF::Pi(tag, vis, i, ty, l_ty, Env::new(), bty, l_bty))),
             unil,
           ),
         ))
@@ -1077,14 +1098,14 @@ where
           Vis::Implicit => (c_f, fty),
         };
         match &self.norm(&fty.0)?.0 {
-          ValF::Pi(ftag, fvis, i, ty, fg, bty, l_bty) => {
+          ValF::Pi(ftag, fvis, i, ty, l_ty, fg, bty, l_bty) => {
             if tag != *ftag {
               return fail(self, "app / role mismatch");
             }
             if vis != *fvis {
               return fail(self, "app / visibility mismatch");
             }
-            let c_x = self.check(*x, &ty)?;
+            let c_x = self.check(*x, &ty, *l_ty)?;
             let x = self.eval0(&c_x);
             let mut fg = fg.clone();
             fg.add_bind(*i, x);
