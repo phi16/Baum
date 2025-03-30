@@ -66,7 +66,7 @@ pub fn run(code: &str) -> Result<front::Program<TokenRange>, Vec<(ErrorPos, Stri
 #[cfg(test)]
 #[test]
 fn test_dev() {
-  let code = include_str!("../examples/hurkens.baum");
+  let code = include_str!("../examples/try.baum");
   match run(code) {
     Ok(_) => {}
     Err(es) => {

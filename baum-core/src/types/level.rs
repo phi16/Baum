@@ -13,7 +13,7 @@ pub enum LevelRef {
   Group(u32),
 }
 
-pub type Constraints = Vec<(LevelId, LevelRel, LevelId)>;
+pub type Constraints = Vec<(LevelId, LevelRel, LevelId, String)>;
 
 #[derive(Debug, Clone)]
 pub struct Solution {

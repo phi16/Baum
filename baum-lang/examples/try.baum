@@ -3,11 +3,15 @@ syntax 1> (x: A) → B = Π(x: A) B
 syntax 1> (x y: A) → B = Π(x y: A) B
 syntax 1> {x: A} → B = Π{x: A} B
 
-id (A: U) (a: A): A = a
+id1 (A: U) (a: A): A = a
+id2 (A: U) (a: A): A = a
+id3 (A: U) (a: A): A = a
 
 x = let
+  a = U
   b = U
-  in (id U b, id b U)
+  c = U
+  in (id1 a b, id2 b c, id3 a c)
 
 -- y = (λ(b) (id U b, id b U)) U
 -- z = (λ(b: U) (id U b, id b U)) U

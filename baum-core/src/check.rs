@@ -54,8 +54,8 @@ struct Solve<P, S> {
   holes: HashMap<HoleId, TyUni<P, S>>,
   hole_assign: HashMap<HoleId, RE<P, S>>,
   levels: HashSet<LevelId>,
-  level_constraints: Vec<(LevelId, LevelRel, LevelId)>,
-  constraints_accum: Option<Vec<(LevelId, LevelRel, LevelId)>>,
+  level_constraints: Constraints,
+  constraints_accum: Option<Constraints>,
 }
 
 impl<P, S> Solve<P, S> {
@@ -81,8 +81,8 @@ impl<P, S> Solve<P, S> {
     self.levels.insert(level);
   }
 
-  fn add_constraint(&mut self, l1: LevelId, rel: LevelRel, l2: LevelId) {
-    self.level_constraints.push((l1, rel, l2));
+  fn add_constraint(&mut self, l1: LevelId, rel: LevelRel, l2: LevelId, reason: String) {
+    self.level_constraints.push((l1, rel, l2, reason));
     self.constraints_accum = None;
   }
 }
@@ -233,6 +233,16 @@ where
     None
   }
 
+  fn lev_eq(&mut self, l1: LevelId, l2: LevelId, reason: String) {
+    self.solve().add_constraint(l1, LevelRel::Eq, l2, reason);
+  }
+  fn lev_le(&mut self, l1: LevelId, l2: LevelId, reason: String) {
+    self.solve().add_constraint(l1, LevelRel::Le, l2, reason);
+  }
+  fn lev_lt(&mut self, l1: LevelId, l2: LevelId, reason: String) {
+    self.solve().add_constraint(l1, LevelRel::Lt, l2, reason);
+  }
+
   fn fresh_hole(&mut self) -> HoleId {
     let id = HoleId(self.next_hole_id);
     self.next_hole_id += 1;
@@ -252,7 +262,9 @@ where
         LevelRef::Id(i2) => *i2,
         LevelRef::Group(g2) => ls[*g2 as usize],
       };
-      self.solve().add_constraint(l1, rel.clone(), l2);
+      self
+        .solve()
+        .add_constraint(l1, rel.clone(), l2, format!("from def"));
     }
     ls
   }
@@ -625,7 +637,7 @@ where
     // self.log(format!("unify: {} ≟ {}", self.ppv(v1), self.ppv(v2)));
     match (&v1.0, &v2.0) {
       (ValF::Hole(i1, l_h1), ValF::Hole(i2, l_h2)) if i1 == i2 => {
-        self.solve().add_constraint(*l_h1, LevelRel::Eq, *l_h2);
+        self.lev_eq(*l_h1, *l_h2, format!("Unify: Hole ({:?} ≟ {:?})", i1, i2));
         Ok(())
       }
       (ValF::Hole(i1, l_h1), _) if self.lookup_assign(*i1).is_some() => {
@@ -699,7 +711,7 @@ where
         self.unify(v1, &v2)
       }
       (ValF::Uni(i1), ValF::Uni(i2)) => {
-        self.solve().add_constraint(*i1, LevelRel::Eq, *i2);
+        self.lev_eq(*i1, *i2, format!("Unify: U"));
         Ok(())
       }
       (
@@ -713,7 +725,11 @@ where
           return fail(self, "Π / visibility mismatch");
         }
         self.unify(ty1, ty2)?;
-        self.solve().add_constraint(*l_ty1, LevelRel::Eq, *l_ty2);
+        self.lev_eq(
+          *l_ty1,
+          *l_ty2,
+          format!("Unify: Π-arg ({} ≟ {})", self.ppv(ty1), self.ppv(ty2)),
+        );
         let mut g1 = g1.clone();
         let mut g2 = g2.clone();
         let fi = self.fresh_id(&i1);
@@ -722,7 +738,11 @@ where
         let bty1 = self.eval(&g1, bty1);
         let bty2 = self.eval(&g2, bty2);
         self.unify(&bty1, &bty2)?;
-        self.solve().add_constraint(*l_bty1, LevelRel::Eq, *l_bty2);
+        self.lev_eq(
+          *l_bty1,
+          *l_bty2,
+          format!("Unify: Π-body ({} ≟ {})", self.ppv(&bty1), self.ppv(&bty2)),
+        );
         Ok(())
       }
       (ValF::Lam(t1, v1, i1, ty1, g1, bty1), ValF::Lam(t2, v2, i2, ty2, g2, bty2)) => {
@@ -750,11 +770,20 @@ where
         if t1 != t2 {
           return fail(self, "Σ / role mismatch");
         }
-        self.unify(ty01, ty02)?;
-        self.solve().add_constraint(*l_ty01, LevelRel::Eq, *l_ty02);
         if n01 != n02 {
           return fail(self, &format!("Σ / name mismatch: {:?} ≟ {:?}", n01, n02));
         }
+        self.unify(ty01, ty02)?;
+        self.lev_eq(
+          *l_ty01,
+          *l_ty02,
+          format!(
+            "Unify: Σ[{:?}] ({} ≟ {})",
+            n01,
+            self.ppv(&ty01),
+            self.ppv(&ty02)
+          ),
+        );
         let mut g1 = g1.clone();
         let mut g2 = g2.clone();
         let fi0 = self.fresh_id(&i01);
@@ -767,7 +796,16 @@ where
           let ty1 = self.eval(&g1, ty1);
           let ty2 = self.eval(&g2, ty2);
           self.unify(&ty1, &ty2)?;
-          self.solve().add_constraint(*l_ty1, LevelRel::Eq, *l_ty2);
+          self.lev_eq(
+            *l_ty1,
+            *l_ty2,
+            format!(
+              "Unify: Σ[{:?}] ({} ≟ {})",
+              n01,
+              self.ppv(&ty1),
+              self.ppv(&ty2)
+            ),
+          );
           let fi = self.fresh_id(&i01);
           g1.add_bind(*i1, Rc::new(Val(ValF::Neu(fi.clone(), Vec::new()))));
           g2.add_bind(*i2, Rc::new(Val(ValF::Neu(fi.clone(), Vec::new()))));
@@ -843,7 +881,7 @@ where
       Uni => match &self.norm(check_ty)?.0 {
         ValF::Uni(tyl) => {
           let tml = self.fresh_level();
-          self.solve().add_constraint(tml, LevelRel::Lt, *tyl);
+          self.lev_lt(tml, *tyl, format!("Check: U"));
           Ok(Rc::new(CExpr(CExprF::Uni(tml))))
         }
         _ => fail(self, "𝒰 / not 𝒰"),
@@ -866,7 +904,11 @@ where
           let (c_ty, l_ty) = self.check_ty(*ty)?;
           let ty = self.eval0(&c_ty);
           self.unify(&ty, tty)?;
-          self.solve().add_constraint(l_ty, LevelRel::Eq, *l_tty);
+          self.lev_eq(
+            l_ty,
+            *l_tty,
+            format!("Check: λ-arg ({} ≟ {})", self.ppv(&ty), self.ppv(tty)),
+          );
           self.varenvs.push(VarEnv::new());
           self.varenv().add(i, (tty.clone(), l_ty));
           let mut tg = tg.clone();
@@ -931,7 +973,11 @@ where
       _ => {
         let (c_e, (ty, l_ty)) = self.synth(e)?;
         self.unify(&ty, check_ty)?;
-        self.solve().add_constraint(l_ty, LevelRel::Eq, l_check_ty);
+        self.lev_eq(
+          l_ty,
+          l_check_ty,
+          format!("Check: Synth ({} ≟ {})", self.ppv(&ty), self.ppv(check_ty)),
+        );
         Ok(c_e)
       }
     }
@@ -940,7 +986,7 @@ where
   fn check_ty(&mut self, e: Expr<P, S>) -> Result<(RE<P, S>, LevelId)> {
     let li = self.fresh_level();
     let unil = self.fresh_level();
-    self.solve().add_constraint(li, LevelRel::Lt, unil);
+    self.lev_lt(li, unil, format!("Check: Type < Uni"));
     let e = self.check(e, &Rc::new(Val(ValF::Uni(li))), unil)?;
     Ok((
       Rc::new(CExpr(CExprF::Ann(e, Rc::new(CExpr(CExprF::Uni(li)))))),
@@ -1017,8 +1063,8 @@ where
         let tml = self.fresh_level();
         let tyl = self.fresh_level();
         let unil = self.fresh_level();
-        self.solve().add_constraint(tml, LevelRel::Lt, tyl);
-        self.solve().add_constraint(tyl, LevelRel::Lt, unil);
+        self.lev_lt(tml, tyl, format!("Synth: Uni (Tm < Ty)"));
+        self.lev_lt(tyl, unil, format!("Synth: Uni (Ty < Unil)"));
         Ok((
           (Rc::new(CExpr(CExprF::Ann(
             Rc::new(CExpr(CExprF::Uni(tml))),
@@ -1049,14 +1095,14 @@ where
       Pi(tag, vis, i, ty, bty) => {
         let li = self.fresh_level();
         let unil = self.fresh_level();
-        self.solve().add_constraint(li, LevelRel::Lt, unil);
+        self.lev_lt(li, unil, format!("Synth: Π < Uni"));
         let (c_ty, l_ty) = self.check_ty(*ty)?;
-        self.solve().add_constraint(l_ty, LevelRel::Le, li);
+        self.lev_le(l_ty, li, format!("Synth: Π-arg ≤ Π"));
         let ty = self.eval0(&c_ty);
         self.varenvs.push(VarEnv::new());
         self.varenv().add(i, (ty, l_ty));
         let (c_bty, l_bty) = self.check_ty(*bty)?;
-        self.solve().add_constraint(l_bty, LevelRel::Le, li);
+        self.lev_le(l_bty, li, format!("Synth: Π-body ≤ Π"));
         self.varenvs.pop();
         Ok((
           Rc::new(CExpr(CExprF::Ann(
@@ -1069,12 +1115,12 @@ where
       Lam(tag, vis, i, ty, body) => {
         let unil: LevelId = self.fresh_level();
         let (c_ty, l_ty) = self.check_ty(*ty)?;
-        self.solve().add_constraint(l_ty, LevelRel::Le, unil);
+        self.lev_le(l_ty, unil, format!("Synth: λ-arg-ty ≤ Uni"));
         let ty = self.eval0(&c_ty);
         self.varenvs.push(VarEnv::new());
         self.varenv().add(i, (ty.clone(), l_ty));
         let (c_body, (bty, l_bty)) = self.synth(*body)?;
-        self.solve().add_constraint(l_bty, LevelRel::Le, unil);
+        self.lev_le(l_bty, unil, format!("Synth: λ-body-ty ≤ Uni"));
         let bty = self.quote(&bty.into());
         self.varenvs.pop();
         Ok((
@@ -1122,7 +1168,7 @@ where
       Sigma(tag, props) => {
         let li = self.fresh_level();
         let unil = self.fresh_level();
-        self.solve().add_constraint(li, LevelRel::Lt, unil);
+        self.lev_le(li, unil, format!("Synth: Σ < Uni"));
         if props.is_empty() {
           return Ok((
             Rc::new(CExpr(CExprF::Ann(
@@ -1135,14 +1181,14 @@ where
         let mut pi = props.into_iter();
         let (n0, i0, ty0) = pi.next().unwrap();
         let (c_ty0, l_ty0) = self.check_ty(*ty0)?;
-        self.solve().add_constraint(l_ty0, LevelRel::Le, li);
+        self.lev_le(l_ty0, li, format!("Synth: Σ[{:?}] ≤ Σ", n0));
         let ty0 = self.eval0(&c_ty0);
         self.varenvs.push(VarEnv::new());
         self.varenv().add(i0, (ty0, l_ty0));
         let mut c_props = Vec::new();
         for (name, i, ty) in pi {
           let (c_ty, l_ty) = self.check_ty(*ty)?;
-          self.solve().add_constraint(l_ty, LevelRel::Le, li);
+          self.lev_le(l_ty, li, format!("Synth: Σ[{:?}] ≤ Σ", name));
           let ty = self.eval0(&c_ty);
           self.varenv().add(i, (ty, l_ty));
           c_props.push((name, i, c_ty, l_ty));
@@ -1168,12 +1214,18 @@ where
         let (n0, e0) = pi.next().unwrap();
         let i0 = self.fresh_id_new();
         let (c_e0, (ty0, l_ty0)) = self.synth(*e0)?;
-        self.solve().add_constraint(l_ty0, LevelRel::Le, unil);
+        self.lev_le(l_ty0, unil, format!("Synth: Obj[{:?}]-ty ≤ Uni", n0));
         let mut tys = Vec::new();
         let mut c_props = Vec::new();
         for (name, e) in pi {
           let (c_e, (ty, l_ty)) = self.synth(*e)?;
-          self.solve().add_constraint(l_ty, LevelRel::Le, unil);
+          self.solve().add_constraint(
+            l_ty,
+            LevelRel::Le,
+            unil,
+            format!("Synth-Obj[{:?}] Ty<Unil", name),
+          );
+          self.lev_le(l_ty, unil, format!("Synth: Obj[{:?}]-ty ≤ Uni", name));
           let ty = self.quote(&ty.into());
           let i = self.fresh_id_new();
           tys.push((name.clone(), i, ty, l_ty));
@@ -1262,11 +1314,11 @@ where
       let constraints = solve.constraints_accum.unwrap();
       eprintln!("- levels: {:?}", solve.levels);
       eprintln!("- constraints:");
-      for (i1, rel, i2) in &constraints {
+      for (i1, rel, i2, reason) in &constraints {
         match rel {
-          LevelRel::Eq => eprintln!("  - {:?} = {:?}", i1, i2),
-          LevelRel::Le => eprintln!("  - {:?} ≤ {:?}", i1, i2),
-          LevelRel::Lt => eprintln!("  - {:?} < {:?}", i1, i2),
+          LevelRel::Eq => eprintln!("  - {:?} = {:?} ({})", i1, i2, reason),
+          LevelRel::Le => eprintln!("  - {:?} ≤ {:?} ({})", i1, i2, reason),
+          LevelRel::Lt => eprintln!("  - {:?} < {:?} ({})", i1, i2, reason),
         }
       }
       // TODO: extract essential levels

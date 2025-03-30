@@ -20,7 +20,7 @@ pub fn solve_levels(constraints: &Constraints, scope: &HashSet<LevelId>) -> Resu
   }
   let mut constrs = Vec::new();
   let mut has_lt = false;
-  for (i1, rel, i2) in constraints {
+  for (i1, rel, i2, reason) in constraints {
     let g1 = level_map
       .entry(*i1)
       .or_insert(uf.insert(Default::default()))
@@ -34,10 +34,10 @@ pub fn solve_levels(constraints: &Constraints, scope: &HashSet<LevelId>) -> Resu
         uf.union(g1, g2);
       }
       LevelRel::Le => {
-        constrs.push((g1, Edge::Le, g2));
+        constrs.push((g1, Edge::Le, g2, reason));
       }
       LevelRel::Lt => {
-        constrs.push((g1, Edge::Lt, g2));
+        constrs.push((g1, Edge::Lt, g2, reason));
         has_lt = true;
       }
     }
@@ -53,12 +53,12 @@ pub fn solve_levels(constraints: &Constraints, scope: &HashSet<LevelId>) -> Resu
     eprintln!("  - #{:?} => {:?}", g.0, g.1);
   }
   eprintln!("- group constraints:");
-  for (g1, rel, g2) in &constrs {
+  for (g1, rel, g2, reason) in &constrs {
     let g1 = uf.find(*g1);
     let g2 = uf.find(*g2);
     match rel {
-      Edge::Le => eprintln!("  - #{:?} ≤ #{:?}", g1, g2),
-      Edge::Lt => eprintln!("  - #{:?} < #{:?}", g1, g2),
+      Edge::Le => eprintln!("  - #{:?} ≤ #{:?} ({})", g1, g2, reason),
+      Edge::Lt => eprintln!("  - #{:?} < #{:?} ({})", g1, g2, reason),
     }
   }
 
@@ -86,7 +86,7 @@ pub fn solve_levels(constraints: &Constraints, scope: &HashSet<LevelId>) -> Resu
       .collect(),
     constraints: constraints
       .iter()
-      .filter_map(|(l1, rel, l2)| {
+      .filter_map(|(l1, rel, l2, _)| {
         let g1 = level_map.get(l1).unwrap();
         let g2 = level_map.get(l2).unwrap();
         let g1 = uf.find(*g1);
@@ -123,7 +123,7 @@ pub fn solve_levels(constraints: &Constraints, scope: &HashSet<LevelId>) -> Resu
   let mut verts = Vec::new();
   let mut vert_map = HashMap::new();
   let mut next_node_index: u32 = 0;
-  for (g1, rel, g2) in &constrs {
+  for (g1, rel, g2, _) in &constrs {
     let n1 = *vert_map.entry(uf.find(*g1)).or_insert_with_key(|k| {
       let idx = next_node_index;
       verts.push(*k);
