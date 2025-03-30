@@ -19,5 +19,5 @@ pub type Constraints = Vec<(LevelId, LevelRel, LevelId, String)>;
 pub struct Solution {
   pub groups: u32,
   pub scope: Vec<(LevelId, u32)>,
-  pub constraints: Vec<(LevelRef, LevelRel, LevelRef)>,
+  pub constraints: Vec<(LevelRef, LevelRel, LevelRef, String)>,
 }

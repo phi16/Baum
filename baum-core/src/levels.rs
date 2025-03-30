@@ -86,7 +86,7 @@ pub fn solve_levels(constraints: &Constraints, scope: &HashSet<LevelId>) -> Resu
       .collect(),
     constraints: constraints
       .iter()
-      .filter_map(|(l1, rel, l2, _)| {
+      .filter_map(|(l1, rel, l2, reason)| {
         let g1 = level_map.get(l1).unwrap();
         let g2 = level_map.get(l2).unwrap();
         let g1 = uf.find(*g1);
@@ -109,6 +109,7 @@ pub fn solve_levels(constraints: &Constraints, scope: &HashSet<LevelId>) -> Resu
           } else {
             LevelRef::Id(*l2)
           },
+          reason.clone(),
         ))
       })
       .collect(),

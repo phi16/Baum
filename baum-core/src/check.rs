@@ -249,11 +249,11 @@ where
     id
   }
 
-  fn fresh_levels(&mut self, sol: &Solution) -> Vec<LevelId> {
+  fn fresh_levels(&mut self, i: DefId, sol: &Solution) -> Vec<LevelId> {
     let ls = (0..sol.groups)
       .map(|_| self.fresh_level())
       .collect::<Vec<_>>();
-    for (r1, rel, r2) in &sol.constraints {
+    for (r1, rel, r2, reason) in &sol.constraints {
       let l1 = match r1 {
         LevelRef::Id(i1) => *i1,
         LevelRef::Group(g1) => ls[*g1 as usize],
@@ -264,7 +264,7 @@ where
       };
       self
         .solve()
-        .add_constraint(l1, rel.clone(), l2, format!("from def"));
+        .add_constraint(l1, rel.clone(), l2, format!("{:?} {}", i, reason));
     }
     ls
   }
@@ -463,7 +463,7 @@ where
       Let(defs, body) => {
         let mut g = g.clone();
         for (i, sol, e) in defs {
-          let ls = self.fresh_levels(&sol);
+          let ls = self.fresh_levels(*i, &sol);
           let ls_m = self.map_solution(&sol, &ls);
           let mut subst = SubstEnv::from_levels(ls_m, self);
           let e = subst.subst_e(e).into();
@@ -964,7 +964,7 @@ where
       },
       Def(i) => match self.lookup_def(i).cloned() {
         Some((sol, _, ty)) => {
-          let ls = self.fresh_levels(&sol);
+          let ls = self.fresh_levels(i, &sol);
           let ls_m = self.map_solution(&sol, &ls);
           let mut subst = SubstEnv::from_levels(ls_m, self);
           let ty = subst.subst_v(&ty).into();
@@ -998,7 +998,7 @@ where
         self.defenvs.pop();
         let mut def_map = HashMap::new();
         for (i, sol, e) in &ds {
-          let ls = self.fresh_levels(&sol);
+          let ls = self.fresh_levels(*i, &sol);
           let ls_m = self.map_solution(&sol, &ls);
           let mut subst = SubstEnv::from_levels(ls_m, self);
           let e = subst.subst_e(e).into();
