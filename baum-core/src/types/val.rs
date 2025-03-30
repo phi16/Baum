@@ -5,24 +5,20 @@ use std::rc::Rc;
 
 #[derive(Debug, Clone)]
 pub enum CExprF<PTag, STag, E> {
-  Hole(HoleId, LevelId),
+  Hole(HoleId),
   Bind(BindId),
   Def(DefId, Vec<LevelId>),
   Ann(E, E),
   Uni(LevelId),
   Let(Vec<(DefId, Solution, E)>, E),
 
-  Pi(PTag, Vis, BindId, E, LevelId, E, LevelId),
+  Pi(PTag, Vis, BindId, E, E),
   Lam(PTag, Vis, BindId, E, E),
   App(PTag, Vis, E, E),
 
   Sigma0(STag),
   Obj0(STag),
-  Sigma(
-    STag,
-    (NameId, BindId, E, LevelId),
-    Vec<(NameId, BindId, E, LevelId)>,
-  ),
+  Sigma(STag, (NameId, BindId, E), Vec<(NameId, BindId, E)>),
   Obj(STag, (NameId, E), Vec<(NameId, E)>),
   Prop(STag, E, NameId),
 }
@@ -40,22 +36,17 @@ pub enum ContF<PTag, STag, V> {
 
 #[derive(Debug, Clone)]
 pub enum ValF<PTag, STag, V, E, D> {
-  Hole(HoleId, LevelId),
+  Hole(HoleId),
   Neu(BindId, Vec<ContF<PTag, STag, V>>),
   Lazy(DefId, Vec<LevelId>, Vec<ContF<PTag, STag, V>>),
   Uni(LevelId),
 
-  Pi(PTag, Vis, BindId, V, LevelId, E, D, LevelId),
+  Pi(PTag, Vis, BindId, V, E, D),
   Lam(PTag, Vis, BindId, V, E, D),
 
   Sigma0(STag),
   Obj0(STag),
-  Sigma(
-    STag,
-    (NameId, BindId, V, LevelId),
-    E,
-    Vec<(NameId, BindId, D, LevelId)>,
-  ),
+  Sigma(STag, (NameId, BindId, V), E, Vec<(NameId, BindId, D)>),
   Obj(STag, (NameId, V), Vec<(NameId, V)>),
 }
 
@@ -100,5 +91,3 @@ pub type Conts<P, S> = Vec<ContF<P, S, RV<P, S>>>;
 
 pub type Term<P, S> = RV<P, S>;
 pub type Type<P, S> = RV<P, S>;
-
-pub type TyUni<P, S> = (Type<P, S>, LevelId);

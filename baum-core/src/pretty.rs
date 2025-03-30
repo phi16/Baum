@@ -139,17 +139,17 @@ impl<'a> Pretty<'a> {
 
   fn c<P, S>(&mut self, e: &CExpr<P, S>) -> &mut Self {
     match &e.0 {
-      CExprF::Hole(i, _) => self.hi(i),
+      CExprF::Hole(i) => self.hi(i),
       CExprF::Bind(i) => self.i(i),
       CExprF::Def(i, ls) => self.di(i),
       CExprF::Ann(v, t) => self.s("(").c(v).s(" of ").c(t).s(")"),
       CExprF::Uni(i) => self.s("𝒰").li(i),
       CExprF::Let(defs, e) => self.s("let").open().defs_c(defs).close().s("in ").c(e),
 
-      CExprF::Pi(_, Vis::Explicit, i, t, _, e, _) => self.s("Π(").i(i).s(": ").c(t).s(") ").c(e),
+      CExprF::Pi(_, Vis::Explicit, i, t, e) => self.s("Π(").i(i).s(": ").c(t).s(") ").c(e),
       CExprF::Lam(_, Vis::Explicit, i, t, e) => self.s("λ(").i(i).s(": ").c(t).s(") ").c(e),
       CExprF::App(_, Vis::Explicit, e1, e2) => match e2.0 {
-        CExprF::Hole(_, _)
+        CExprF::Hole(_)
         | CExprF::Bind(_)
         | CExprF::Def(_, _)
         | CExprF::Uni(_)
@@ -160,15 +160,15 @@ impl<'a> Pretty<'a> {
         _ => self.c(e1).s(" (").c(e2).s(")"),
       },
 
-      CExprF::Pi(_, Vis::Implicit, i, t, _, e, _) => self.s("Π{").i(i).s(": ").c(t).s("} ").c(e),
+      CExprF::Pi(_, Vis::Implicit, i, t, e) => self.s("Π{").i(i).s(": ").c(t).s("} ").c(e),
       CExprF::Lam(_, Vis::Implicit, i, t, e) => self.s("λ{").i(i).s(": ").c(t).s("} ").c(e),
       CExprF::App(_, Vis::Implicit, e1, e2) => self.c(e1).s(" {").c(e2).s("}"),
 
       CExprF::Sigma0(_) => self.s("Σ{}"),
       CExprF::Obj0(_) => self.s("{}"),
-      CExprF::Sigma(_, (n0, i0, ty0, _), es) => {
+      CExprF::Sigma(_, (n0, i0, ty0), es) => {
         self.s("Σ{").name(n0).s("~").i(i0).s(": ").c(ty0);
-        for (name, bind, t, _) in es {
+        for (name, bind, t) in es {
           self.s(", ").name(name).s("~").i(bind).s(": ").c(t);
         }
         self.s("}")
@@ -242,26 +242,22 @@ impl<'a> Pretty<'a> {
 
   fn v<P, S>(&mut self, v: &Val<P, S>) -> &mut Self {
     match &v.0 {
-      ValF::Hole(i, _) => self.hi(i),
+      ValF::Hole(i) => self.hi(i),
       ValF::Neu(i, ks) => self.i(i).ks(ks),
       ValF::Lazy(i, ls, ks) => self.di(i).ks(ks),
       ValF::Uni(i) => self.s("𝒰").li(i),
 
-      ValF::Pi(_, Vis::Explicit, i, t, _, g, e, _) => {
-        self.s("Π(").i(i).s(": ").v(t).s(") ").g(g).c(e)
-      }
+      ValF::Pi(_, Vis::Explicit, i, t, g, e) => self.s("Π(").i(i).s(": ").v(t).s(") ").g(g).c(e),
       ValF::Lam(_, Vis::Explicit, i, t, g, e) => self.s("λ(").i(i).s(": ").v(t).s(") ").g(g).c(e),
 
-      ValF::Pi(_, Vis::Implicit, i, t, _, g, e, _) => {
-        self.s("Π{").i(i).s(": ").v(t).s("} ").g(g).c(e)
-      }
+      ValF::Pi(_, Vis::Implicit, i, t, g, e) => self.s("Π{").i(i).s(": ").v(t).s("} ").g(g).c(e),
       ValF::Lam(_, Vis::Implicit, i, t, g, e) => self.s("λ{").i(i).s(": ").v(t).s("} ").g(g).c(e),
 
       ValF::Sigma0(_) => self.s("Σ{}"),
       ValF::Obj0(_) => self.s("{}"),
-      ValF::Sigma(_, (n0, i0, ty0, _), g, es) => {
+      ValF::Sigma(_, (n0, i0, ty0), g, es) => {
         self.s("Σ{").name(n0).s("~").i(i0).s(": ").v(ty0).g(g);
-        for (name, i, ty, _) in es {
+        for (name, i, ty) in es {
           self.s(", ").name(name).s("~").i(i).s(": ").c(ty);
         }
         self.s("}")
