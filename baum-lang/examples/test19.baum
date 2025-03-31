@@ -114,43 +114,43 @@ nestedDependent {a: U} {b: a → U} {c: (x: a) → b x → U}
   (p: Σ(x: a, Σ(y: b x, c x y))): Σ(y: b p.0, Σ(z: c p.0 y, a)) 
   = (p.1.0, (p.1.1, p.0))
 
-mkNamedPair {a b: U} (x: a) (y: b): Σ{x: a, y: b} = {x: x, y: y}
+mkNamedPair {a b: U} (x: a) (y: b): Σ{x: a, y: b} = {x = x, y = y}
 
-mkNamedTriple {a b c: U} (x: a) (y: b) (z: c): Σ{x: a, y: b, z: c} = {x: x, y: y, z: z}
+mkNamedTriple {a b c: U} (x: a) (y: b) (z: c): Σ{x: a, y: b, z: c} = {x = x, y = y, z = z}
 
 projX {a b: U} (p: Σ{x: a, y: b}): a = p.x
 
 projY {a b: U} (p: Σ{x: a, y: b}): b = p.y
 
-swapNamed {a b: U} (p: Σ{x: a, y: b}): Σ{x: b, y: a} = {x: p.y, y: p.x}
+swapNamed {a b: U} (p: Σ{x: a, y: b}): Σ{x: b, y: a} = {x = p.y, y = p.x}
 
 emptyObject: Σ{} = {}
 
 mkFourTuple {a b c d: U} (w: a) (x: b) (y: c) (z: d): Σ{w: a, x: b, y: c, z: d} 
-  = {w: w, x: x, y: y, z: z}
+  = {w = w, x = x, y = y, z = z}
 
 projFourX {a b c d: U} (p: Σ{w: a, x: b, y: c, z: d}): b = p.x
 
 nestedNamed {a b c: U} (p: Σ{x: a, y: Σ{a: b, b: c}}): Σ{first: a, second: c} 
-  = {first: p.x, second: p.y.b}
+  = {first = p.x, second = p.y.b}
 
 mergeObjects {a b c: U} (p: Σ{x: a, y: b}) (q: Σ{z: c}): Σ{x: a, y: b, z: c} 
-  = {x: p.x, y: p.y, z: q.z}
+  = {x = p.x, y = p.y, z = q.z}
 
-duplicateNamed {a: U} (x: a): Σ{x: a, y: a} = {x: x, y: x}
+duplicateNamed {a: U} (x: a): Σ{x: a, y: a} = {x = x, y = x}
 
 mkNestedPair {a b c: U} (x: a) (y: b) (z: c): Σ{x: a, yz: Σ(y: b, z: c)} 
-  = {x: x, yz: (y, z)}
+  = {x = x, yz = (y, z)}
 
 projYZ {a b c: U} (p: Σ{x: a, yz: Σ(y: b, z: c)}): Σ(y: b, z: c) = p.yz
 
 assocPair {a b c: U} (p: Σ(a, Σ(b, c))): Σ(Σ(a, b), c) = ((p.0, p.1.0), p.1.1)
 
 assocNamed {a b c: U} (p: Σ{x: a, yz: Σ{y: b, z: c}}): Σ{xy: Σ{x: a, y: b}, z: c} 
-  = {xy: {x: p.x, y: p.yz.y}, z: p.yz.z}
+  = {xy = {x = p.x, y = p.yz.y}, z = p.yz.z}
 
 revAssocNamed {a b c: U} (p: Σ{xy: Σ{x: a, y: b}, z: c}): Σ{x: a, yz: Σ{y: b, z: c}} 
-  = {x: p.xy.x, yz: {y: p.xy.y, z: p.z}}
+  = {x = p.xy.x, yz = {y = p.xy.y, z = p.z}}
 
 -- trivialDependent {a: U} (x: a): Σ(y: a, y = x) = (x, refl)
 
@@ -202,19 +202,19 @@ assocDepTriple {a: U} {b: a → U} {c: (x: a) → b x → U} {d: (x: a) → (y: 
   = ((p.0, p.1), p.2.0, p.2.1)
 
 -- 名前付きオブジェクトの 3 要素バージョン
-namedTriple {a b c: U} (x: a) (y: b) (z: c): Σ{x: a, y: b, z: c} = {x: x, y: y, z: z}
+namedTriple {a b c: U} (x: a) (y: b) (z: c): Σ{x: a, y: b, z: c} = {x = x, y = y, z = z}
 
 projNamedFirst {a b c: U} (p: Σ{x: a, y: b, z: c}): a = p.x
 projNamedSecond {a b c: U} (p: Σ{x: a, y: b, z: c}): b = p.y
 projNamedThird {a b c: U} (p: Σ{x: a, y: b, z: c}): c = p.z
 
-swapNamedTriple {a b c: U} (p: Σ{x: a, y: b, z: c}): Σ{x: c, y: b, z: a} = {x: p.z, y: p.y, z: p.x}
+swapNamedTriple {a b c: U} (p: Σ{x: a, y: b, z: c}): Σ{x: c, y: b, z: a} = {x = p.z, y = p.y, z = p.x}
 
 assocNamedTriple {a b c d: U} (p: Σ{x: a, y: b, z: Σ{w: c, v: d}}): Σ{xw: Σ{x: a, y: b}, v: c, z: d} 
-  = {xw: {x: p.x, y: p.y}, v: p.z.w, z: p.z.v}
+  = {xw = {x = p.x, y = p.y}, v = p.z.w, z = p.z.v}
 
 nestedNamedTriple {a b c d: U} (p: Σ{x: a, yz: Σ{y: b, z: Σ{w: c, v: d}}}): Σ{x: a, y: b, wv: Σ{w: c, v: d}} 
-  = {x: p.x, y: p.yz.y, wv: {w: p.yz.z.w, v: p.yz.z.v}}
+  = {x = p.x, y = p.yz.y, wv = {w = p.yz.z.w, v = p.yz.z.v}}
 
 mergeNamedObjects {a b c d: U} (p: Σ{x: a, y: b}) (q: Σ{z: c, w: d}): Σ{x: a, y: b, z: c, w: d} 
-  = {x: p.x, y: p.y, z: q.z, w: q.w}
+  = {x = p.x, y = p.y, z = q.z, w = q.w}
