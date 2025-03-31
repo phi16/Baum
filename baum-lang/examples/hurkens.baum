@@ -9,13 +9,13 @@ syntax 0 x of A = id {A} x
 P (A: U) = A → U
 u = (X: U) → (P (P X) → X) → P (P X)
 
--- These successfully fail:
-τ1 = λ(t: P (P u)) λ(X: U, f: P (P X) → X, p: P X) t λ(x: u) p (f (x X f))
-τ2 = λ(t: P (P u)) (λ(X: U, f, p: P X) t λ(x) p (f (x X f))) of u
--- But these accidentally pass:
-τ3 = λ(t: P (P u)) (λ(X: U, f: P (P _) → _, p) t λ(x) p (f (x X f))) of u
-τ4 = λ(t: P (P u)) (λ(X: U, f, p) t λ(x) p (f (x X f))) of u
-τ5 (t: P (P u)): u = λ(X, f, p) t λ(x) p (f (x X f))
+τ = λ(t: P (P u)) (λ(X: U, f: P (P X) → X, p: P X) t λ(x: u) p (f (x X f))) of u
+-- τ = λ(t: P (P u)) λ(X: U, f: P (P X) → X, p: P X) t λ(x: u) p (f (x X f))
+-- τ = λ(t: P (P u)) (λ(X: U, f, p: P X) t λ(x) p (f (x X f))) of u
+-- τ = λ(t: P (P u)) (λ(X: U, f: P (P X) → X, p) t λ(x) p (f (x X f))) of u
+-- τ = λ(t: P (P u)) (λ(X: U, f: P (P _) → X, p) t λ(x) p (f (x X f))) of u
+-- τ = λ(t: P (P u)) (λ(X: U, f, p) t λ(x) p (f (x X f))) of u
+-- τ (t: P (P u)): u = λ(X, f, p) t λ(x) p (f (x X f))
 
 -- τ (t: P (P u)): u = λ(X, f, p) t λ(x) p (f (x X f))
 -- σ (s: u): P (P u) = s u λ(t) τ t

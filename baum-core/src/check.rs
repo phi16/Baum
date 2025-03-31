@@ -1209,7 +1209,6 @@ where
       }
       // TODO: extract essential levels
       let scope = solve.levels;
-      let scope = HashSet::new();
       // ^TODO: pickup all constraints in solve_levels
       let level_solution = solve_levels(&constraints, &scope)
         .map_err(|e| Error::Loc(format!("Failed to solve level constraints: {}", e)))?;
