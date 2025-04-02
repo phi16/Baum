@@ -1166,56 +1166,51 @@ where
     }
   }
 
-  fn resolve(
+  fn resolve_holes(
     &mut self,
-    solve: Solve<P, S>,
-  ) -> Result<(HashMap<HoleId, (RE<P, S>, RV<P, S>)>, Solution)> {
-    eprintln!("[Resolve]");
+    holes: HashMap<HoleId, Type<P, S>>,
+    hole_assign: HashMap<HoleId, RE<P, S>>,
+  ) -> Result<HashMap<HoleId, (RE<P, S>, RV<P, S>)>> {
+    eprintln!("[Resolve Holes]");
+    /* eprintln!("- holes:");
+    for (i, ty) in &solve.holes {
+      eprintln!("  - {:?}: {}", i, self.ppv(ty));
+    }
+    eprintln!("- assignments:");
+    for (i, tm) in &solve.hole_assign {
+      eprintln!("  - {:?} = {}", i, self.ppe(tm));
+    } */
 
-    let hole_map = {
-      /* eprintln!("- holes:");
-      for (i, ty) in &solve.holes {
-        eprintln!("  - {:?}: {}", i, self.ppv(ty));
+    for (j, _) in holes {
+      if !hole_assign.contains_key(&j) {
+        return Err(Error::Loc(format!("Unresolved hole: {:?}", j)));
       }
-      eprintln!("- assignments:");
-      for (i, tm) in &solve.hole_assign {
-        eprintln!("  - {:?} = {}", i, self.ppe(tm));
-      } */
+    }
+    // TODO: resolve hole-in-hole constraints at this point
+    let mut hole_map = HashMap::new();
+    for (i, e) in hole_assign {
+      let v = self.eval0(&e);
+      hole_map.insert(i, (e, v));
+    }
+    Ok(hole_map)
+  }
 
-      for (j, _) in &solve.holes {
-        if !solve.hole_assign.contains_key(j) {
-          return Err(Error::Loc(format!("Unresolved hole: {:?}", j)));
-        }
+  fn resolve_levels(
+    &mut self,
+    constraints: Vec<(LevelId, LevelRel, LevelId, String)>,
+    scope: HashSet<LevelId>,
+  ) -> Result<Solution> {
+    /* eprintln!("- scope: {:?}", scope);
+    eprintln!("- constraints:");
+    for (i1, rel, i2, reason) in &constraints {
+      match rel {
+        LevelRel::Eq => eprintln!("  - {:?} = {:?} ({})", i1, i2, reason),
+        LevelRel::Le => eprintln!("  - {:?} ≤ {:?} ({})", i1, i2, reason),
+        LevelRel::Lt => eprintln!("  - {:?} < {:?} ({})", i1, i2, reason),
       }
-      // TODO: resolve hole-in-hole constraints at this point
-      let mut hole_map = HashMap::new();
-      for (i, e) in solve.hole_assign {
-        let v = self.eval0(&e);
-        hole_map.insert(i, (e, v));
-      }
-      hole_map
-    };
-
-    let level_solution = {
-      let constraints = solve.constraints_accum.unwrap();
-      eprintln!("- levels: {:?}", solve.levels);
-      eprintln!("- constraints:");
-      for (i1, rel, i2, reason) in &constraints {
-        match rel {
-          LevelRel::Eq => eprintln!("  - {:?} = {:?} ({})", i1, i2, reason),
-          LevelRel::Le => eprintln!("  - {:?} ≤ {:?} ({})", i1, i2, reason),
-          LevelRel::Lt => eprintln!("  - {:?} < {:?} ({})", i1, i2, reason),
-        }
-      }
-      // TODO: extract essential levels
-      let scope = solve.levels;
-      // ^TODO: pickup all constraints in solve_levels
-      let level_solution = solve_levels(&constraints, &scope)
-        .map_err(|e| Error::Loc(format!("Failed to solve level constraints: {}", e)))?;
-      level_solution
-    };
-
-    Ok((hole_map, level_solution))
+    } */
+    solve_levels(&constraints, &scope)
+      .map_err(|e| Error::Loc(format!("Failed to solve level constraints: {}", e)))
   }
 
   fn def(&mut self, e: Box<Expr<P, S>>) -> Result<(Solution, RE<P, S>, Type<P, S>)> {
@@ -1260,7 +1255,7 @@ where
     }
     let solve = self.solves.pop().unwrap();
     let (ce, ty) = res?;
-    let (hole_map, level_solution) = self.resolve(solve)?;
+    let hole_map = self.resolve_holes(solve.holes, solve.hole_assign)?;
 
     // eprintln!("- From");
     // eprintln!("  - {}: {}", self.ppe(&ce), self.ppv(&ty));
@@ -1278,7 +1273,10 @@ where
         )));
       }
     }
-    // TODO: scope check?
+    // TODO: scope check in hole?
+
+    let scope = traverse_levels(&ce);
+    let level_solution = self.resolve_levels(solve.constraints_accum.unwrap(), scope)?;
 
     Ok((level_solution, ce, ty))
   }
@@ -1306,7 +1304,13 @@ where
         Ok((sol, c_expr, ty)) => {
           eprintln!(
             "{}",
-            format!("    {} = {}", self.def_symbols[&id], self.ppe(&c_expr)).black()
+            format!(
+              "    {} = [{:?}] {}",
+              self.def_symbols[&id],
+              sol.scope.len(),
+              self.ppe(&c_expr)
+            )
+            .black()
           );
           // let tm = self.eval0(&c_expr);
           // let dtm = self.deep_norm(&tm).unwrap();

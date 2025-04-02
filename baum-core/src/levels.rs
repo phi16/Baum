@@ -1,10 +1,85 @@
 use crate::types::common::LevelId;
 use crate::types::level::*;
-use petgraph::{algo::bellman_ford::find_negative_cycle, prelude::NodeIndex, Graph};
+use crate::types::val::*;
+use petgraph::{
+  algo::bellman_ford::{bellman_ford, find_negative_cycle},
+  prelude::NodeIndex,
+  Graph,
+};
 use std::collections::{HashMap, HashSet};
 use union_find::{QuickFindUf, UnionBySize, UnionFind};
 
 type Result<T> = std::result::Result<T, String>;
+
+pub fn traverse_levels<P, S>(e: &RE<P, S>) -> HashSet<LevelId> {
+  fn rec<P, S>(e: &RE<P, S>, bounded: &HashSet<LevelId>, scope: &mut HashSet<LevelId>) {
+    use CExprF::*;
+    match &e.0 {
+      Hole(_) => {}
+      Bind(_) => {}
+      Def(_, ls) => {
+        ls.iter().for_each(|l| {
+          if !bounded.contains(l) {
+            scope.insert(*l);
+          }
+        });
+      }
+      Ann(e1, e2) => {
+        rec(e1, bounded, scope);
+        rec(e2, bounded, scope);
+      }
+      Uni(l) => {
+        if !bounded.contains(l) {
+          scope.insert(*l);
+        }
+      }
+      Let(defs, body) => {
+        for (_, sol, e) in defs {
+          let mut b = bounded.clone();
+          sol.scope.iter().for_each(|(l, _)| {
+            b.insert(*l);
+          });
+          rec(e, &b, scope);
+        }
+        rec(body, bounded, scope);
+      }
+
+      Pi(_, _, _, ty, bty) => {
+        rec(ty, bounded, scope);
+        rec(bty, bounded, scope);
+      }
+      Lam(_, _, _, ty, body) => {
+        rec(ty, bounded, scope);
+        rec(body, bounded, scope);
+      }
+      App(_, _, e1, e2) => {
+        rec(e1, bounded, scope);
+        rec(e2, bounded, scope);
+      }
+
+      Sigma0(_) => (),
+      Obj0(_) => (),
+      Sigma(_, (_, _, ty0), props) => {
+        rec(ty0, bounded, scope);
+        for (_, _, e) in props {
+          rec(e, bounded, scope);
+        }
+      }
+      Obj(_, (_, e0), props) => {
+        rec(e0, bounded, scope);
+        for (_, e) in props {
+          rec(e, bounded, scope);
+        }
+      }
+      Prop(_, e, _) => {
+        rec(e, bounded, scope);
+      }
+    }
+  }
+  let mut scope = HashSet::new();
+  rec(e, &HashSet::new(), &mut scope);
+  scope
+}
 
 enum Edge {
   Le,
@@ -48,7 +123,7 @@ pub fn solve_levels(constraints: &Constraints, scope: &HashSet<LevelId>) -> Resu
     let g = uf.find(*i);
     groups.entry(g).or_insert_with(Vec::new).push(l);
   }
-  eprintln!("- groups:");
+  /* eprintln!("- groups:");
   for g in groups {
     eprintln!("  - #{:?} => {:?}", g.0, g.1);
   }
@@ -60,7 +135,7 @@ pub fn solve_levels(constraints: &Constraints, scope: &HashSet<LevelId>) -> Resu
       Edge::Le => eprintln!("  - #{:?} ≤ #{:?} ({})", g1, g2, reason),
       Edge::Lt => eprintln!("  - #{:?} < #{:?} ({})", g1, g2, reason),
     }
-  }
+  } */
 
   let mut gs_count = 0;
   let mut gs = HashMap::new();
@@ -147,14 +222,34 @@ pub fn solve_levels(constraints: &Constraints, scope: &HashSet<LevelId>) -> Resu
     ));
   }
   let root = next_node_index;
-  for (_, n) in vert_map {
-    edges.push((root, n, 0.));
+  for (_, n) in &vert_map {
+    edges.push((root, *n, 0.));
   }
 
   let g = Graph::<(), f32>::from_edges(&edges);
+  // eprintln!("- graph:");
+  // eprintln!("{:?}", g);
   if let Some(cycle) = find_negative_cycle(&g, NodeIndex::new(root as usize)) {
     let cycle = cycle.iter().map(|i| verts[i.index()]).collect::<Vec<_>>();
     return Err(format!("Cycle detected: #{:?}", cycle));
   }
+  /* if let Ok(dists) = bellman_ford(&g, NodeIndex::new(root as usize)) {
+    eprintln!("- assigned levels:");
+    let test_levels = vec![881, 918, 950, 1113, 948, 947, 916, 783];
+    for l in test_levels {
+      if let Some(g) = level_map.get(&LevelId(l)) {
+        let g = uf.find(*g);
+        if let Some(idx) = vert_map.get(&g) {
+          let d = dists.distances.get(*idx as usize).unwrap();
+          let ul = -*d as u32;
+          eprintln!("  - 𝒰_{:?} = U{}", l, ul);
+        } else {
+          eprintln!("  - 𝒰_{:?} = (unconstrained)", l);
+        }
+      }
+    }
+  } else {
+    return Err("Failed to compute distances".to_string());
+  } */
   Ok(sol)
 }
