@@ -81,8 +81,8 @@ impl<P, S> Solve<P, S> {
     self.levels.insert(level);
   }
 
-  fn add_constraint(&mut self, l1: LevelId, rel: LevelRel, l2: LevelId, reason: String) {
-    self.level_constraints.push((l1, rel, l2, reason));
+  fn add_constraint(&mut self, l1: &LevelId, rel: LevelRel, l2: &LevelId, reason: String) {
+    self.level_constraints.push((*l1, rel, *l2, reason));
     self.constraints_accum = None;
   }
 }
@@ -233,14 +233,52 @@ where
     None
   }
 
-  fn lev_eq(&mut self, l1: LevelId, l2: LevelId, reason: String) {
-    self.solve().add_constraint(l1, LevelRel::Eq, l2, reason);
+  fn lev_con(&mut self, l1: &LevelId, rel: LevelRel, l2: &LevelId, reason: String) {
+    self.solve().add_constraint(l1, rel, l2, reason);
   }
-  fn lev_le(&mut self, l1: LevelId, l2: LevelId, reason: String) {
-    self.solve().add_constraint(l1, LevelRel::Le, l2, reason);
+  fn lev_eq(&mut self, l1: &Level, l2: &Level, reason: String) {
+    match (l1, l2) {
+      (Level::Id(l1), Level::Id(l2)) => {
+        self.lev_con(l1, LevelRel::Eq, l2, reason);
+      }
+      (Level::Id(l1), Level::Max(ls)) => {
+        for l2 in ls {
+          self.lev_con(l2, LevelRel::Le, l1, format!("⊔ {}", reason));
+        }
+      }
+      (Level::Max(ls), Level::Id(l2)) => {
+        for l1 in ls {
+          self.lev_con(l1, LevelRel::Le, l2, format!("⊔ {}", reason));
+        }
+      }
+      _ => {}
+    }
   }
-  fn lev_lt(&mut self, l1: LevelId, l2: LevelId, reason: String) {
-    self.solve().add_constraint(l1, LevelRel::Lt, l2, reason);
+  fn lev_le(&mut self, l1: &Level, l2: &Level, reason: String) {
+    match (l1, l2) {
+      (Level::Id(l1), Level::Id(l2)) => {
+        self.lev_con(l1, LevelRel::Le, l2, reason);
+      }
+      (Level::Max(ls), Level::Id(l2)) => {
+        for l1 in ls {
+          self.lev_con(l1, LevelRel::Le, l2, format!("⊔ {}", reason));
+        }
+      }
+      _ => {}
+    }
+  }
+  fn lev_lt(&mut self, l1: &Level, l2: &Level, reason: String) {
+    match (l1, l2) {
+      (Level::Id(l1), Level::Id(l2)) => {
+        self.lev_con(l1, LevelRel::Lt, l2, reason);
+      }
+      (Level::Max(ls), Level::Id(l2)) => {
+        for l1 in ls {
+          self.lev_con(l1, LevelRel::Lt, l2, format!("⊔ {}", reason));
+        }
+      }
+      _ => {}
+    }
   }
 
   fn fresh_hole(&mut self) -> HoleId {
@@ -262,9 +300,7 @@ where
         LevelRef::Id(i2) => *i2,
         LevelRef::Group(g2) => ls[*g2 as usize],
       };
-      self
-        .solve()
-        .add_constraint(l1, rel.clone(), l2, format!("{:?} {}", i, reason));
+      self.lev_con(&l1, rel.clone(), &l2, format!("{:?} {}", i, reason));
     }
     ls
   }
@@ -337,7 +373,7 @@ where
         }
         return Ok(v);
       }
-      ValF::Uni(i) => ValF::Uni(*i),
+      ValF::Uni(l) => ValF::Uni(l.clone()),
       ValF::Pi(tag, vis, i, ty, g, bty) => {
         let ty = self.deep_norm(ty)?;
         let mut g = g.clone();
@@ -459,7 +495,7 @@ where
         None => ValF::Lazy(i.clone(), ls.clone(), Vec::new()),
       },
       Ann(t, _) => return self.eval(g, t),
-      Uni(i) => ValF::Uni(*i),
+      Uni(l) => ValF::Uni(l.clone()),
       Let(defs, body) => {
         let mut g = g.clone();
         for (i, sol, e) in defs {
@@ -686,8 +722,8 @@ where
         let v2 = self.norm(v2)?;
         self.unify(v1, &v2)
       }
-      (ValF::Uni(i1), ValF::Uni(i2)) => {
-        self.lev_eq(*i1, *i2, format!("Unify: U"));
+      (ValF::Uni(l1), ValF::Uni(l2)) => {
+        self.lev_eq(l1, l2, format!("Unify: U"));
         Ok(())
       }
       (ValF::Pi(t1, v1, i1, ty1, g1, bty1), ValF::Pi(t2, v2, i2, ty2, g2, bty2)) => {
@@ -812,8 +848,8 @@ where
       }
       Uni => match &self.norm(check_ty)?.0 {
         ValF::Uni(tyl) => {
-          let tml = self.fresh_level();
-          self.lev_lt(tml, *tyl, format!("Check: U"));
+          let tml = Level::Id(self.fresh_level());
+          self.lev_lt(&tml, tyl, format!("Check: U"));
           Ok(Rc::new(CExpr(CExprF::Uni(tml))))
         }
         _ => fail(self, "𝒰 / not 𝒰"),
@@ -905,12 +941,15 @@ where
     }
   }
 
-  fn check_ty(&mut self, e: Expr<P, S>) -> Result<(RE<P, S>, LevelId)> {
-    let li = self.fresh_level();
-    let e = self.check(e, &Rc::new(Val(ValF::Uni(li))))?;
+  fn check_ty(&mut self, e: Expr<P, S>) -> Result<(RE<P, S>, Level)> {
+    let l = Level::Id(self.fresh_level());
+    let e = self.check(e, &Rc::new(Val(ValF::Uni(l.clone()))))?;
     Ok((
-      Rc::new(CExpr(CExprF::Ann(e, Rc::new(CExpr(CExprF::Uni(li)))))),
-      li,
+      Rc::new(CExpr(CExprF::Ann(
+        e,
+        Rc::new(CExpr(CExprF::Uni(l.clone()))),
+      ))),
+      l,
     ))
   }
 
@@ -979,13 +1018,13 @@ where
         Ok((Rc::new(CExpr(CExprF::Ann(c_tm, c_ty))), ty))
       }
       Uni => {
-        let tml = self.fresh_level();
-        let tyl = self.fresh_level();
-        self.lev_lt(tml, tyl, format!("Synth: Uni (Tm < Ty)"));
+        let tml = Level::Id(self.fresh_level());
+        let tyl = Level::Id(self.fresh_level());
+        self.lev_lt(&tml, &tyl, format!("Synth: U (Tm < Ty)"));
         Ok((
           (Rc::new(CExpr(CExprF::Ann(
             Rc::new(CExpr(CExprF::Uni(tml))),
-            Rc::new(CExpr(CExprF::Uni(tyl))),
+            Rc::new(CExpr(CExprF::Uni(tyl.clone()))),
           )))),
           Rc::new(Val(ValF::Uni(tyl))),
         ))
@@ -1010,21 +1049,19 @@ where
       }
 
       Pi(tag, vis, i, ty, bty) => {
-        let li = self.fresh_level();
         let (c_ty, l_ty) = self.check_ty(*ty)?;
-        self.lev_le(l_ty, li, format!("Synth: Π-arg ≤ Π"));
         let ty = self.eval0(&c_ty);
         self.varenvs.push(VarEnv::new());
         self.varenv().add(i, ty);
         let (c_bty, l_bty) = self.check_ty(*bty)?;
-        self.lev_le(l_bty, li, format!("Synth: Π-body ≤ Π"));
         self.varenvs.pop();
+        let l = max_level(vec![l_ty, l_bty]);
         Ok((
           Rc::new(CExpr(CExprF::Ann(
             Rc::new(CExpr(CExprF::Pi(tag, vis, i, c_ty, c_bty))),
-            Rc::new(CExpr(CExprF::Uni(li))),
+            Rc::new(CExpr(CExprF::Uni(l.clone()))),
           ))),
-          Rc::new(Val(ValF::Uni(li))),
+          Rc::new(Val(ValF::Uni(l))),
         ))
       }
       Lam(tag, vis, i, ty, body) => {
@@ -1072,38 +1109,40 @@ where
       }
 
       Sigma(tag, props) => {
-        let li = self.fresh_level();
         if props.is_empty() {
+          let l = Level::Zero;
           return Ok((
             Rc::new(CExpr(CExprF::Ann(
               Rc::new(CExpr(CExprF::Sigma0(tag))),
-              Rc::new(CExpr(CExprF::Uni(li))),
+              Rc::new(CExpr(CExprF::Uni(l.clone()))),
             ))),
-            Rc::new(Val(ValF::Uni(li))),
+            Rc::new(Val(ValF::Uni(l))),
           ));
         }
+        let mut levels = Vec::new();
         let mut pi = props.into_iter();
         let (n0, i0, ty0) = pi.next().unwrap();
         let (c_ty0, l_ty0) = self.check_ty(*ty0)?;
-        self.lev_le(l_ty0, li, format!("Synth: Σ[{:?}] ≤ Σ", n0));
+        levels.push(l_ty0);
         let ty0 = self.eval0(&c_ty0);
         self.varenvs.push(VarEnv::new());
         self.varenv().add(i0, ty0);
         let mut c_props = Vec::new();
         for (name, i, ty) in pi {
           let (c_ty, l_ty) = self.check_ty(*ty)?;
-          self.lev_le(l_ty, li, format!("Synth: Σ[{:?}] ≤ Σ", name));
+          levels.push(l_ty);
           let ty = self.eval0(&c_ty);
           self.varenv().add(i, ty);
           c_props.push((name, i, c_ty));
         }
         self.varenvs.pop();
+        let l = max_level(levels);
         Ok((
           Rc::new(CExpr(CExprF::Ann(
             Rc::new(CExpr(CExprF::Sigma(tag, (n0, i0, c_ty0), c_props))),
-            Rc::new(CExpr(CExprF::Uni(li))),
+            Rc::new(CExpr(CExprF::Uni(l.clone()))),
           ))),
-          Rc::new(Val(ValF::Uni(li))),
+          Rc::new(Val(ValF::Uni(l))),
         ))
       }
       Obj(tag, props) => {

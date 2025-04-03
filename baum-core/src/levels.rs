@@ -19,21 +19,31 @@ pub fn traverse_levels<P, S>(e: &RE<P, S>) -> HashSet<LevelId> {
       Hole(_) => {}
       Bind(_) => {}
       Def(_, ls) => {
-        ls.iter().for_each(|l| {
+        for l in ls {
           if !bounded.contains(l) {
             scope.insert(*l);
           }
-        });
+        }
       }
       Ann(e1, e2) => {
         rec(e1, bounded, scope);
         rec(e2, bounded, scope);
       }
-      Uni(l) => {
-        if !bounded.contains(l) {
-          scope.insert(*l);
+      Uni(l) => match l {
+        Level::Zero => {}
+        Level::Id(l) => {
+          if !bounded.contains(l) {
+            scope.insert(*l);
+          }
         }
-      }
+        Level::Max(ls) => {
+          for l in ls {
+            if !bounded.contains(l) {
+              scope.insert(*l);
+            }
+          }
+        }
+      },
       Let(defs, body) => {
         for (_, sol, e) in defs {
           let mut b = bounded.clone();

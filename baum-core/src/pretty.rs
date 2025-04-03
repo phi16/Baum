@@ -51,6 +51,24 @@ impl<'a> Pretty<'a> {
     self
   }
 
+  fn l(&mut self, level: &Level) -> &mut Self {
+    match level {
+      Level::Zero => self.s("0"),
+      Level::Id(level) => self.li(level),
+      Level::Max(levels) => {
+        self.line.push("max(".to_string());
+        for (i, level) in levels.iter().enumerate() {
+          if i > 0 {
+            self.s(", ");
+          }
+          self.li(level);
+        }
+        self.line.push(")".to_string());
+        self
+      }
+    }
+  }
+
   fn name(&mut self, name: &NameId) -> &mut Self {
     self.line.push(self.name_symbols.get(name).unwrap().clone());
     self
@@ -156,7 +174,7 @@ impl<'a> Pretty<'a> {
       CExprF::Bind(i) => self.i(i),
       CExprF::Def(i, ls) => self.di(i).ls(ls),
       CExprF::Ann(v, t) => self.s("(").c(v).s(" of ").c(t).s(")"),
-      CExprF::Uni(i) => self.s("𝒰").li(i),
+      CExprF::Uni(i) => self.s("𝒰").l(i),
       CExprF::Let(defs, e) => self.s("let").open().defs_c(defs).close().s("in ").c(e),
 
       CExprF::Pi(_, Vis::Explicit, i, t, e) => self.s("Π(").i(i).s(": ").c(t).s(") ").c(e),
@@ -258,7 +276,7 @@ impl<'a> Pretty<'a> {
       ValF::Hole(i) => self.hi(i),
       ValF::Neu(i, ks) => self.i(i).ks(ks),
       ValF::Lazy(i, ls, ks) => self.di(i).ls(ls).ks(ks),
-      ValF::Uni(i) => self.s("𝒰").li(i),
+      ValF::Uni(i) => self.s("𝒰").l(i),
 
       ValF::Pi(_, Vis::Explicit, i, t, g, e) => self.s("Π(").i(i).s(": ").v(t).s(") ").g(g).c(e),
       ValF::Lam(_, Vis::Explicit, i, t, g, e) => self.s("λ(").i(i).s(": ").v(t).s(") ").g(g).c(e),

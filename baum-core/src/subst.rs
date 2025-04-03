@@ -85,6 +85,35 @@ impl<'b, P: Tag, S: Tag> SubstEnv<'b, P, S> {
     self.levels = old;
   }
 
+  fn subst_l<'a>(&mut self, l: &'a Level) -> Subst<'a, Level> {
+    let unchanged = Subst::Unchanged(l);
+    match l {
+      Level::Zero => unchanged,
+      Level::Id(i) => match self.levels.get(i).cloned() {
+        Some(i) => Subst::Changed(Level::Id(i)),
+        None => unchanged,
+      },
+      Level::Max(is) => {
+        let mut changed = false;
+        let mut ris = Vec::new();
+        for i in is {
+          match self.levels.get(i).cloned() {
+            Some(i) => {
+              changed = true;
+              ris.push(i);
+            }
+            None => ris.push(*i),
+          }
+        }
+        if changed {
+          Subst::Changed(Level::Max(ris))
+        } else {
+          unchanged
+        }
+      }
+    }
+  }
+
   pub fn subst_e<'a>(&mut self, e: &'a RE<P, S>) -> Subst<'a, RE<P, S>> {
     let unchanged = Subst::Unchanged(e);
     match &e.0 {
@@ -133,10 +162,14 @@ impl<'b, P: Tag, S: Tag> SubstEnv<'b, P, S> {
           unchanged
         }
       }
-      CExprF::Uni(i) => match self.levels.get(&i).cloned() {
-        Some(i) => Subst::Changed(Rc::new(CExpr(CExprF::Uni(i)))),
-        None => unchanged,
-      },
+      CExprF::Uni(l) => {
+        let l = self.subst_l(l);
+        if l.is_changed() {
+          Subst::Changed(Rc::new(CExpr(CExprF::Uni(l.into()))))
+        } else {
+          unchanged
+        }
+      }
       CExprF::Let(defs, body) => {
         let mut changed = false;
         let mut rdefs = Vec::new();
@@ -326,10 +359,14 @@ impl<'b, P: Tag, S: Tag> SubstEnv<'b, P, S> {
           }
         }
       },
-      ValF::Uni(i) => match self.levels.get(&i).cloned() {
-        Some(i) => Subst::Changed(Rc::new(Val(ValF::Uni(i)))),
-        None => unchanged,
-      },
+      ValF::Uni(l) => {
+        let l = self.subst_l(l);
+        if l.is_changed() {
+          Subst::Changed(Rc::new(Val(ValF::Uni(l.into()))))
+        } else {
+          unchanged
+        }
+      }
       ValF::Pi(tag, vis, i, ty, g, bty) => {
         let ty = self.subst_v(ty);
         let g = self.subst_g(g);
