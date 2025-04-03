@@ -1,4 +1,5 @@
 use crate::types::common::LevelId;
+use crate::types::level;
 use crate::types::level::*;
 use crate::types::val::*;
 use petgraph::{
@@ -36,7 +37,7 @@ pub fn traverse_levels<P, S>(e: &RE<P, S>) -> HashSet<LevelId> {
       Let(defs, body) => {
         for (_, sol, e) in defs {
           let mut b = bounded.clone();
-          sol.scope.iter().for_each(|(l, _)| {
+          sol.replacer.iter().for_each(|(l, _)| {
             b.insert(*l);
           });
           rec(e, &b, scope);
@@ -81,175 +82,268 @@ pub fn traverse_levels<P, S>(e: &RE<P, S>) -> HashSet<LevelId> {
   scope
 }
 
+#[derive(Debug, Clone)]
 enum Edge {
   Le,
   Lt,
 }
 
-pub fn solve_levels(constraints: &Constraints, scope: &HashSet<LevelId>) -> Result<Solution> {
-  eprintln!("[Constraint Solver]");
-  let mut level_map = HashMap::new();
-  let mut uf = QuickFindUf::<UnionBySize>::new(0);
-  for l in scope {
-    level_map.insert(*l, uf.insert(Default::default()));
-  }
-  let mut constrs = Vec::new();
-  let mut has_lt = false;
+pub fn resolve_constraints(
+  levels: &HashSet<LevelId>,
+  constraints: &Constraints,
+  target: &HashSet<LevelId>,
+) -> Result<Solution> {
+  /* eprintln!("[Constraint Solver]");
+  eprintln!("- target: {:?}", target);
+  eprintln!("- constraints:");
   for (i1, rel, i2, reason) in constraints {
-    let g1 = level_map
-      .entry(*i1)
-      .or_insert(uf.insert(Default::default()))
-      .clone();
-    let g2 = level_map
-      .entry(*i2)
-      .or_insert(uf.insert(Default::default()))
-      .clone();
     match rel {
-      LevelRel::Eq => {
-        uf.union(g1, g2);
+      LevelRel::Eq => eprintln!("  - {:?} = {:?} ({})", i1, i2, reason),
+      LevelRel::Le => eprintln!("  - {:?} ≤ {:?} ({})", i1, i2, reason),
+      LevelRel::Lt => eprintln!("  - {:?} < {:?} ({})", i1, i2, reason),
+    }
+  } */
+  let (group_count, level_map) = {
+    let mut uf = QuickFindUf::<UnionBySize>::new(0);
+    let mut level_map = HashMap::new();
+    for t in target {
+      level_map.insert(*t, uf.insert(Default::default()));
+    }
+    for (l1, rel, l2, _) in constraints {
+      let g1 = level_map
+        .entry(*l1)
+        .or_insert(uf.insert(Default::default()))
+        .clone();
+      let g2 = level_map
+        .entry(*l2)
+        .or_insert(uf.insert(Default::default()))
+        .clone();
+      match rel {
+        LevelRel::Eq => {
+          uf.union(g1, g2);
+        }
+        _ => {}
       }
+    }
+
+    let mut group_map = HashMap::new();
+    let mut count = 0;
+    for (_, g) in level_map.iter_mut() {
+      let n = uf.find(*g);
+      *g = *group_map.entry(n).or_insert_with(|| {
+        let index = count;
+        count += 1;
+        index
+      });
+    }
+    (count, level_map)
+  };
+
+  let mut constrs = HashMap::new();
+  let mut has_lt = false;
+  for (l1, rel, l2, reason) in constraints {
+    let g1 = level_map[l1];
+    let g2 = level_map[l2];
+    match rel {
+      LevelRel::Eq => {}
       LevelRel::Le => {
-        constrs.push((g1, Edge::Le, g2, reason));
+        constrs
+          .entry((g1, g2))
+          .and_modify(|e: &mut (Edge, String)| match e.0 {
+            Edge::Le => {
+              e.1.push_str(&format!(", {}", reason));
+            }
+            Edge::Lt => {}
+          })
+          .or_insert_with(|| (Edge::Le, reason.clone()));
       }
       LevelRel::Lt => {
-        constrs.push((g1, Edge::Lt, g2, reason));
+        constrs
+          .entry((g1, g2))
+          .and_modify(|e| match e.0 {
+            Edge::Le => {
+              *e = (Edge::Lt, reason.clone());
+            }
+            Edge::Lt => {
+              e.1.push_str(&format!(", {}", reason));
+            }
+          })
+          .or_insert_with(|| (Edge::Lt, reason.clone()));
         has_lt = true;
       }
     }
   }
 
-  let mut groups = HashMap::new();
-  for (l, i) in &level_map {
-    let g = uf.find(*i);
-    groups.entry(g).or_insert_with(Vec::new).push(l);
-  }
-  /* eprintln!("- groups:");
-  for g in groups {
-    eprintln!("  - #{:?} => {:?}", g.0, g.1);
-  }
-  eprintln!("- group constraints:");
-  for (g1, rel, g2, reason) in &constrs {
-    let g1 = uf.find(*g1);
-    let g2 = uf.find(*g2);
-    match rel {
-      Edge::Le => eprintln!("  - #{:?} ≤ #{:?} ({})", g1, g2, reason),
-      Edge::Lt => eprintln!("  - #{:?} < #{:?} ({})", g1, g2, reason),
-    }
-  } */
+  // Cycle detection
 
-  let mut gs_count = 0;
-  let mut gs = HashMap::new();
-  for l in scope {
-    let g = level_map.get(l).unwrap();
-    let g = uf.find(*g);
-    gs.entry(g).or_insert_with(|| {
-      let idx = gs_count;
-      gs_count += 1;
-      idx
-    });
+  if has_lt {
+    assert!(!constrs.is_empty());
+
+    /* {
+      let mut groups = HashMap::new();
+      for (l, g) in &level_map {
+        groups.entry(g).or_insert_with(Vec::new).push(l);
+      }
+      eprintln!("- groups:");
+      for g in groups {
+        eprintln!("  - #{:?} => {:?}", g.0, g.1);
+      }
+      eprintln!("- group constraints:");
+      for ((g1, g2), (rel, reason)) in &constrs {
+        match rel {
+          Edge::Le => eprintln!("  - #{:?} ≤ #{:?} ({})", g1, g2, reason),
+          Edge::Lt => eprintln!("  - #{:?} < #{:?} ({})", g1, g2, reason),
+        }
+      }
+    } */
+
+    let mut edges = Vec::new();
+    for ((g1, g2), (rel, _)) in &constrs {
+      edges.push((
+        *g1 as u32,
+        *g2 as u32,
+        match rel {
+          Edge::Le => 0.,
+          Edge::Lt => -1.,
+        },
+      ));
+    }
+    let root = group_count as u32;
+    for n in 0..group_count {
+      edges.push((root, n as u32, 0.));
+    }
+
+    let g = Graph::<(), f32>::from_edges(&edges);
+    if let Some(cycle) = find_negative_cycle(&g, NodeIndex::new(root as usize)) {
+      return Err(format!("Cycle detected: #{:?}", cycle));
+    }
   }
+
+  let mut ascending = vec![HashMap::new(); group_count];
+  let mut descending = vec![HashMap::new(); group_count];
+  for ((g1, g2), c) in &constrs {
+    ascending[*g1].insert(*g2, c);
+    descending[*g2].insert(*g1, c);
+  }
+
+  // Accessible groups
+
+  let mut accessible = HashSet::new();
+  fn access(
+    g: usize,
+    ascending: &Vec<HashMap<usize, &(Edge, String)>>,
+    accessible: &mut HashSet<usize>,
+  ) {
+    if accessible.contains(&g) {
+      return;
+    }
+    accessible.insert(g);
+    for (g2, _) in &ascending[g] {
+      access(*g2, ascending, accessible);
+    }
+  }
+  for t in target {
+    if let Some(g) = level_map.get(t) {
+      access(*g, &ascending, &mut accessible);
+    }
+  }
+
+  // Minimize constraints
+
+  let mut processed = HashSet::new();
+  let mut min_constrs = Vec::new();
+  fn descend(
+    g: usize,
+    descending: &Vec<HashMap<usize, &(Edge, String)>>,
+    accessible: &HashSet<usize>,
+    processed: &mut HashSet<usize>,
+    min_constrs: &mut Vec<(usize, usize, Edge, String)>,
+  ) {
+    if processed.contains(&g) {
+      return;
+    }
+    processed.insert(g);
+    for (g1, c) in &descending[g] {
+      if accessible.contains(g1) {
+        descend(*g1, descending, accessible, processed, min_constrs);
+        min_constrs.push((*g1, g, c.0.clone(), c.1.clone()));
+      }
+    }
+  }
+  for t in target {
+    if let Some(g) = level_map.get(t) {
+      descend(
+        *g,
+        &descending,
+        &accessible,
+        &mut processed,
+        &mut min_constrs,
+      );
+    }
+  }
+  let final_groups = processed
+    .into_iter()
+    .enumerate()
+    .map(|(i, g)| (g, i as GroupIndex))
+    .collect::<HashMap<_, _>>();
+  let final_constrs = min_constrs;
 
   let sol = Solution {
-    groups: gs_count,
-    scope: scope
+    group_count: final_groups.len(),
+    replacer: target
       .iter()
       .map(|l| {
         let g = level_map.get(l).unwrap();
-        let g = uf.find(*g);
-        (*l, *gs.get(&g).unwrap())
+        let i = final_groups.get(g).unwrap();
+        (*l, *i)
       })
       .collect(),
-    constraints: constraints
+    constraints: final_constrs
       .iter()
-      .filter_map(|(l1, rel, l2, reason)| {
-        let g1 = level_map.get(l1).unwrap();
-        let g2 = level_map.get(l2).unwrap();
-        let g1 = uf.find(*g1);
-        let g2 = uf.find(*g2);
+      .filter_map(|(g1, g2, rel, reason)| {
         if g1 == g2 {
           // Eq: ignore
           // Le: ignore
           // Lt: unreachable
           return None;
         }
+        let i1 = final_groups.get(g1).unwrap();
+        let i2 = final_groups.get(g2).unwrap();
         Some((
-          if let Some(g) = gs.get(&g1) {
-            LevelRef::Group(*g)
-          } else {
-            LevelRef::Id(*l1)
+          LevelRef::Group(*i1),
+          match rel {
+            Edge::Le => LevelRel::Le,
+            Edge::Lt => LevelRel::Lt,
           },
-          rel.clone(),
-          if let Some(g) = gs.get(&g2) {
-            LevelRef::Group(*g)
-          } else {
-            LevelRef::Id(*l2)
-          },
+          LevelRef::Group(*i2),
           reason.clone(),
         ))
       })
       .collect(),
   };
-
-  if !has_lt {
-    return Ok(sol);
-  }
-  assert!(!constrs.is_empty());
-
-  let mut edges = Vec::new();
-  let mut verts = Vec::new();
-  let mut vert_map = HashMap::new();
-  let mut next_node_index: u32 = 0;
-  for (g1, rel, g2, _) in &constrs {
-    let n1 = *vert_map.entry(uf.find(*g1)).or_insert_with_key(|k| {
-      let idx = next_node_index;
-      verts.push(*k);
-      next_node_index += 1;
-      idx
-    });
-    let n2 = *vert_map.entry(uf.find(*g2)).or_insert_with_key(|k| {
-      let idx = next_node_index;
-      verts.push(*k);
-      next_node_index += 1;
-      idx
-    });
-    edges.push((
-      n1,
-      n2,
-      match rel {
-        Edge::Le => 0.,
-        Edge::Lt => -1.,
-      },
-    ));
-  }
-  let root = next_node_index;
-  for (_, n) in &vert_map {
-    edges.push((root, *n, 0.));
-  }
-
-  let g = Graph::<(), f32>::from_edges(&edges);
-  // eprintln!("- graph:");
-  // eprintln!("{:?}", g);
-  if let Some(cycle) = find_negative_cycle(&g, NodeIndex::new(root as usize)) {
-    let cycle = cycle.iter().map(|i| verts[i.index()]).collect::<Vec<_>>();
-    return Err(format!("Cycle detected: #{:?}", cycle));
-  }
-  /* if let Ok(dists) = bellman_ford(&g, NodeIndex::new(root as usize)) {
-    eprintln!("- assigned levels:");
-    let test_levels = vec![881, 918, 950, 1113, 948, 947, 916, 783];
-    for l in test_levels {
-      if let Some(g) = level_map.get(&LevelId(l)) {
-        let g = uf.find(*g);
-        if let Some(idx) = vert_map.get(&g) {
-          let d = dists.distances.get(*idx as usize).unwrap();
-          let ul = -*d as u32;
-          eprintln!("  - 𝒰_{:?} = U{}", l, ul);
-        } else {
-          eprintln!("  - 𝒰_{:?} = (unconstrained)", l);
-        }
+  let external_levels = {
+    let mut ls = HashSet::new();
+    for (l1, _, l2, _) in constraints {
+      if !levels.contains(l1) {
+        ls.insert(*l1);
+      }
+      if !levels.contains(l2) {
+        ls.insert(*l2);
       }
     }
-  } else {
-    return Err("Failed to compute distances".to_string());
-  } */
+    ls
+  };
+  let mut sol = sol;
+  for l in external_levels {
+    let g = level_map.get(&l).unwrap();
+    if let Some(i) = final_groups.get(g) {
+      sol.constraints.push((
+        LevelRef::Id(l),
+        LevelRel::Eq,
+        LevelRef::Group(*i),
+        "external level".to_string(),
+      ));
+    }
+  }
   Ok(sol)
 }

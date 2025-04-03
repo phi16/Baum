@@ -250,7 +250,7 @@ where
   }
 
   fn fresh_levels(&mut self, i: DefId, sol: &Solution) -> Vec<LevelId> {
-    let ls = (0..sol.groups)
+    let ls = (0..sol.group_count)
       .map(|_| self.fresh_level())
       .collect::<Vec<_>>();
     for (r1, rel, r2, reason) in &sol.constraints {
@@ -271,9 +271,9 @@ where
 
   pub fn map_solution(&self, sol: &Solution, ls: &Vec<LevelId>) -> HashMap<LevelId, LevelId> {
     let m = sol
-      .scope
+      .replacer
       .iter()
-      .map(|i| (i.0, ls[i.1 as usize]))
+      .map(|(l, i)| (*l, ls[*i as usize]))
       .collect::<HashMap<_, _>>();
     m
   }
@@ -1011,8 +1011,6 @@ where
 
       Pi(tag, vis, i, ty, bty) => {
         let li = self.fresh_level();
-        let unil = self.fresh_level();
-        self.lev_lt(li, unil, format!("Synth: Π < Uni"));
         let (c_ty, l_ty) = self.check_ty(*ty)?;
         self.lev_le(l_ty, li, format!("Synth: Π-arg ≤ Π"));
         let ty = self.eval0(&c_ty);
@@ -1171,8 +1169,8 @@ where
     holes: HashMap<HoleId, Type<P, S>>,
     hole_assign: HashMap<HoleId, RE<P, S>>,
   ) -> Result<HashMap<HoleId, (RE<P, S>, RV<P, S>)>> {
-    eprintln!("[Resolve Holes]");
-    /* eprintln!("- holes:");
+    /* eprintln!("[Resolve Holes]");
+    eprintln!("- holes:");
     for (i, ty) in &solve.holes {
       eprintln!("  - {:?}: {}", i, self.ppv(ty));
     }
@@ -1193,24 +1191,6 @@ where
       hole_map.insert(i, (e, v));
     }
     Ok(hole_map)
-  }
-
-  fn resolve_levels(
-    &mut self,
-    constraints: Vec<(LevelId, LevelRel, LevelId, String)>,
-    scope: HashSet<LevelId>,
-  ) -> Result<Solution> {
-    /* eprintln!("- scope: {:?}", scope);
-    eprintln!("- constraints:");
-    for (i1, rel, i2, reason) in &constraints {
-      match rel {
-        LevelRel::Eq => eprintln!("  - {:?} = {:?} ({})", i1, i2, reason),
-        LevelRel::Le => eprintln!("  - {:?} ≤ {:?} ({})", i1, i2, reason),
-        LevelRel::Lt => eprintln!("  - {:?} < {:?} ({})", i1, i2, reason),
-      }
-    } */
-    solve_levels(&constraints, &scope)
-      .map_err(|e| Error::Loc(format!("Failed to solve level constraints: {}", e)))
   }
 
   fn def(&mut self, e: Box<Expr<P, S>>) -> Result<(Solution, RE<P, S>, Type<P, S>)> {
@@ -1275,8 +1255,11 @@ where
     }
     // TODO: scope check in hole?
 
-    let scope = traverse_levels(&ce);
-    let level_solution = self.resolve_levels(solve.constraints_accum.unwrap(), scope)?;
+    let levels = solve.levels;
+    let constraints = solve.constraints_accum.clone().unwrap();
+    let target = traverse_levels(&ce);
+    let level_solution = resolve_constraints(&levels, &constraints, &target)
+      .map_err(|e| Error::Loc(format!("Failed to solve level constraints: {}", e)))?;
 
     Ok((level_solution, ce, ty))
   }
@@ -1307,17 +1290,53 @@ where
             format!(
               "    {} = [{:?}] {}",
               self.def_symbols[&id],
-              sol.scope.len(),
+              sol,
               self.ppe(&c_expr)
             )
-            .black()
+            .cyan()
           );
-          // let tm = self.eval0(&c_expr);
-          // let dtm = self.deep_norm(&tm).unwrap();
-          // eprintln!(
-          //   "{}",
-          //   format!("    {} = {}", self.def_symbols[&id], self.ppv(&dtm)).black()
-          // );
+          {
+            self.solves.push(Solve::new());
+            let ls = self.fresh_levels(id, &sol);
+            let ls_m = self.map_solution(&sol, &ls);
+            let mut subst = SubstEnv::from_levels(ls_m, self);
+            let ce = subst.subst_e(&c_expr).into();
+            for (l1, rel, l2, reason) in &sol.constraints {
+              let l1 = match l1 {
+                LevelRef::Group(i) => ls[*i as usize],
+                LevelRef::Id(i) => *i,
+              };
+              let l2 = match l2 {
+                LevelRef::Group(i) => ls[*i as usize],
+                LevelRef::Id(i) => *i,
+              };
+              let rel = match rel {
+                LevelRel::Eq => "=",
+                LevelRel::Le => "≤",
+                LevelRel::Lt => "<",
+              };
+              eprintln!(
+                "{}",
+                format!("    {:?} {} {:?} ({})", l1, rel, l2, reason).black()
+              );
+            }
+            eprintln!(
+              "{}",
+              format!(
+                "    {} = [{:?}] {}",
+                self.def_symbols[&id],
+                sol.group_count,
+                self.ppe(&ce)
+              )
+              .black()
+            );
+            // let tm = self.eval0(&c_expr);
+            // let dtm = self.deep_norm(&tm).unwrap();
+            // eprintln!(
+            //   "{}",
+            //   format!("    {} = {}", self.def_symbols[&id], self.ppv(&dtm)).black()
+            // );
+          }
           self.defenv().add(id, (sol.clone(), c_expr.clone(), ty));
           def_terms.push((id, sol, c_expr));
         }

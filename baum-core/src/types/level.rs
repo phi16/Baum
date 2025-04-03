@@ -7,17 +7,19 @@ pub enum LevelRel {
   Lt,
 }
 
+pub type GroupIndex = u32;
+
 #[derive(Debug, Clone)]
 pub enum LevelRef {
   Id(LevelId),
-  Group(u32),
+  Group(GroupIndex),
 }
 
 pub type Constraints = Vec<(LevelId, LevelRel, LevelId, String)>;
 
 #[derive(Debug, Clone)]
 pub struct Solution {
-  pub groups: u32,
-  pub scope: Vec<(LevelId, u32)>,
+  pub group_count: usize,
+  pub replacer: Vec<(LevelId, GroupIndex)>,
   pub constraints: Vec<(LevelRef, LevelRel, LevelRef, String)>,
 }

@@ -95,13 +95,34 @@ impl<'b, P: Tag, S: Tag> SubstEnv<'b, P, S> {
       CExprF::Bind(_) => unchanged,
       CExprF::Def(i, ls) => match self.defs.get(&i).cloned() {
         Some((sol, e, _)) => {
+          let ls = ls
+            .iter()
+            .map(|l| self.levels.get(l).cloned().unwrap_or(*l))
+            .collect();
           let ls_m = self.checker.map_solution(&sol, &ls);
           let lm = self.extend(ls_m);
           let s = Subst::Changed(self.subst_e(&e).into());
           self.revert(lm);
           s
         }
-        None => unchanged,
+        None => {
+          let mut changed = false;
+          let ls = ls
+            .iter()
+            .map(|l| match self.levels.get(l) {
+              Some(l) => {
+                changed = true;
+                *l
+              }
+              None => *l,
+            })
+            .collect::<Vec<_>>();
+          if changed {
+            Subst::Changed(Rc::new(CExpr(CExprF::Def(*i, ls))))
+          } else {
+            unchanged
+          }
+        }
       },
       CExprF::Ann(e, ty) => {
         let e = self.subst_e(e);

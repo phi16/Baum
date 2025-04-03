@@ -137,11 +137,24 @@ impl<'a> Pretty<'a> {
     }
   }
 
+  fn ls(&mut self, ls: &Vec<LevelId>) -> &mut Self {
+    self.s("{");
+    if !ls.is_empty() {
+      let mut li = ls.iter();
+      let l0 = li.next().unwrap();
+      self.s("𝒰").li(l0);
+      for l in li {
+        self.s(", 𝒰").li(l);
+      }
+    }
+    self.s("}")
+  }
+
   fn c<P, S>(&mut self, e: &CExpr<P, S>) -> &mut Self {
     match &e.0 {
       CExprF::Hole(i) => self.hi(i),
       CExprF::Bind(i) => self.i(i),
-      CExprF::Def(i, ls) => self.di(i),
+      CExprF::Def(i, ls) => self.di(i).ls(ls),
       CExprF::Ann(v, t) => self.s("(").c(v).s(" of ").c(t).s(")"),
       CExprF::Uni(i) => self.s("𝒰").li(i),
       CExprF::Let(defs, e) => self.s("let").open().defs_c(defs).close().s("in ").c(e),
@@ -244,7 +257,7 @@ impl<'a> Pretty<'a> {
     match &v.0 {
       ValF::Hole(i) => self.hi(i),
       ValF::Neu(i, ks) => self.i(i).ks(ks),
-      ValF::Lazy(i, ls, ks) => self.di(i).ks(ks),
+      ValF::Lazy(i, ls, ks) => self.di(i).ls(ls).ks(ks),
       ValF::Uni(i) => self.s("𝒰").li(i),
 
       ValF::Pi(_, Vis::Explicit, i, t, g, e) => self.s("Π(").i(i).s(": ").v(t).s(") ").g(g).c(e),
