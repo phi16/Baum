@@ -5,6 +5,10 @@ id {A: U} (x: A) = x
 syntax 0 x of A = id {A} x
 
 v: U = U of U
+v': U = (U of U) of (U of U)
+x = U
+w = (U, U)
+w' = Σ(U, U)
 
 ⊥ = (A: U) → A
 ¬ (A: U) = A → ⊥

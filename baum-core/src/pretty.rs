@@ -156,7 +156,7 @@ impl<'a> Pretty<'a> {
   }
 
   fn ls(&mut self, ls: &Vec<LevelId>) -> &mut Self {
-    self.s("{");
+    self.s("[");
     if !ls.is_empty() {
       let mut li = ls.iter();
       let l0 = li.next().unwrap();
@@ -165,7 +165,7 @@ impl<'a> Pretty<'a> {
         self.s(", 𝒰").li(l);
       }
     }
-    self.s("}")
+    self.s("]")
   }
 
   fn c<P, S>(&mut self, e: &CExpr<P, S>) -> &mut Self {

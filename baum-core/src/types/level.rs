@@ -16,7 +16,7 @@ pub enum Level {
 
 pub fn max_level(levels: Vec<Level>) -> Level {
   if levels.is_empty() {
-    panic!()
+    Level::Zero
   } else if levels.len() == 1 {
     levels.into_iter().next().unwrap()
   } else {

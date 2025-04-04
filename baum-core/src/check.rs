@@ -269,6 +269,9 @@ where
   }
   fn lev_lt(&mut self, l1: &Level, l2: &Level, reason: String) {
     match (l1, l2) {
+      (_, Level::Zero) => {
+        unreachable!();
+      }
       (Level::Id(l1), Level::Id(l2)) => {
         self.lev_con(l1, LevelRel::Lt, l2, reason);
       }
@@ -944,13 +947,7 @@ where
   fn check_ty(&mut self, e: Expr<P, S>) -> Result<(RE<P, S>, Level)> {
     let l = Level::Id(self.fresh_level());
     let e = self.check(e, &Rc::new(Val(ValF::Uni(l.clone()))))?;
-    Ok((
-      Rc::new(CExpr(CExprF::Ann(
-        e,
-        Rc::new(CExpr(CExprF::Uni(l.clone()))),
-      ))),
-      l,
-    ))
+    Ok((e, l))
   }
 
   fn resolve_implicits(
@@ -1022,10 +1019,7 @@ where
         let tyl = Level::Id(self.fresh_level());
         self.lev_lt(&tml, &tyl, format!("Synth: U (Tm < Ty)"));
         Ok((
-          (Rc::new(CExpr(CExprF::Ann(
-            Rc::new(CExpr(CExprF::Uni(tml))),
-            Rc::new(CExpr(CExprF::Uni(tyl.clone()))),
-          )))),
+          Rc::new(CExpr(CExprF::Uni(tml))),
           Rc::new(Val(ValF::Uni(tyl))),
         ))
       }
@@ -1057,10 +1051,7 @@ where
         self.varenvs.pop();
         let l = max_level(vec![l_ty, l_bty]);
         Ok((
-          Rc::new(CExpr(CExprF::Ann(
-            Rc::new(CExpr(CExprF::Pi(tag, vis, i, c_ty, c_bty))),
-            Rc::new(CExpr(CExprF::Uni(l.clone()))),
-          ))),
+          Rc::new(CExpr(CExprF::Pi(tag, vis, i, c_ty, c_bty))),
           Rc::new(Val(ValF::Uni(l))),
         ))
       }
@@ -1112,10 +1103,7 @@ where
         if props.is_empty() {
           let l = Level::Zero;
           return Ok((
-            Rc::new(CExpr(CExprF::Ann(
-              Rc::new(CExpr(CExprF::Sigma0(tag))),
-              Rc::new(CExpr(CExprF::Uni(l.clone()))),
-            ))),
+            Rc::new(CExpr(CExprF::Sigma0(tag))),
             Rc::new(Val(ValF::Uni(l))),
           ));
         }
@@ -1138,10 +1126,7 @@ where
         self.varenvs.pop();
         let l = max_level(levels);
         Ok((
-          Rc::new(CExpr(CExprF::Ann(
-            Rc::new(CExpr(CExprF::Sigma(tag, (n0, i0, c_ty0), c_props))),
-            Rc::new(CExpr(CExprF::Uni(l.clone()))),
-          ))),
+          Rc::new(CExpr(CExprF::Sigma(tag, (n0, i0, c_ty0), c_props))),
           Rc::new(Val(ValF::Uni(l))),
         ))
       }
@@ -1296,7 +1281,9 @@ where
 
     let levels = solve.levels;
     let constraints = solve.constraints_accum.clone().unwrap();
-    let target = traverse_levels(&ce);
+    let mut target = HashSet::new();
+    traverse_levels_e(&ce, &mut target);
+    traverse_levels_v(&ty, &mut target);
     let level_solution = resolve_constraints(&levels, &constraints, &target)
       .map_err(|e| Error::Loc(format!("Failed to solve level constraints: {}", e)))?;
 
@@ -1340,6 +1327,7 @@ where
             let ls_m = self.map_solution(&sol, &ls);
             let mut subst = SubstEnv::from_levels(ls_m, self);
             let ce = subst.subst_e(&c_expr).into();
+            let ty = subst.subst_v(&ty).into();
             for (l1, rel, l2, reason) in &sol.constraints {
               let l1 = match l1 {
                 LevelRef::Group(i) => ls[*i as usize],
@@ -1359,6 +1347,16 @@ where
                 format!("    {:?} {} {:?} ({})", l1, rel, l2, reason).black()
               );
             }
+            eprintln!(
+              "{}",
+              format!(
+                "    {} : [{:?}] {}",
+                self.def_symbols[&id],
+                sol.group_count,
+                self.ppv(&ty)
+              )
+              .black()
+            );
             eprintln!(
               "{}",
               format!(

@@ -12,7 +12,7 @@ use union_find::{QuickFindUf, UnionBySize, UnionFind};
 
 type Result<T> = std::result::Result<T, String>;
 
-pub fn traverse_levels<P, S>(e: &RE<P, S>) -> HashSet<LevelId> {
+pub fn traverse_levels_e<P, S>(e: &RE<P, S>, scope: &mut HashSet<LevelId>) {
   fn rec<P, S>(e: &RE<P, S>, bounded: &HashSet<LevelId>, scope: &mut HashSet<LevelId>) {
     use CExprF::*;
     match &e.0 {
@@ -87,9 +87,84 @@ pub fn traverse_levels<P, S>(e: &RE<P, S>) -> HashSet<LevelId> {
       }
     }
   }
-  let mut scope = HashSet::new();
-  rec(e, &HashSet::new(), &mut scope);
-  scope
+  rec(e, &HashSet::new(), scope);
+}
+
+pub fn traverse_levels_g<P, S>(g: &Env<P, S>, scope: &mut HashSet<LevelId>) {
+  let mut s = HashSet::new();
+  for (_, v) in &g.lookup {
+    traverse_levels_v(v, &mut s);
+  }
+  for (_, v) in &g.define {
+    traverse_levels_v(v, &mut s);
+  }
+  if !s.is_empty() {
+    eprintln!("[Warning] Found levels in the environment: {:?}", s);
+  }
+  scope.extend(s.iter().cloned());
+}
+
+pub fn traverse_levels_v<P, S>(v: &RV<P, S>, scope: &mut HashSet<LevelId>) {
+  fn rec<P, S>(v: &RV<P, S>, scope: &mut HashSet<LevelId>) {
+    use ValF::*;
+    match &v.0 {
+      Hole(_) => {}
+      Neu(_, cs) => {
+        for c in cs {
+          match c {
+            ContF::App(_, _, e) => rec(e, scope),
+            ContF::Prop(_, _) => {}
+          }
+        }
+      }
+      Lazy(_, ls, cs) => {
+        scope.extend(ls.iter().cloned());
+        for c in cs {
+          match c {
+            ContF::App(_, _, e) => rec(e, scope),
+            ContF::Prop(_, _) => {}
+          }
+        }
+      }
+      Uni(l) => match l {
+        Level::Zero => {}
+        Level::Id(l) => {
+          scope.insert(*l);
+        }
+        Level::Max(ls) => {
+          scope.extend(ls.iter().cloned());
+        }
+      },
+
+      Pi(_, _, _, ty, g, bty) => {
+        rec(ty, scope);
+        traverse_levels_g(g, scope);
+        traverse_levels_e(bty, scope);
+      }
+      Lam(_, _, _, ty, g, body) => {
+        rec(ty, scope);
+        traverse_levels_g(g, scope);
+        traverse_levels_e(body, scope);
+      }
+
+      Sigma0(_) => {}
+      Obj0(_) => {}
+      Sigma(_, (_, _, ty0), g, props) => {
+        rec(ty0, scope);
+        traverse_levels_g(g, scope);
+        for (_, _, ty) in props {
+          traverse_levels_e(ty, scope);
+        }
+      }
+      Obj(_, (_, ty0), props) => {
+        rec(ty0, scope);
+        for (_, ty) in props {
+          rec(ty, scope);
+        }
+      }
+    }
+  }
+  rec(v, scope);
 }
 
 #[derive(Debug, Clone)]
