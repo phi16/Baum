@@ -88,25 +88,34 @@ impl<'b, P: Tag, S: Tag> SubstEnv<'b, P, S> {
   fn subst_l<'a>(&mut self, l: &'a Level) -> Subst<'a, Level> {
     let unchanged = Subst::Unchanged(l);
     match l {
-      Level::Zero => unchanged,
       Level::Id(i) => match self.levels.get(i).cloned() {
         Some(i) => Subst::Changed(Level::Id(i)),
         None => unchanged,
       },
-      Level::Max(is) => {
+      Level::Max(eis, tis) => {
         let mut changed = false;
-        let mut ris = Vec::new();
-        for i in is {
-          match self.levels.get(i).cloned() {
+        let mut reis = eis
+          .iter()
+          .map(|i| match self.levels.get(i) {
             Some(i) => {
               changed = true;
-              ris.push(i);
+              *i
             }
-            None => ris.push(*i),
-          }
-        }
+            None => *i,
+          })
+          .collect::<Vec<_>>();
+        let mut rtis = tis
+          .iter()
+          .map(|i| match self.levels.get(i) {
+            Some(i) => {
+              changed = true;
+              *i
+            }
+            None => *i,
+          })
+          .collect::<Vec<_>>();
         if changed {
-          Subst::Changed(Level::Max(ris))
+          Subst::Changed(Level::Max(reis, rtis))
         } else {
           unchanged
         }

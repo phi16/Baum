@@ -9,31 +9,31 @@ pub enum LevelRel {
 
 #[derive(Debug, Clone)]
 pub enum Level {
-  Zero,
   Id(LevelId),
-  Max(Vec<LevelId>),
+  Max(Vec<LevelId>, Vec<LevelId>), // le, lt
 }
 
 pub fn max_level(levels: Vec<Level>) -> Level {
   if levels.is_empty() {
-    Level::Zero
+    Level::Max(Vec::new(), Vec::new())
   } else if levels.len() == 1 {
     levels.into_iter().next().unwrap()
   } else {
-    let mut ids = Vec::new();
+    let mut les = Vec::new();
+    let mut lts = Vec::new();
     for l in levels {
       match l {
-        Level::Zero => {}
-        Level::Id(i) => ids.push(i),
-        Level::Max(is) => ids.extend(is),
+        Level::Id(i) => les.push(i),
+        Level::Max(eis, tis) => {
+          les.extend(eis);
+          lts.extend(tis);
+        }
       }
     }
-    if ids.is_empty() {
-      Level::Zero
-    } else if ids.len() == 1 {
-      Level::Id(ids[0])
+    if les.len() == 1 && lts.is_empty() {
+      Level::Id(les[0])
     } else {
-      Level::Max(ids)
+      Level::Max(les, lts)
     }
   }
 }

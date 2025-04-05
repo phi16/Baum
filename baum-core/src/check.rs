@@ -241,46 +241,25 @@ where
       (Level::Id(l1), Level::Id(l2)) => {
         self.lev_con(l1, LevelRel::Eq, l2, reason);
       }
-      (Level::Id(l1), Level::Max(ls)) => {
-        for l2 in ls {
+      (Level::Id(l1), Level::Max(le, lt)) => {
+        for l2 in le {
           self.lev_con(l2, LevelRel::Le, l1, format!("⊔ {}", reason));
         }
-      }
-      (Level::Max(ls), Level::Id(l2)) => {
-        for l1 in ls {
-          self.lev_con(l1, LevelRel::Le, l2, format!("⊔ {}", reason));
+        for l2 in lt {
+          self.lev_con(l2, LevelRel::Lt, l1, format!("⊔ {}", reason));
         }
       }
-      _ => {}
-    }
-  }
-  fn lev_le(&mut self, l1: &Level, l2: &Level, reason: String) {
-    match (l1, l2) {
-      (Level::Id(l1), Level::Id(l2)) => {
-        self.lev_con(l1, LevelRel::Le, l2, reason);
-      }
-      (Level::Max(ls), Level::Id(l2)) => {
-        for l1 in ls {
+      (Level::Max(le, lt), Level::Id(l2)) => {
+        for l1 in le {
           self.lev_con(l1, LevelRel::Le, l2, format!("⊔ {}", reason));
         }
-      }
-      _ => {}
-    }
-  }
-  fn lev_lt(&mut self, l1: &Level, l2: &Level, reason: String) {
-    match (l1, l2) {
-      (_, Level::Zero) => {
-        unreachable!();
-      }
-      (Level::Id(l1), Level::Id(l2)) => {
-        self.lev_con(l1, LevelRel::Lt, l2, reason);
-      }
-      (Level::Max(ls), Level::Id(l2)) => {
-        for l1 in ls {
+        for l1 in lt {
           self.lev_con(l1, LevelRel::Lt, l2, format!("⊔ {}", reason));
         }
       }
-      _ => {}
+      (Level::Max(_, _), Level::Max(_, _)) => {
+        eprintln!("Ignored: {:?} ≟ {:?}", l1, l2);
+      }
     }
   }
 
@@ -851,8 +830,13 @@ where
       }
       Uni => match &self.norm(check_ty)?.0 {
         ValF::Uni(tyl) => {
-          let tml = Level::Id(self.fresh_level());
-          self.lev_lt(&tml, tyl, format!("Check: U"));
+          let tmli = self.fresh_level();
+          self.lev_eq(
+            &Level::Max(Vec::new(), vec![tmli]),
+            tyl,
+            format!("Check: U"),
+          );
+          let tml = Level::Id(tmli);
           Ok(Rc::new(CExpr(CExprF::Uni(tml))))
         }
         _ => fail(self, "𝒰 / not 𝒰"),
@@ -1015,9 +999,9 @@ where
         Ok((Rc::new(CExpr(CExprF::Ann(c_tm, c_ty))), ty))
       }
       Uni => {
-        let tml = Level::Id(self.fresh_level());
-        let tyl = Level::Id(self.fresh_level());
-        self.lev_lt(&tml, &tyl, format!("Synth: U (Tm < Ty)"));
+        let tmli = self.fresh_level();
+        let tml = Level::Id(tmli);
+        let tyl = Level::Max(Vec::new(), vec![tmli]);
         Ok((
           Rc::new(CExpr(CExprF::Uni(tml))),
           Rc::new(Val(ValF::Uni(tyl))),
@@ -1101,7 +1085,7 @@ where
 
       Sigma(tag, props) => {
         if props.is_empty() {
-          let l = Level::Zero;
+          let l = Level::Max(Vec::new(), Vec::new());
           return Ok((
             Rc::new(CExpr(CExprF::Sigma0(tag))),
             Rc::new(Val(ValF::Uni(l))),

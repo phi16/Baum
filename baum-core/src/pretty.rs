@@ -53,15 +53,23 @@ impl<'a> Pretty<'a> {
 
   fn l(&mut self, level: &Level) -> &mut Self {
     match level {
-      Level::Zero => self.s("0"),
       Level::Id(level) => self.li(level),
-      Level::Max(levels) => {
+      Level::Max(les, lts) => {
         self.line.push("max(".to_string());
-        for (i, level) in levels.iter().enumerate() {
-          if i > 0 {
+        let mut first = true;
+        for level in les.iter() {
+          if !first {
             self.s(", ");
           }
+          first = false;
           self.li(level);
+        }
+        for level in lts.iter() {
+          if !first {
+            self.s(", ");
+          }
+          first = false;
+          self.li(level).s("+");
         }
         self.line.push(")".to_string());
         self

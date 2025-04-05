@@ -30,14 +30,18 @@ pub fn traverse_levels_e<P, S>(e: &RE<P, S>, scope: &mut HashSet<LevelId>) {
         rec(e2, bounded, scope);
       }
       Uni(l) => match l {
-        Level::Zero => {}
         Level::Id(l) => {
           if !bounded.contains(l) {
             scope.insert(*l);
           }
         }
-        Level::Max(ls) => {
-          for l in ls {
+        Level::Max(les, lts) => {
+          for l in les {
+            if !bounded.contains(l) {
+              scope.insert(*l);
+            }
+          }
+          for l in lts {
             if !bounded.contains(l) {
               scope.insert(*l);
             }
@@ -127,12 +131,12 @@ pub fn traverse_levels_v<P, S>(v: &RV<P, S>, scope: &mut HashSet<LevelId>) {
         }
       }
       Uni(l) => match l {
-        Level::Zero => {}
         Level::Id(l) => {
           scope.insert(*l);
         }
-        Level::Max(ls) => {
-          scope.extend(ls.iter().cloned());
+        Level::Max(les, lts) => {
+          scope.extend(les.iter().cloned());
+          scope.extend(lts.iter().cloned());
         }
       },
 
