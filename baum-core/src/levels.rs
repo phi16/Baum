@@ -175,7 +175,7 @@ pub fn resolve_constraints(
     for t in target {
       level_map.insert(*t, uf.insert(Default::default()));
     }
-    for (l1, rel, l2, _) in constraints {
+    for (l1, rel, l2) in constraints {
       let g1 = level_map
         .entry(*l1)
         .or_insert(uf.insert(Default::default()))
@@ -206,7 +206,7 @@ pub fn resolve_constraints(
   };
 
   let mut constrs = HashMap::new();
-  for (l1, rel, l2, reason) in constraints {
+  for (l1, rel, l2) in constraints {
     let g1 = level_map[l1];
     let g2 = level_map[l2];
     match rel {
@@ -214,15 +214,12 @@ pub fn resolve_constraints(
       LevelRel::Le(o) => {
         constrs
           .entry((g1, g2))
-          .and_modify(|(e, r): &mut (Edge, String)| {
+          .and_modify(|e: &mut Edge| {
             if *e < *o {
               *e = *o;
-              *r = reason.clone();
-            } else if *e == *o {
-              r.push_str(&format!(", {}", reason));
             }
           })
-          .or_insert_with(|| (*o, reason.clone()));
+          .or_insert_with(|| *o);
       }
     }
   }
@@ -249,7 +246,7 @@ pub fn resolve_constraints(
     } */
 
     let mut edges = Vec::new();
-    for ((g1, g2), (e, _)) in &constrs {
+    for ((g1, g2), e) in &constrs {
       edges.push((*g1 as u32, *g2 as u32, -(*e as f32)));
     }
     let root = group_count as u32;
@@ -266,18 +263,14 @@ pub fn resolve_constraints(
   let mut ascending = vec![HashMap::new(); group_count];
   let mut descending = vec![HashMap::new(); group_count];
   for ((g1, g2), c) in &constrs {
-    ascending[*g1].insert(*g2, c);
-    descending[*g2].insert(*g1, c);
+    ascending[*g1].insert(*g2, *c);
+    descending[*g2].insert(*g1, *c);
   }
 
   // Accessible groups
 
   let mut accessible = HashSet::new();
-  fn access(
-    g: usize,
-    ascending: &Vec<HashMap<usize, &(Edge, String)>>,
-    accessible: &mut HashSet<usize>,
-  ) {
+  fn access(g: usize, ascending: &Vec<HashMap<usize, Edge>>, accessible: &mut HashSet<usize>) {
     if accessible.contains(&g) {
       return;
     }
@@ -296,7 +289,7 @@ pub fn resolve_constraints(
 
   fn descend(
     g: usize,
-    descending: &Vec<HashMap<usize, &(Edge, String)>>,
+    descending: &Vec<HashMap<usize, Edge>>,
     accessible: &HashSet<usize>,
     next_root_index: &mut u32,
     processed: &mut HashMap<usize, Vec<(LevelRef, Edge)>>,
@@ -305,7 +298,7 @@ pub fn resolve_constraints(
       return;
     }
     let mut constrs = Vec::new();
-    for (g1, (e, _)) in &descending[g] {
+    for (g1, e) in &descending[g] {
       if accessible.contains(g1) {
         descend(*g1, descending, accessible, next_root_index, processed);
         let mut cs = processed.get(g1).unwrap().clone();
@@ -344,7 +337,7 @@ pub fn resolve_constraints(
   };
   let external_levels = {
     let mut ls = HashSet::new();
-    for (l1, _, l2, _) in constraints {
+    for (l1, _, l2) in constraints {
       if !levels.contains(l1) {
         ls.insert(*l1);
       }

@@ -81,8 +81,8 @@ impl<P, S> Solve<P, S> {
     self.levels.insert(level);
   }
 
-  fn add_constraint(&mut self, l1: &LevelId, rel: LevelRel, l2: &LevelId, reason: String) {
-    self.level_constraints.push((*l1, rel, *l2, reason));
+  fn add_constraint(&mut self, l1: &LevelId, rel: LevelRel, l2: &LevelId) {
+    self.level_constraints.push((*l1, rel, *l2));
     self.constraints_accum = None;
   }
 }
@@ -233,22 +233,22 @@ where
     None
   }
 
-  fn lev_con(&mut self, l1: &LevelId, rel: LevelRel, l2: &LevelId, reason: String) {
-    self.solve().add_constraint(l1, rel, l2, reason);
+  fn lev_con(&mut self, l1: &LevelId, rel: LevelRel, l2: &LevelId) {
+    self.solve().add_constraint(l1, rel, l2);
   }
-  fn lev_eq(&mut self, l1: &Level, l2: &Level, reason: String) {
+  fn unify_level(&mut self, l1: &Level, l2: &Level) {
     match (l1, l2) {
       (Level::Id(l1), Level::Id(l2)) => {
-        self.lev_con(l1, LevelRel::Eq, l2, reason);
+        self.lev_con(l1, LevelRel::Eq, l2);
       }
       (Level::Id(l1), Level::Max(ls)) => {
         for (l2, o) in ls {
-          self.lev_con(l2, LevelRel::Le(*o), l1, format!("⊔ {}", reason));
+          self.lev_con(l2, LevelRel::Le(*o), l1);
         }
       }
       (Level::Max(ls), Level::Id(l2)) => {
         for (l1, o) in ls {
-          self.lev_con(l1, LevelRel::Le(*o), l2, format!("⊔ {}", reason));
+          self.lev_con(l1, LevelRel::Le(*o), l2);
         }
       }
       (Level::Max(_), Level::Max(_)) => {
@@ -263,7 +263,7 @@ where
     id
   }
 
-  fn fresh_levels(&mut self, i: DefId, sol: &Solution) -> Vec<Level> {
+  fn fresh_levels(&mut self, sol: &Solution) -> Vec<Level> {
     let ls = (0..sol.group_count)
       .map(|_| self.fresh_level())
       .collect::<Vec<_>>();
@@ -280,7 +280,7 @@ where
         })
         .collect::<Vec<_>>();
       let l2 = Level::Max(l2s);
-      self.lev_eq(&l1, &l2, format!("{}{:?}", self.def_symbols[&i], i));
+      self.unify_level(&l1, &l2);
     }
     ls.into_iter().map(|l| Level::Id(l)).collect()
   }
@@ -495,7 +495,7 @@ where
       Let(defs, body) => {
         let mut g = g.clone();
         for (i, sol, e) in defs {
-          let ls = self.fresh_levels(*i, &sol);
+          let ls = self.fresh_levels(&sol);
           let ls_m = self.map_solution(&sol, &ls);
           let mut subst = SubstEnv::from_levels(ls_m, self);
           let e = subst.subst_e(e).into();
@@ -719,7 +719,7 @@ where
         self.unify(v1, &v2)
       }
       (ValF::Uni(l1), ValF::Uni(l2)) => {
-        self.lev_eq(l1, l2, format!("Unify: U"));
+        self.unify_level(l1, l2);
         Ok(())
       }
       (ValF::Pi(t1, v1, i1, ty1, g1, bty1), ValF::Pi(t2, v2, i2, ty2, g2, bty2)) => {
@@ -842,15 +842,6 @@ where
         self.solve().add_hole(h, check_ty.clone());
         Ok(Rc::new(CExpr(CExprF::Hole(h))))
       }
-      Uni => match &self.norm(check_ty)?.0 {
-        ValF::Uni(tyl) => {
-          let tmli = self.fresh_level();
-          self.lev_eq(&Level::Max(vec![(tmli, 1)]), tyl, format!("Check: U"));
-          let tml = Level::Id(tmli);
-          Ok(Rc::new(CExpr(CExprF::Uni(tml))))
-        }
-        _ => fail(self, "𝒰 / not 𝒰"),
-      },
       Let(defs, body) => {
         self.defenvs.push(DefEnv::new());
         let ds = self.defs(defs);
@@ -866,7 +857,7 @@ where
           if vis != *tvis {
             return fail(self, "λ / visibility mismatch");
           }
-          let (c_ty, l_ty) = self.check_ty(*ty)?;
+          let (c_ty, _) = self.check_ty(*ty)?;
           let ty = self.eval0(&c_ty);
           self.unify(&ty, tty)?;
           self.varenvs.push(VarEnv::new());
@@ -939,15 +930,6 @@ where
   }
 
   fn check_ty(&mut self, e: Expr<P, S>) -> Result<(RE<P, S>, Level)> {
-    match e.0 {
-      ExprF::Uni => {
-        let tmli = self.fresh_level();
-        let tml = Level::Id(tmli);
-        let tyl = Level::Max(vec![(tmli, 1)]);
-        return Ok((Rc::new(CExpr(CExprF::Uni(tml))), tyl));
-      }
-      _ => {}
-    }
     let l = Level::Id(self.fresh_level());
     let e = self.check(e, &Rc::new(Val(ValF::Uni(l.clone()))))?;
     Ok((e, l))
@@ -1003,7 +985,7 @@ where
       },
       Def(i) => match self.lookup_def(i).cloned() {
         Some((sol, _, ty)) => {
-          let ls = self.fresh_levels(i, &sol);
+          let ls = self.fresh_levels(&sol);
           let ls_m = self.map_solution(&sol, &ls);
           let mut subst = SubstEnv::from_levels(ls_m, self);
           let ty = subst.subst_v(&ty).into();
@@ -1012,7 +994,7 @@ where
         None => Err(Error::Fail),
       },
       Ann(tm, ty) => {
-        let (c_ty, l_ty) = self.check_ty(*ty)?;
+        let (c_ty, _) = self.check_ty(*ty)?;
         let ty = self.eval0(&c_ty);
         let c_tm = self.check(*tm, &ty)?;
         Ok((Rc::new(CExpr(CExprF::Ann(c_tm, c_ty))), ty))
@@ -1034,7 +1016,7 @@ where
         self.defenvs.pop();
         let mut def_map = HashMap::new();
         for (i, sol, e) in &ds {
-          let ls = self.fresh_levels(*i, &sol);
+          let ls = self.fresh_levels(&sol);
           let ls_m = self.map_solution(&sol, &ls);
           let mut subst = SubstEnv::from_levels(ls_m, self);
           let e = subst.subst_e(e).into();
@@ -1059,7 +1041,7 @@ where
         ))
       }
       Lam(tag, vis, i, ty, body) => {
-        let (c_ty, l_ty) = self.check_ty(*ty)?;
+        let (c_ty, _) = self.check_ty(*ty)?;
         let ty = self.eval0(&c_ty);
         self.varenvs.push(VarEnv::new());
         self.varenv().add(i, ty.clone());
@@ -1326,7 +1308,7 @@ where
           );
           {
             self.solves.push(Solve::new());
-            let ls = self.fresh_levels(id, &sol);
+            let ls = self.fresh_levels(&sol);
             let ls_m = self.map_solution(&sol, &ls);
             let mut subst = SubstEnv::from_levels(ls_m, self);
             let ce = subst.subst_e(&c_expr).into();
@@ -1346,7 +1328,19 @@ where
               let l2 = max_level(ls);
               eprintln!("{}", format!("    {:?} = {}", l1, self.ppl(&l2)).black());
             }
-            eprintln!("{}", format!("    ls = {:?}", ls).black());
+            eprintln!(
+              "{}",
+              format!(
+                "    ls = {:?}",
+                ls.iter()
+                  .map(|l| match l {
+                    Level::Id(i) => *i,
+                    _ => unreachable!(),
+                  })
+                  .collect::<Vec<_>>()
+              )
+              .black()
+            );
             eprintln!(
               "{}",
               format!(
