@@ -14,30 +14,23 @@ pub fn traverse_levels_e<P, S>(e: &RE<P, S>, scope: &mut HashSet<LevelId>) {
       Hole(_) => {}
       Bind(_) => {}
       Def(_, ls) => {
-        for l in ls {
-          if !bounded.contains(l) {
-            scope.insert(*l);
+        ls.iter().flat_map(|l| used_levels(l)).for_each(|i| {
+          if !bounded.contains(&i) {
+            scope.insert(i);
           }
-        }
+        });
       }
       Ann(e1, e2) => {
         rec(e1, bounded, scope);
         rec(e2, bounded, scope);
       }
-      Uni(l) => match l {
-        Level::Id(l) => {
-          if !bounded.contains(l) {
-            scope.insert(*l);
+      Uni(l) => {
+        used_levels(l).iter().for_each(|i| {
+          if !bounded.contains(i) {
+            scope.insert(*i);
           }
-        }
-        Level::Max(ls) => {
-          for (l, _) in ls {
-            if !bounded.contains(l) {
-              scope.insert(*l);
-            }
-          }
-        }
-      },
+        });
+      }
       Let(defs, body) => {
         for (_, sol, e) in defs {
           let mut b = bounded.clone();
@@ -112,7 +105,9 @@ pub fn traverse_levels_v<P, S>(v: &RV<P, S>, scope: &mut HashSet<LevelId>) {
         }
       }
       Lazy(_, ls, cs) => {
-        scope.extend(ls.iter().cloned());
+        ls.iter().flat_map(|l| used_levels(l)).for_each(|i| {
+          scope.insert(i);
+        });
         for c in cs {
           match c {
             ContF::App(_, _, e) => rec(e, scope),
@@ -120,16 +115,11 @@ pub fn traverse_levels_v<P, S>(v: &RV<P, S>, scope: &mut HashSet<LevelId>) {
           }
         }
       }
-      Uni(l) => match l {
-        Level::Id(l) => {
-          scope.insert(*l);
-        }
-        Level::Max(ls) => {
-          for (l, _) in ls {
-            scope.insert(*l);
-          }
-        }
-      },
+      Uni(l) => {
+        used_levels(l).iter().for_each(|i| {
+          scope.insert(*i);
+        });
+      }
 
       Pi(_, _, _, ty, g, bty) => {
         rec(ty, scope);

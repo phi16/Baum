@@ -28,7 +28,7 @@ impl<'a, T: Clone> Subst<'a, T> {
 pub struct SubstEnv<'b, P, S> {
   holes: HashMap<HoleId, (RE<P, S>, RV<P, S>)>,
   defs: HashMap<DefId, (Solution, RE<P, S>, RV<P, S>)>,
-  levels: HashMap<LevelId, LevelId>,
+  levels: HashMap<LevelId, Level>,
   checker: &'b mut Checker<P, S>,
 }
 
@@ -57,7 +57,7 @@ impl<'b, P: Tag, S: Tag> SubstEnv<'b, P, S> {
     }
   }
 
-  pub fn from_levels(levels: HashMap<LevelId, LevelId>, checker: &'b mut Checker<P, S>) -> Self {
+  pub fn from_levels(levels: HashMap<LevelId, Level>, checker: &'b mut Checker<P, S>) -> Self {
     SubstEnv {
       holes: HashMap::new(),
       defs: HashMap::new(),
@@ -66,22 +66,32 @@ impl<'b, P: Tag, S: Tag> SubstEnv<'b, P, S> {
     }
   }
 
-  fn extend(&mut self, ls_m: HashMap<LevelId, LevelId>) -> HashMap<LevelId, LevelId> {
+  fn extend(&mut self, ls_m: HashMap<LevelId, Level>) -> HashMap<LevelId, Level> {
     let old = self.levels.clone();
-    for (i, j) in &ls_m {
-      if self.levels.contains_key(i) || self.levels.contains_key(j) {
-        panic!("Level already exists in subst env: {:?} {:?}", i, j);
+    for (i, js) in &ls_m {
+      if self.levels.contains_key(i) {
+        panic!("Level already exists in subst env: {:?}", i);
       }
+      used_levels(js).iter().for_each(|j| {
+        if self.levels.contains_key(j) {
+          panic!("Level already exists in subst env: {:?}", j);
+        }
+      });
     }
-    for (i, j) in &self.levels {
-      if ls_m.contains_key(i) || ls_m.contains_key(j) {
-        panic!("Level already exists in subst env: {:?} {:?}", i, j);
+    for (i, js) in &self.levels {
+      if ls_m.contains_key(i) {
+        panic!("Level already exists in subst env: {:?}", i);
       }
+      used_levels(js).iter().for_each(|j| {
+        if ls_m.contains_key(j) {
+          panic!("Level already exists in subst env: {:?}", j);
+        }
+      });
     }
     self.levels.extend(ls_m);
     old
   }
-  fn revert(&mut self, old: HashMap<LevelId, LevelId>) {
+  fn revert(&mut self, old: HashMap<LevelId, Level>) {
     self.levels = old;
   }
 
@@ -89,19 +99,23 @@ impl<'b, P: Tag, S: Tag> SubstEnv<'b, P, S> {
     let unchanged = Subst::Unchanged(l);
     match l {
       Level::Id(i) => match self.levels.get(i).cloned() {
-        Some(i) => Subst::Changed(Level::Id(i)),
+        Some(l) => Subst::Changed(l),
         None => unchanged,
       },
       Level::Max(is) => {
         let mut changed = false;
         let ris = is
           .iter()
-          .map(|(i, o)| match self.levels.get(i) {
-            Some(i) => {
+          .flat_map(|(i, o)| match self.levels.get(i) {
+            Some(l) => {
               changed = true;
-              (*i, *o)
+              l.clone()
+                .into()
+                .iter()
+                .map(|(j, jo)| (*j, *o + *jo))
+                .collect::<Vec<_>>()
             }
-            None => (*i, *o),
+            None => vec![(*i, *o)],
           })
           .collect::<Vec<_>>();
         if changed {
@@ -110,6 +124,23 @@ impl<'b, P: Tag, S: Tag> SubstEnv<'b, P, S> {
           unchanged
         }
       }
+    }
+  }
+
+  fn subst_ls<'a>(&mut self, ls: &'a Vec<Level>) -> Subst<'a, Vec<Level>> {
+    let mut changed = false;
+    let mut rls = Vec::new();
+    for l in ls {
+      let l = self.subst_l(l);
+      if l.is_changed() {
+        changed = true;
+      }
+      rls.push(l.into());
+    }
+    if changed {
+      Subst::Changed(rls)
+    } else {
+      Subst::Unchanged(ls)
     }
   }
 
@@ -123,10 +154,7 @@ impl<'b, P: Tag, S: Tag> SubstEnv<'b, P, S> {
       CExprF::Bind(_) => unchanged,
       CExprF::Def(i, ls) => match self.defs.get(&i).cloned() {
         Some((sol, e, _)) => {
-          let ls = ls
-            .iter()
-            .map(|l| self.levels.get(l).cloned().unwrap_or(*l))
-            .collect();
+          let ls = self.subst_ls(ls).into();
           let ls_m = self.checker.map_solution(&sol, &ls);
           let lm = self.extend(ls_m);
           let s = Subst::Changed(self.subst_e(&e).into());
@@ -134,19 +162,9 @@ impl<'b, P: Tag, S: Tag> SubstEnv<'b, P, S> {
           s
         }
         None => {
-          let mut changed = false;
-          let ls = ls
-            .iter()
-            .map(|l| match self.levels.get(l) {
-              Some(l) => {
-                changed = true;
-                *l
-              }
-              None => *l,
-            })
-            .collect::<Vec<_>>();
-          if changed {
-            Subst::Changed(Rc::new(CExpr(CExprF::Def(*i, ls))))
+          let ls = self.subst_ls(ls);
+          if ls.is_changed() {
+            Subst::Changed(Rc::new(CExpr(CExprF::Def(*i, ls.into()))))
           } else {
             unchanged
           }

@@ -14,6 +14,22 @@ pub enum Level {
   Max(Vec<(LevelId, LevelOffset)>), // Max(ls) = x ⇔ ∀(l,i) ∈ ls: l+i ≤ x
 }
 
+impl Level {
+  pub fn into(self) -> Vec<(LevelId, LevelOffset)> {
+    match self {
+      Level::Id(i) => vec![(i, 0)],
+      Level::Max(ls) => ls,
+    }
+  }
+}
+
+pub fn used_levels(level: &Level) -> Vec<LevelId> {
+  match level {
+    Level::Id(i) => vec![*i],
+    Level::Max(ls) => ls.iter().map(|(i, _)| *i).collect(),
+  }
+}
+
 pub fn max_level(levels: Vec<Level>) -> Level {
   if levels.is_empty() {
     Level::Max(Vec::new())

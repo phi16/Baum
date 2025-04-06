@@ -263,7 +263,7 @@ where
     id
   }
 
-  fn fresh_levels(&mut self, i: DefId, sol: &Solution) -> Vec<LevelId> {
+  fn fresh_levels(&mut self, i: DefId, sol: &Solution) -> Vec<Level> {
     let ls = (0..sol.group_count)
       .map(|_| self.fresh_level())
       .collect::<Vec<_>>();
@@ -283,14 +283,14 @@ where
         format!("{}{:?} {}", self.def_symbols[&i], i, reason),
       );
     }
-    ls
+    ls.into_iter().map(|l| Level::Id(l)).collect()
   }
 
-  pub fn map_solution(&self, sol: &Solution, ls: &Vec<LevelId>) -> HashMap<LevelId, LevelId> {
+  pub fn map_solution(&self, sol: &Solution, ls: &Vec<Level>) -> HashMap<LevelId, Level> {
     let m = sol
       .replacer
       .iter()
-      .map(|(l, i)| (*l, ls[*i as usize]))
+      .map(|(l, i)| (*l, ls[*i as usize].clone()))
       .collect::<HashMap<_, _>>();
     m
   }
@@ -1318,12 +1318,12 @@ where
             let ty = subst.subst_v(&ty).into();
             for (l1, rel, l2, reason) in &sol.constraints {
               let l1 = match l1 {
-                LevelRef::Group(i) => ls[*i as usize],
-                LevelRef::Id(i) => *i,
+                LevelRef::Group(i) => ls[*i as usize].clone(),
+                LevelRef::Id(i) => Level::Id(*i),
               };
               let l2 = match l2 {
-                LevelRef::Group(i) => ls[*i as usize],
-                LevelRef::Id(i) => *i,
+                LevelRef::Group(i) => ls[*i as usize].clone(),
+                LevelRef::Id(i) => Level::Id(*i),
               };
               let rel = match rel {
                 LevelRel::Eq => " = ",

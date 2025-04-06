@@ -73,6 +73,19 @@ impl<'a> Pretty<'a> {
     }
   }
 
+  fn ls(&mut self, ls: &Vec<Level>) -> &mut Self {
+    self.s("[");
+    if !ls.is_empty() {
+      let mut li = ls.iter();
+      let l0 = li.next().unwrap();
+      self.s("𝒰").l(l0);
+      for l in li {
+        self.s(", 𝒰").l(l);
+      }
+    }
+    self.s("]")
+  }
+
   fn name(&mut self, name: &NameId) -> &mut Self {
     self.line.push(self.name_symbols.get(name).unwrap().clone());
     self
@@ -157,19 +170,6 @@ impl<'a> Pretty<'a> {
       }
       ExprF::Prop(_, e, name) => self.e(e).s(".").name(name),
     }
-  }
-
-  fn ls(&mut self, ls: &Vec<LevelId>) -> &mut Self {
-    self.s("[");
-    if !ls.is_empty() {
-      let mut li = ls.iter();
-      let l0 = li.next().unwrap();
-      self.s("𝒰").li(l0);
-      for l in li {
-        self.s(", 𝒰").li(l);
-      }
-    }
-    self.s("]")
   }
 
   fn c<P, S>(&mut self, e: &CExpr<P, S>) -> &mut Self {
