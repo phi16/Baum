@@ -1,12 +1,7 @@
 use crate::types::common::LevelId;
-use crate::types::level;
 use crate::types::level::*;
 use crate::types::val::*;
-use petgraph::{
-  algo::bellman_ford::{bellman_ford, find_negative_cycle},
-  prelude::NodeIndex,
-  Graph,
-};
+use petgraph::{algo::bellman_ford::find_negative_cycle, prelude::NodeIndex, Graph};
 use std::collections::{HashMap, HashSet};
 use union_find::{QuickFindUf, UnionBySize, UnionFind};
 
@@ -35,13 +30,8 @@ pub fn traverse_levels_e<P, S>(e: &RE<P, S>, scope: &mut HashSet<LevelId>) {
             scope.insert(*l);
           }
         }
-        Level::Max(les, lts) => {
-          for l in les {
-            if !bounded.contains(l) {
-              scope.insert(*l);
-            }
-          }
-          for l in lts {
+        Level::Max(ls) => {
+          for (l, _) in ls {
             if !bounded.contains(l) {
               scope.insert(*l);
             }
@@ -134,9 +124,10 @@ pub fn traverse_levels_v<P, S>(v: &RV<P, S>, scope: &mut HashSet<LevelId>) {
         Level::Id(l) => {
           scope.insert(*l);
         }
-        Level::Max(les, lts) => {
-          scope.extend(les.iter().cloned());
-          scope.extend(lts.iter().cloned());
+        Level::Max(ls) => {
+          for (l, _) in ls {
+            scope.insert(*l);
+          }
         }
       },
 
@@ -171,11 +162,7 @@ pub fn traverse_levels_v<P, S>(v: &RV<P, S>, scope: &mut HashSet<LevelId>) {
   rec(v, scope);
 }
 
-#[derive(Debug, Clone)]
-enum Edge {
-  Le,
-  Lt,
-}
+type Edge = LevelOffset;
 
 pub fn resolve_constraints(
   levels: &HashSet<LevelId>,
@@ -188,8 +175,8 @@ pub fn resolve_constraints(
   for (i1, rel, i2, reason) in constraints {
     match rel {
       LevelRel::Eq => eprintln!("  - {:?} = {:?} ({})", i1, i2, reason),
-      LevelRel::Le => eprintln!("  - {:?} ≤ {:?} ({})", i1, i2, reason),
-      LevelRel::Lt => eprintln!("  - {:?} < {:?} ({})", i1, i2, reason),
+      LevelRel::Le(0) => eprintln!("  - {:?} ≤ {:?} ({})", i1, i2, reason),
+      LevelRel::Le(o) => eprintln!("  - {:?}+{:?} ≤ {:?} ({})", i1, o, i2, reason),
     }
   } */
   let (group_count, level_map) = {
@@ -229,45 +216,30 @@ pub fn resolve_constraints(
   };
 
   let mut constrs = HashMap::new();
-  let mut has_lt = false;
   for (l1, rel, l2, reason) in constraints {
     let g1 = level_map[l1];
     let g2 = level_map[l2];
     match rel {
       LevelRel::Eq => {}
-      LevelRel::Le => {
+      LevelRel::Le(o) => {
         constrs
           .entry((g1, g2))
-          .and_modify(|e: &mut (Edge, String)| match e.0 {
-            Edge::Le => {
-              e.1.push_str(&format!(", {}", reason));
-            }
-            Edge::Lt => {}
-          })
-          .or_insert_with(|| (Edge::Le, reason.clone()));
-      }
-      LevelRel::Lt => {
-        constrs
-          .entry((g1, g2))
-          .and_modify(|e| match e.0 {
-            Edge::Le => {
-              *e = (Edge::Lt, reason.clone());
-            }
-            Edge::Lt => {
-              e.1.push_str(&format!(", {}", reason));
+          .and_modify(|(e, r): &mut (Edge, String)| {
+            if *e < *o {
+              *e = *o;
+              *r = reason.clone();
+            } else if *e == *o {
+              r.push_str(&format!(", {}", reason));
             }
           })
-          .or_insert_with(|| (Edge::Lt, reason.clone()));
-        has_lt = true;
+          .or_insert_with(|| (*o, reason.clone()));
       }
     }
   }
 
   // Cycle detection
 
-  if has_lt {
-    assert!(!constrs.is_empty());
-
+  if !constrs.is_empty() {
     /* {
       let mut groups = HashMap::new();
       for (l, g) in &level_map {
@@ -287,15 +259,8 @@ pub fn resolve_constraints(
     } */
 
     let mut edges = Vec::new();
-    for ((g1, g2), (rel, _)) in &constrs {
-      edges.push((
-        *g1 as u32,
-        *g2 as u32,
-        match rel {
-          Edge::Le => 0.,
-          Edge::Lt => -1.,
-        },
-      ));
+    for ((g1, g2), (e, _)) in &constrs {
+      edges.push((*g1 as u32, *g2 as u32, -(*e as f32)));
     }
     let root = group_count as u32;
     for n in 0..group_count {
@@ -389,7 +354,7 @@ pub fn resolve_constraints(
       .collect(),
     constraints: final_constrs
       .iter()
-      .filter_map(|(g1, g2, rel, reason)| {
+      .filter_map(|(g1, g2, e, reason)| {
         if g1 == g2 {
           // Eq: ignore
           // Le: ignore
@@ -400,10 +365,7 @@ pub fn resolve_constraints(
         let i2 = final_groups.get(g2).unwrap();
         Some((
           LevelRef::Group(*i1),
-          match rel {
-            Edge::Le => LevelRel::Le,
-            Edge::Lt => LevelRel::Lt,
-          },
+          LevelRel::Le(*e),
           LevelRef::Group(*i2),
           reason.clone(),
         ))

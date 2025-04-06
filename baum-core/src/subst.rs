@@ -92,30 +92,20 @@ impl<'b, P: Tag, S: Tag> SubstEnv<'b, P, S> {
         Some(i) => Subst::Changed(Level::Id(i)),
         None => unchanged,
       },
-      Level::Max(eis, tis) => {
+      Level::Max(is) => {
         let mut changed = false;
-        let mut reis = eis
+        let ris = is
           .iter()
-          .map(|i| match self.levels.get(i) {
+          .map(|(i, o)| match self.levels.get(i) {
             Some(i) => {
               changed = true;
-              *i
+              (*i, *o)
             }
-            None => *i,
-          })
-          .collect::<Vec<_>>();
-        let mut rtis = tis
-          .iter()
-          .map(|i| match self.levels.get(i) {
-            Some(i) => {
-              changed = true;
-              *i
-            }
-            None => *i,
+            None => (*i, *o),
           })
           .collect::<Vec<_>>();
         if changed {
-          Subst::Changed(Level::Max(reis, rtis))
+          Subst::Changed(Level::Max(ris))
         } else {
           unchanged
         }

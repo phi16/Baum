@@ -241,23 +241,17 @@ where
       (Level::Id(l1), Level::Id(l2)) => {
         self.lev_con(l1, LevelRel::Eq, l2, reason);
       }
-      (Level::Id(l1), Level::Max(le, lt)) => {
-        for l2 in le {
-          self.lev_con(l2, LevelRel::Le, l1, format!("⊔ {}", reason));
-        }
-        for l2 in lt {
-          self.lev_con(l2, LevelRel::Lt, l1, format!("⊔ {}", reason));
+      (Level::Id(l1), Level::Max(ls)) => {
+        for (l2, o) in ls {
+          self.lev_con(l2, LevelRel::Le(*o), l1, format!("⊔ {}", reason));
         }
       }
-      (Level::Max(le, lt), Level::Id(l2)) => {
-        for l1 in le {
-          self.lev_con(l1, LevelRel::Le, l2, format!("⊔ {}", reason));
-        }
-        for l1 in lt {
-          self.lev_con(l1, LevelRel::Lt, l2, format!("⊔ {}", reason));
+      (Level::Max(ls), Level::Id(l2)) => {
+        for (l1, o) in ls {
+          self.lev_con(l1, LevelRel::Le(*o), l2, format!("⊔ {}", reason));
         }
       }
-      (Level::Max(_, _), Level::Max(_, _)) => {
+      (Level::Max(_), Level::Max(_)) => {
         eprintln!("Ignored: {:?} ≟ {:?}", l1, l2);
       }
     }
@@ -282,7 +276,12 @@ where
         LevelRef::Id(i2) => *i2,
         LevelRef::Group(g2) => ls[*g2 as usize],
       };
-      self.lev_con(&l1, rel.clone(), &l2, format!("{:?} {}", i, reason));
+      self.lev_con(
+        &l1,
+        rel.clone(),
+        &l2,
+        format!("{}{:?} {}", self.def_symbols[&i], i, reason),
+      );
     }
     ls
   }
@@ -831,11 +830,7 @@ where
       Uni => match &self.norm(check_ty)?.0 {
         ValF::Uni(tyl) => {
           let tmli = self.fresh_level();
-          self.lev_eq(
-            &Level::Max(Vec::new(), vec![tmli]),
-            tyl,
-            format!("Check: U"),
-          );
+          self.lev_eq(&Level::Max(vec![(tmli, 1)]), tyl, format!("Check: U"));
           let tml = Level::Id(tmli);
           Ok(Rc::new(CExpr(CExprF::Uni(tml))))
         }
@@ -929,6 +924,15 @@ where
   }
 
   fn check_ty(&mut self, e: Expr<P, S>) -> Result<(RE<P, S>, Level)> {
+    match e.0 {
+      ExprF::Uni => {
+        let tmli = self.fresh_level();
+        let tml = Level::Id(tmli);
+        let tyl = Level::Max(vec![(tmli, 1)]);
+        return Ok((Rc::new(CExpr(CExprF::Uni(tml))), tyl));
+      }
+      _ => {}
+    }
     let l = Level::Id(self.fresh_level());
     let e = self.check(e, &Rc::new(Val(ValF::Uni(l.clone()))))?;
     Ok((e, l))
@@ -1001,7 +1005,7 @@ where
       Uni => {
         let tmli = self.fresh_level();
         let tml = Level::Id(tmli);
-        let tyl = Level::Max(Vec::new(), vec![tmli]);
+        let tyl = Level::Max(vec![(tmli, 1)]);
         Ok((
           Rc::new(CExpr(CExprF::Uni(tml))),
           Rc::new(Val(ValF::Uni(tyl))),
@@ -1085,7 +1089,7 @@ where
 
       Sigma(tag, props) => {
         if props.is_empty() {
-          let l = Level::Max(Vec::new(), Vec::new());
+          let l = Level::Max(Vec::new());
           return Ok((
             Rc::new(CExpr(CExprF::Sigma0(tag))),
             Rc::new(Val(ValF::Uni(l))),
@@ -1322,13 +1326,13 @@ where
                 LevelRef::Id(i) => *i,
               };
               let rel = match rel {
-                LevelRel::Eq => "=",
-                LevelRel::Le => "≤",
-                LevelRel::Lt => "<",
+                LevelRel::Eq => " = ",
+                LevelRel::Le(0) => " ≤ ",
+                LevelRel::Le(o) => &format!("+{} ≤ ", o),
               };
               eprintln!(
                 "{}",
-                format!("    {:?} {} {:?} ({})", l1, rel, l2, reason).black()
+                format!("    {:?}{}{:?} ({})", l1, rel, l2, reason).black()
               );
             }
             eprintln!(

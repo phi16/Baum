@@ -1,39 +1,38 @@
 use crate::types::common::LevelId;
 
+pub type LevelOffset = u8;
+
 #[derive(Debug, Clone)]
 pub enum LevelRel {
   Eq,
-  Le,
-  Lt,
+  Le(LevelOffset),
 }
 
 #[derive(Debug, Clone)]
 pub enum Level {
   Id(LevelId),
-  Max(Vec<LevelId>, Vec<LevelId>), // le, lt
+  Max(Vec<(LevelId, LevelOffset)>), // Max(ls) = x ⇔ ∀(l,i) ∈ ls: l+i ≤ x
 }
 
 pub fn max_level(levels: Vec<Level>) -> Level {
   if levels.is_empty() {
-    Level::Max(Vec::new(), Vec::new())
+    Level::Max(Vec::new())
   } else if levels.len() == 1 {
     levels.into_iter().next().unwrap()
   } else {
-    let mut les = Vec::new();
-    let mut lts = Vec::new();
+    let mut ls = Vec::new();
     for l in levels {
       match l {
-        Level::Id(i) => les.push(i),
-        Level::Max(eis, tis) => {
-          les.extend(eis);
-          lts.extend(tis);
+        Level::Id(i) => ls.push((i, 0)),
+        Level::Max(is) => {
+          ls.extend(is);
         }
       }
     }
-    if les.len() == 1 && lts.is_empty() {
-      Level::Id(les[0])
+    if ls.len() == 1 && ls[0].1 == 0 {
+      Level::Id(ls[0].0)
     } else {
-      Level::Max(les, lts)
+      Level::Max(ls)
     }
   }
 }
