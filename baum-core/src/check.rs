@@ -1331,7 +1331,7 @@ where
             let mut subst = SubstEnv::from_levels(ls_m, self);
             let ce = subst.subst_e(&c_expr).into();
             let ty = subst.subst_v(&ty).into();
-            let ty = self.deep_norm(&ty).unwrap();
+            // let ty = self.deep_norm(&ty).unwrap();
             for (l1, l2) in &sol.externals {
               let ls = l2
                 .iter()

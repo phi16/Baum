@@ -369,8 +369,16 @@ impl<'b, P: Tag, S: Tag> SubstEnv<'b, P, S> {
               }
             }
           }
+          let mut rls = Vec::new();
+          for l in ls {
+            let l = self.subst_l(l);
+            if l.is_changed() {
+              changed = true;
+            }
+            rls.push(l.into());
+          }
           if changed {
-            Subst::Changed(Rc::new(Val(ValF::Lazy(*i, ls.clone(), rks))))
+            Subst::Changed(Rc::new(Val(ValF::Lazy(*i, rls, rks))))
           } else {
             unchanged
           }

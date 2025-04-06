@@ -11,11 +11,11 @@ u = (X: U) → (P (P X) → X) → P (P X)
 
 τ (t: P (P u)): u = λ(X, f, p) t λ(x) p (f (x X f))
 σ (s: u): P (P u) = s u λ(t) τ t
--- Δ: P u = λ(y) ¬ ((p: P u) → σ y p → p (τ (σ y)))
--- Ω: u = τ λ(p) (x: u) → σ x p → p x
--- D: U = (p: P u) → σ Ω p → p (τ (σ Ω))
--- 
--- lem₁ (p: P u) (H1: (x: u) → σ x p → p x): p Ω = H1 Ω λ(x) H1 (τ (σ x))
--- lem₂: ¬ D = lem₁ Δ λ(x, H2, H3) H3 Δ H2 λ(p) H3 λ(y) p (τ (σ y))
--- lem₃: D = λ(p) lem₁ λ(y) p (τ (σ y))
--- loop: ⊥ = lem₂ lem₃
+Δ: P u = λ(y) ¬ ((p: P u) → σ y p → p (τ (σ y)))
+Ω: u = τ λ(p) (x: u) → σ x p → p x
+D: U = (p: P u) → σ Ω p → p (τ (σ Ω))
+
+lem₁ (p: P u) (H1: (x: u) → σ x p → p x): p Ω = H1 Ω λ(x) H1 (τ (σ x))
+lem₂: ¬ D = lem₁ Δ λ(x, H2, H3) H3 Δ H2 λ(p) H3 λ(y) p (τ (σ y))
+lem₃: D = λ(p) lem₁ λ(y) p (τ (σ y))
+loop: ⊥ = lem₂ lem₃
