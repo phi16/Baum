@@ -297,6 +297,7 @@ pub fn resolve_constraints(
     if processed.contains_key(&g) {
       return;
     }
+    processed.insert(g, Vec::new()); // to terminate le-le...-le cycles
     let mut constrs = Vec::new();
     for (g1, e) in &descending[g] {
       if accessible.contains(g1) {
