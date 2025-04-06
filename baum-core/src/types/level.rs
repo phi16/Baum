@@ -30,6 +30,22 @@ pub fn used_levels(level: &Level) -> Vec<LevelId> {
   }
 }
 
+pub fn offset_level(level: Level, offset: LevelOffset) -> Level {
+  if offset == 0 {
+    return level;
+  }
+  match level {
+    Level::Id(i) => Level::Max(vec![(i, offset)]),
+    Level::Max(ls) => {
+      let mut new_ls = Vec::new();
+      for (i, o) in ls {
+        new_ls.push((i, o + offset));
+      }
+      Level::Max(new_ls)
+    }
+  }
+}
+
 pub fn max_level(levels: Vec<Level>) -> Level {
   if levels.is_empty() {
     Level::Max(Vec::new())
@@ -57,7 +73,7 @@ pub type GroupIndex = u32;
 
 #[derive(Debug, Clone)]
 pub enum LevelRef {
-  Id(LevelId),
+  Ext(LevelId),
   Group(GroupIndex),
 }
 
@@ -66,6 +82,6 @@ pub type Constraints = Vec<(LevelId, LevelRel, LevelId, String)>;
 #[derive(Debug, Clone)]
 pub struct Solution {
   pub group_count: usize,
-  pub replacer: Vec<(LevelId, GroupIndex)>,
+  pub replacer: Vec<(LevelId, Vec<(LevelRef, LevelOffset)>)>,
   pub constraints: Vec<(LevelRef, LevelRel, LevelRef, String)>,
 }

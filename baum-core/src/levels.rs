@@ -339,7 +339,7 @@ pub fn resolve_constraints(
       .map(|l| {
         let g = level_map.get(l).unwrap();
         let i = final_groups.get(g).unwrap();
-        (*l, *i)
+        (*l, vec![(LevelRef::Group(*i), 0)])
       })
       .collect(),
     constraints: final_constrs
@@ -374,12 +374,21 @@ pub fn resolve_constraints(
     }
     ls
   };
+  if !external_levels.is_empty() {
+    eprintln!("constraints: {:?}", constraints);
+    eprintln!("levels: {:?}", levels);
+    eprintln!(
+      "[Constraint Solver] Found {} external levels: {:?}",
+      external_levels.len(),
+      external_levels
+    );
+  }
   let mut sol = sol;
   for l in external_levels {
     let g = level_map.get(&l).unwrap();
     if let Some(i) = final_groups.get(g) {
       sol.constraints.push((
-        LevelRef::Id(l),
+        LevelRef::Ext(l),
         LevelRel::Eq,
         LevelRef::Group(*i),
         "external level".to_string(),

@@ -339,3 +339,12 @@ pub fn pretty_val<P, S>(
   p.v(v).ln();
   p.str.join("\n")
 }
+
+pub fn pretty_level(l: &Level) -> String {
+  let def_symbols = HashMap::new();
+  let bind_symbols = HashMap::new();
+  let name_symbols = HashMap::new();
+  let mut p = Pretty::new(&def_symbols, &bind_symbols, &name_symbols);
+  p.l(l).ln();
+  p.str.join("\n")
+}

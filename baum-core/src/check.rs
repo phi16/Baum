@@ -1,5 +1,5 @@
 use crate::levels::*;
-use crate::pretty::{pretty_expr, pretty_val};
+use crate::pretty::{pretty_expr, pretty_level, pretty_val};
 use crate::subst::SubstEnv;
 use crate::types::common::*;
 use crate::types::level::*;
@@ -269,11 +269,11 @@ where
       .collect::<Vec<_>>();
     for (r1, rel, r2, reason) in &sol.constraints {
       let l1 = match r1 {
-        LevelRef::Id(i1) => *i1,
+        LevelRef::Ext(i1) => *i1,
         LevelRef::Group(g1) => ls[*g1 as usize],
       };
       let l2 = match r2 {
-        LevelRef::Id(i2) => *i2,
+        LevelRef::Ext(i2) => *i2,
         LevelRef::Group(g2) => ls[*g2 as usize],
       };
       self.lev_con(
@@ -290,7 +290,19 @@ where
     let m = sol
       .replacer
       .iter()
-      .map(|(l, i)| (*l, ls[*i as usize].clone()))
+      .map(|(l, gs)| {
+        let levels = gs
+          .iter()
+          .map(|(g, o)| {
+            let l = match g {
+              LevelRef::Ext(i) => Level::Id(*i),
+              LevelRef::Group(g) => ls[*g as usize].clone(),
+            };
+            offset_level(l, *o)
+          })
+          .collect::<Vec<_>>();
+        (*l, max_level(levels))
+      })
       .collect::<HashMap<_, _>>();
     m
   }
@@ -301,6 +313,10 @@ where
 
   fn ppv(&self, v: &Val<P, S>) -> String {
     pretty_val(&self.def_symbols, &self.bind_symbols, &self.name_symbols, v)
+  }
+
+  fn ppl(&self, l: &Level) -> String {
+    pretty_level(l)
   }
 
   fn norm(&mut self, v: &Term<P, S>) -> Result<Term<P, S>> {
@@ -1318,12 +1334,12 @@ where
             let ty = subst.subst_v(&ty).into();
             for (l1, rel, l2, reason) in &sol.constraints {
               let l1 = match l1 {
+                LevelRef::Ext(i) => Level::Id(*i),
                 LevelRef::Group(i) => ls[*i as usize].clone(),
-                LevelRef::Id(i) => Level::Id(*i),
               };
               let l2 = match l2 {
+                LevelRef::Ext(i) => Level::Id(*i),
                 LevelRef::Group(i) => ls[*i as usize].clone(),
-                LevelRef::Id(i) => Level::Id(*i),
               };
               let rel = match rel {
                 LevelRel::Eq => " = ",
@@ -1332,7 +1348,7 @@ where
               };
               eprintln!(
                 "{}",
-                format!("    {:?}{}{:?} ({})", l1, rel, l2, reason).black()
+                format!("    {}{}{} ({})", self.ppl(&l1), rel, self.ppl(&l2), reason).black()
               );
             }
             eprintln!(
@@ -1361,6 +1377,7 @@ where
             //   "{}",
             //   format!("    {} = {}", self.def_symbols[&id], self.ppv(&dtm)).black()
             // );
+            self.solves.pop();
           }
           self.defenv().add(id, (sol.clone(), c_expr.clone(), ty));
           def_terms.push((id, sol, c_expr));
