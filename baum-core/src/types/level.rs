@@ -83,5 +83,5 @@ pub type Constraints = Vec<(LevelId, LevelRel, LevelId, String)>;
 pub struct Solution {
   pub group_count: usize,
   pub replacer: Vec<(LevelId, Vec<(LevelRef, LevelOffset)>)>,
-  pub constraints: Vec<(LevelRef, LevelRel, LevelRef, String)>,
+  pub externals: Vec<(LevelId, Vec<(LevelRef, LevelOffset)>)>,
 }

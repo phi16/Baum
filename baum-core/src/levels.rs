@@ -294,73 +294,53 @@ pub fn resolve_constraints(
 
   // Minimize constraints
 
-  let mut processed = HashSet::new();
-  let mut min_constrs = Vec::new();
   fn descend(
     g: usize,
     descending: &Vec<HashMap<usize, &(Edge, String)>>,
     accessible: &HashSet<usize>,
-    processed: &mut HashSet<usize>,
-    min_constrs: &mut Vec<(usize, usize, Edge, String)>,
+    next_root_index: &mut u32,
+    processed: &mut HashMap<usize, Vec<(LevelRef, Edge)>>,
   ) {
-    if processed.contains(&g) {
+    if processed.contains_key(&g) {
       return;
     }
-    processed.insert(g);
-    for (g1, c) in &descending[g] {
+    let mut constrs = Vec::new();
+    for (g1, (e, _)) in &descending[g] {
       if accessible.contains(g1) {
-        descend(*g1, descending, accessible, processed, min_constrs);
-        min_constrs.push((*g1, g, c.0.clone(), c.1.clone()));
+        descend(*g1, descending, accessible, next_root_index, processed);
+        let mut cs = processed.get(g1).unwrap().clone();
+        for (_, o) in cs.iter_mut() {
+          *o += *e;
+        }
+        constrs.extend(cs);
       }
     }
-  }
-  for t in target {
-    if let Some(g) = level_map.get(t) {
-      descend(
-        *g,
-        &descending,
-        &accessible,
-        &mut processed,
-        &mut min_constrs,
-      );
+    if constrs.is_empty() {
+      let index = *next_root_index;
+      *next_root_index += 1;
+      constrs.push((LevelRef::Group(index), 0));
     }
+    processed.insert(g, constrs);
   }
-  let final_groups = processed
-    .into_iter()
-    .enumerate()
-    .map(|(i, g)| (g, i as GroupIndex))
-    .collect::<HashMap<_, _>>();
-  let final_constrs = min_constrs;
+  let mut next_root_index = 0;
+  let mut processed = HashMap::new();
+  let mut replacer = Vec::new();
+  for t in target {
+    let g = level_map.get(t).unwrap();
+    descend(
+      *g,
+      &descending,
+      &accessible,
+      &mut next_root_index,
+      &mut processed,
+    );
+    replacer.push((*t, processed.get(g).unwrap().clone()));
+  }
 
   let sol = Solution {
-    group_count: final_groups.len(),
-    replacer: target
-      .iter()
-      .map(|l| {
-        let g = level_map.get(l).unwrap();
-        let i = final_groups.get(g).unwrap();
-        (*l, vec![(LevelRef::Group(*i), 0)])
-      })
-      .collect(),
-    constraints: final_constrs
-      .iter()
-      .filter_map(|(g1, g2, e, reason)| {
-        if g1 == g2 {
-          // Eq: ignore
-          // Le: ignore
-          // Lt: unreachable
-          return None;
-        }
-        let i1 = final_groups.get(g1).unwrap();
-        let i2 = final_groups.get(g2).unwrap();
-        Some((
-          LevelRef::Group(*i1),
-          LevelRel::Le(*e),
-          LevelRef::Group(*i2),
-          reason.clone(),
-        ))
-      })
-      .collect(),
+    group_count: next_root_index as usize,
+    replacer,
+    externals: vec![],
   };
   let external_levels = {
     let mut ls = HashSet::new();
@@ -386,13 +366,8 @@ pub fn resolve_constraints(
   let mut sol = sol;
   for l in external_levels {
     let g = level_map.get(&l).unwrap();
-    if let Some(i) = final_groups.get(g) {
-      sol.constraints.push((
-        LevelRef::Ext(l),
-        LevelRel::Eq,
-        LevelRef::Group(*i),
-        "external level".to_string(),
-      ));
+    if let Some(ls) = processed.get(g) {
+      sol.externals.push((l, ls.clone()));
     }
   }
   Ok(sol)

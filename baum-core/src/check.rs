@@ -267,21 +267,20 @@ where
     let ls = (0..sol.group_count)
       .map(|_| self.fresh_level())
       .collect::<Vec<_>>();
-    for (r1, rel, r2, reason) in &sol.constraints {
-      let l1 = match r1 {
-        LevelRef::Ext(i1) => *i1,
-        LevelRef::Group(g1) => ls[*g1 as usize],
-      };
-      let l2 = match r2 {
-        LevelRef::Ext(i2) => *i2,
-        LevelRef::Group(g2) => ls[*g2 as usize],
-      };
-      self.lev_con(
-        &l1,
-        rel.clone(),
-        &l2,
-        format!("{}{:?} {}", self.def_symbols[&i], i, reason),
-      );
+    for (r1, r2) in &sol.externals {
+      let l1 = Level::Id(*r1);
+      let l2s = r2
+        .iter()
+        .map(|(r, o)| {
+          let l = match r {
+            LevelRef::Ext(i) => *i,
+            LevelRef::Group(g) => ls[*g as usize],
+          };
+          (l, *o)
+        })
+        .collect::<Vec<_>>();
+      let l2 = Level::Max(l2s);
+      self.lev_eq(&l1, &l2, format!("{}{:?}", self.def_symbols[&i], i));
     }
     ls.into_iter().map(|l| Level::Id(l)).collect()
   }
@@ -1332,25 +1331,22 @@ where
             let mut subst = SubstEnv::from_levels(ls_m, self);
             let ce = subst.subst_e(&c_expr).into();
             let ty = subst.subst_v(&ty).into();
-            for (l1, rel, l2, reason) in &sol.constraints {
-              let l1 = match l1 {
-                LevelRef::Ext(i) => Level::Id(*i),
-                LevelRef::Group(i) => ls[*i as usize].clone(),
-              };
-              let l2 = match l2 {
-                LevelRef::Ext(i) => Level::Id(*i),
-                LevelRef::Group(i) => ls[*i as usize].clone(),
-              };
-              let rel = match rel {
-                LevelRel::Eq => " = ",
-                LevelRel::Le(0) => " ≤ ",
-                LevelRel::Le(o) => &format!("+{} ≤ ", o),
-              };
-              eprintln!(
-                "{}",
-                format!("    {}{}{} ({})", self.ppl(&l1), rel, self.ppl(&l2), reason).black()
-              );
+            let ty = self.deep_norm(&ty).unwrap();
+            for (l1, l2) in &sol.externals {
+              let ls = l2
+                .iter()
+                .map(|(r, o)| {
+                  let l = match r {
+                    LevelRef::Ext(i) => Level::Id(*i),
+                    LevelRef::Group(i) => ls[*i as usize].clone(),
+                  };
+                  offset_level(l, *o)
+                })
+                .collect::<Vec<_>>();
+              let l2 = max_level(ls);
+              eprintln!("{}", format!("    {:?} = {}", l1, self.ppl(&l2)).black());
             }
+            eprintln!("{}", format!("    ls = {:?}", ls).black());
             eprintln!(
               "{}",
               format!(

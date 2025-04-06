@@ -4,13 +4,6 @@ syntax 1> (x: A) → B = Π(x: A) B
 id {A: U} (x: A) = x
 syntax 0 x of A = id {A} x
 
-v: U = U of U
-v': U = (U of U) of (U of U)
-v'' = (((U of U) of (U of U)) of ((U of U) of (U of U))) of (((U of U) of (U of U)) of ((U of U) of (U of U)))
-x = U
-w = (U, U)
-w' = Σ(U, U)
-
 ⊥ = (A: U) → A
 ¬ (A: U) = A → ⊥
 P (A: U) = A → U
@@ -19,7 +12,7 @@ u = (X: U) → (P (P X) → X) → P (P X)
 τ (t: P (P u)): u = λ(X, f, p) t λ(x) p (f (x X f))
 σ (s: u): P (P u) = s u λ(t) τ t
 -- Δ: P u = λ(y) ¬ ((p: P u) → σ y p → p (τ (σ y)))
-Ω: u = τ λ(p) (x: u) → σ x p → p x
+-- Ω: u = τ λ(p) (x: u) → σ x p → p x
 -- D: U = (p: P u) → σ Ω p → p (τ (σ Ω))
 -- 
 -- lem₁ (p: P u) (H1: (x: u) → σ x p → p x): p Ω = H1 Ω λ(x) H1 (τ (σ x))
