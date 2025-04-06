@@ -1,11 +1,15 @@
 pub struct Doc {
   pub content: ropey::Rope,
+  pub tokens: Vec<crate::lang::TokenData>,
+  pub last_result_id: Option<u32>,
 }
 
 impl Doc {
   pub fn new(text: String) -> Self {
     Doc {
       content: ropey::Rope::from(text),
+      tokens: Vec::new(),
+      last_result_id: None,
     }
   }
 

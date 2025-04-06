@@ -3,6 +3,7 @@ use crate::lang::{tokenize_example, TokenType};
 use colored::Colorize;
 use lsp_server::{Connection, Message, Notification, Request, Response};
 use lsp_types::*;
+use std::sync::{Arc, Mutex};
 use std::{collections::HashMap, error::Error, fs::File, io::Read};
 
 struct TokenTypeSignature(pub u32);
@@ -68,7 +69,10 @@ fn from_token_type(t: TokenType) -> Option<(u32, u32)> {
   Some((res.0 .0, res.1))
 }
 
-fn semantic_tokens(doc: &Doc) -> Result<(Vec<SemanticToken>, Vec<crate::lang::Diagnostic>)> {
+fn semantic_tokens(
+  doc: Arc<Mutex<Doc>>,
+) -> Result<(Vec<SemanticToken>, Vec<crate::lang::Diagnostic>)> {
+  let doc = doc.lock().unwrap();
   let contents = doc.to_string();
   let (tokens, diagnostics) = tokenize_example(&contents);
   let mut prev_line = 0;
@@ -94,7 +98,7 @@ fn semantic_tokens(doc: &Doc) -> Result<(Vec<SemanticToken>, Vec<crate::lang::Di
 }
 
 struct Server<'a> {
-  docs: HashMap<lsp_types::Uri, Doc>,
+  docs: HashMap<lsp_types::Uri, Arc<Mutex<Doc>>>,
   connection: &'a Connection,
   next_result_id: u32,
 }
@@ -108,6 +112,15 @@ impl<'a> Server<'a> {
       connection,
       next_result_id: 0,
     }
+  }
+
+  fn get_doc(&self, uri: &lsp_types::Uri) -> Result<Arc<Mutex<Doc>>> {
+    let doc = self
+      .docs
+      .get(uri)
+      .ok_or(format!("Document not found: {:?}", uri.as_str()))?
+      .clone();
+    Ok(doc)
   }
 
   fn fresh_result_id(&mut self) -> u32 {
@@ -185,17 +198,19 @@ impl<'a> Server<'a> {
     params: SemanticTokensParams,
   ) -> Result<Option<SemanticTokensResult>> {
     let uri = params.text_document.uri;
-    let doc = self
-      .docs
-      .get(&uri)
-      .ok_or(format!("Document not found: {:?}", uri.as_str()))?;
-    let (result, diags) = match semantic_tokens(doc) {
+    let doc = self.get_doc(&uri)?;
+    let (result, diags) = match semantic_tokens(doc.clone()) {
       Ok((r, diags)) => (r, diags),
       Err(_) => (vec![], vec![]),
     };
+    let result_id = self.fresh_result_id();
+    {
+      let mut doc = doc.lock().unwrap();
+      doc.last_result_id = Some(result_id);
+    }
     self.send_diagnostics(uri, diags)?;
     let result = SemanticTokensResult::Tokens(SemanticTokens {
-      result_id: Some(self.fresh_result_id().to_string()),
+      result_id: Some(result_id.to_string()),
       data: result,
     });
     Ok(Some(result))
@@ -204,7 +219,24 @@ impl<'a> Server<'a> {
     &mut self,
     params: SemanticTokensDeltaParams,
   ) -> Result<Option<SemanticTokensFullDeltaResult>> {
-    Ok(None)
+    let uri = params.text_document.uri;
+    let doc = self.get_doc(&uri)?;
+    let (result, diags) = match semantic_tokens(doc.clone()) {
+      Ok((r, diags)) => (r, diags),
+      Err(_) => (vec![], vec![]),
+    };
+    self.send_diagnostics(uri, diags)?;
+    let result_id = self.fresh_result_id();
+    {
+      let mut doc = doc.lock().unwrap();
+      doc.last_result_id = Some(result_id);
+    }
+    // TODO: TokensDelta
+    let result = SemanticTokensFullDeltaResult::Tokens(SemanticTokens {
+      result_id: Some(result_id.to_string()),
+      data: result,
+    });
+    Ok(Some(result))
   }
   fn semantic_tokens_range(
     &mut self,
@@ -227,6 +259,9 @@ impl<'a> Server<'a> {
             end: cursor_pos,
           };
           let cands = vec![
+            ("\\Gl".to_string(), "λ".to_string()),
+            ("\\GP".to_string(), "Π".to_string()),
+            ("\\GS".to_string(), "Σ".to_string()),
             ("\\lambda".to_string(), "λ".to_string()),
             ("\\pi".to_string(), "Π".to_string()),
             ("\\sigma".to_string(), "Σ".to_string()),
@@ -271,7 +306,7 @@ impl<'a> Server<'a> {
   fn did_open(&mut self, params: DidOpenTextDocumentParams) -> Result<()> {
     let uri = params.text_document.uri;
     let doc = Doc::new(params.text_document.text);
-    self.docs.insert(uri.clone(), doc);
+    self.docs.insert(uri.clone(), Arc::new(Mutex::new(doc)));
     Ok(())
   }
   fn did_close(&mut self, params: DidCloseTextDocumentParams) -> Result<()> {
@@ -281,10 +316,8 @@ impl<'a> Server<'a> {
   }
   fn did_change(&mut self, params: DidChangeTextDocumentParams) -> Result<()> {
     let uri = params.text_document.uri;
-    let doc = self
-      .docs
-      .get_mut(&uri)
-      .ok_or(format!("Document not found: {:?}", uri.as_str()))?;
+    let doc = self.get_doc(&uri)?;
+    let mut doc = doc.lock().unwrap();
     for change in params.content_changes {
       match change.range {
         Some(range) => {
