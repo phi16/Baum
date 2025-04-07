@@ -1,7 +1,7 @@
 use crate::types::token::TokenRange;
 use crate::types::tree_base::*;
 
-use super::token::TokenLoc;
+use super::token::TokenIx;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Id<'a>(&'a str);
@@ -60,7 +60,7 @@ pub type DeclInternal<'a> = DeclF<
 pub type ExprInternal<'a> = ExprF<Id<'a>, Vec<Decl<'a>>, Box<Expr<'a>>, SyntaxId, Vec<SynElem<'a>>>;
 
 #[derive(Debug, Clone)]
-pub struct Arg<'a>(pub ArgInternal<'a>, pub TokenLoc);
+pub struct Arg<'a>(pub ArgInternal<'a>, pub TokenIx);
 
 #[derive(Debug, Clone)]
 pub struct Decl<'a>(pub DeclInternal<'a>, pub TokenRange);
@@ -69,7 +69,7 @@ pub struct Decl<'a>(pub DeclInternal<'a>, pub TokenRange);
 pub struct Expr<'a>(pub ExprInternal<'a>, pub TokenRange);
 
 #[derive(Debug, Clone)]
-pub struct SynDef<'a>(pub SynDefInternal<'a>, pub TokenLoc);
+pub struct SynDef<'a>(pub SynDefInternal<'a>, pub TokenIx);
 
 #[derive(Debug, Clone)]
 pub struct SynElem<'a>(pub SynElemInternal<'a>, pub TokenRange);

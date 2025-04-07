@@ -347,7 +347,7 @@ impl<'a> DeclParser<'a> {
           if let Some(role) = fvs.get(&id) {
             if last_is_expr {
               return Err((
-                t.pos.into(),
+                t.ix.into(),
                 "placeholders must not be consecutive".to_string(),
               ));
             }
@@ -367,7 +367,7 @@ impl<'a> DeclParser<'a> {
             defs.push(SynDef(SynDefF::Token(t.str), loc));
           }
         }
-        _ => return Err((t.pos.into(), "expected identifier or symbols".to_string())),
+        _ => return Err((t.ix.into(), "expected identifier or symbols".to_string())),
       }
       last_is_expr = is_expr;
     }

@@ -2,7 +2,7 @@ use crate::builtin::builtin_syntax_handlers;
 use crate::types::syntax::{
   ElemId, ElemToken, LookupId, SyntaxExpr, SyntaxHandler, SyntaxInterpret,
 };
-use crate::types::token::{ErrorPos, TokenLoc, TokenRange};
+use crate::types::token::{ErrorPos, TokenIx, TokenRange};
 use crate::types::tree::*;
 use crate::types::tree_base::*;
 use baum_front::types::tree as front;
@@ -17,9 +17,8 @@ type FExprInternal = front::ExprInternal<Tag>;
 type FModBody = front::ModBody<Tag>;
 type FDecl = front::Decl<Tag>;
 
-fn range_at(loc: &TokenLoc) -> TokenRange {
+fn range_at(loc: &TokenIx) -> TokenRange {
   TokenRange {
-    begin_pos: (0, 0),
     begin: loc.clone(),
     end: loc.clone(),
   }
@@ -27,7 +26,6 @@ fn range_at(loc: &TokenLoc) -> TokenRange {
 
 fn range_merge(r1: &TokenRange, r2: &TokenRange) -> TokenRange {
   TokenRange {
-    begin_pos: r1.begin_pos,
     begin: r1.begin.clone(),
     end: r2.end.clone(),
   }
@@ -54,7 +52,7 @@ type Resolver = Vec<Vec<front::Id>>;
 
 #[derive(Debug, Clone)]
 struct Env<'a> {
-  lookup: HashMap<Id<'a>, (Entity<'a>, TokenLoc)>,
+  lookup: HashMap<Id<'a>, (Entity<'a>, TokenIx)>,
   syntax: HashMap<SyntaxId, Resolver>,
 }
 
@@ -95,7 +93,7 @@ impl<'a> Builder<'a> {
     self.errors.push((pos, s));
   }
 
-  fn here(&mut self) -> &mut HashMap<Id<'a>, (Entity<'a>, TokenLoc)> {
+  fn here(&mut self) -> &mut HashMap<Id<'a>, (Entity<'a>, TokenIx)> {
     &mut self.envs.last_mut().unwrap().1.lookup
   }
 
@@ -464,7 +462,7 @@ impl<'a> Builder<'a> {
       let ty = Rc::new(ty);
       for (index, name) in names.iter().enumerate() {
         let i = self.new_id(name);
-        let l = TokenLoc::new(loc.clone().into_inner() + index);
+        let l = TokenIx::new(loc.clone().into_inner() + index);
         self
           .here()
           .insert(name.clone(), (Entity::Bind(i), l.clone()));
@@ -623,7 +621,7 @@ impl<'a> Builder<'a> {
           let ty = Rc::new(ty);
           for (index, name) in names.iter().enumerate() {
             let i = self.new_id(name);
-            let l = TokenLoc::new(loc.clone().into_inner() + index);
+            let l = TokenIx::new(loc.clone().into_inner() + index);
             self
               .here()
               .insert(name.clone(), (Entity::Bind(i), l.clone()));

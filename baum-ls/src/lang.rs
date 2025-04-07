@@ -1,4 +1,5 @@
-use baum_lang::types::{self, token::TokenLoc};
+use baum_lang::types::{self, token::TokenIx};
+use std::cell::RefCell;
 
 #[derive(Debug, Clone)]
 pub enum TokenType {
@@ -51,8 +52,13 @@ impl Context {
     self.tokens
   }
 
-  fn mark_as(&mut self, loc: &TokenLoc, offset: i32, t: TokenType) {
-    let index = loc.clone().into_inner() as i32 + offset;
+  fn pos(&self, ix: usize) -> (u32, u32, u32) {
+    let t = self.tokens.get(ix).unwrap();
+    (t.line, t.column, t.length)
+  }
+
+  fn mark_as(&mut self, ix: &TokenIx, offset: i32, t: TokenType) {
+    let index = ix.clone().into_inner() as i32 + offset;
     let d = match self.tokens.get_mut(index as usize) {
       Some(token) => token,
       None => return,
@@ -61,28 +67,28 @@ impl Context {
   }
 
   fn e(&mut self, e: &types::tree::Expr) {
-    let loc = &e.1.begin;
+    let ix = &e.1.begin;
     use types::tree_base::*;
     match &e.0 {
       ExprF::Hole => {
-        self.mark_as(loc, 0, TokenType::BuiltinSyntax);
+        self.mark_as(ix, 0, TokenType::BuiltinSyntax);
       }
       ExprF::Bind(_) => {
-        self.mark_as(loc, 0, TokenType::Unknown);
+        self.mark_as(ix, 0, TokenType::Unknown);
       }
       ExprF::Mod(mod_name) => {
         for i in 0..mod_name.len() {
-          self.mark_as(loc, i as i32 * 2, TokenType::Module);
+          self.mark_as(ix, i as i32 * 2, TokenType::Module);
         }
       }
       ExprF::Def(mod_name, _) => {
         for i in 0..mod_name.len() {
-          self.mark_as(loc, i as i32 * 2, TokenType::Module);
+          self.mark_as(ix, i as i32 * 2, TokenType::Module);
         }
-        self.mark_as(loc, mod_name.len() as i32 * 2, TokenType::Ext);
+        self.mark_as(ix, mod_name.len() as i32 * 2, TokenType::Ext);
       }
       ExprF::Let(ds, e) => {
-        self.mark_as(loc, 0, TokenType::Keyword);
+        self.mark_as(ix, 0, TokenType::Keyword);
         self.ds(&ds);
         self.mark_as(&e.1.begin, -1, TokenType::Keyword);
         self.e(&e);
@@ -242,28 +248,8 @@ impl Context {
 pub fn tokenize_example(code: &str) -> (Vec<TokenData>, Vec<Diagnostic>) {
   let lines = code.lines().collect::<Vec<_>>();
 
-  let mut diags = Vec::new();
-  let mut add_diag = |pos: &types::token::ErrorPos, msg: &str| {
-    use types::token::*;
-    let (begin_line, begin_column) = match pos {
-      ErrorPos::Pos(line, column) => (*line, *column),
-      ErrorPos::EoL(line) => (*line, lines[*line as usize].len() as u32),
-      ErrorPos::EoF => (lines.len() as u32, 0),
-    };
-    let end_line = begin_line;
-    let end_column = begin_column + 1;
-    diags.push(Diagnostic {
-      // TODO: fix utf16
-      begin_line,
-      begin_column,
-      end_line,
-      end_column,
-      message: msg.to_string(),
-    });
-  };
-
   let (tokens, comments, errors) = baum_lang::tokenize::tokenize(code);
-  let mut x = Context::new(
+  let x = RefCell::new(Context::new(
     tokens
       .iter()
       .map(|t| {
@@ -287,31 +273,56 @@ pub fn tokenize_example(code: &str) -> (Vec<TokenData>, Vec<Diagnostic>) {
         }
       })
       .collect::<Vec<_>>(),
-  );
-  tokens.iter().enumerate().for_each(|(loc, t)| {
-    x.mark_as(
-      &TokenLoc::new(loc),
-      0,
-      match t.ty {
-        types::token::TokenType::Ident => match t.str {
-          "syntax" | "local" | "module" | "let" | "in" => TokenType::Keyword,
-          _ => TokenType::Unknown,
+  ));
+
+  let mut diags = Vec::new();
+  let mut add_diag = |pos: &types::token::ErrorPos, msg: &str| {
+    let x = x.borrow();
+    use types::token::*;
+    let (begin_line, begin_column, len) = match pos {
+      ErrorPos::Ix(ix) => x.pos(ix.into_inner()),
+      ErrorPos::Pos(line, column, len) => (*line, *column, *len),
+      ErrorPos::EoL(line) => (*line, lines[*line as usize].len() as u32, 1),
+      ErrorPos::EoF => (lines.len() as u32, 0, 1),
+    };
+    let end_line = begin_line;
+    let end_column = begin_column + len;
+    diags.push(Diagnostic {
+      begin_line,
+      begin_column,
+      end_line,
+      end_column,
+      message: msg.to_string(),
+    });
+  };
+
+  {
+    let mut x = x.borrow_mut();
+    tokens.iter().enumerate().for_each(|(ix, t)| {
+      x.mark_as(
+        &TokenIx::new(ix),
+        0,
+        match t.ty {
+          types::token::TokenType::Ident => match t.str {
+            "syntax" | "local" | "module" | "let" | "in" => TokenType::Keyword,
+            _ => TokenType::Unknown,
+          },
+          types::token::TokenType::DecNat => TokenType::Number,
+          types::token::TokenType::Number => TokenType::Number,
+          types::token::TokenType::Char => TokenType::String,
+          types::token::TokenType::String => TokenType::String,
+          types::token::TokenType::Precedence => TokenType::Precedence,
+          types::token::TokenType::Reserved => TokenType::Symbol,
         },
-        types::token::TokenType::DecNat => TokenType::Number,
-        types::token::TokenType::Number => TokenType::Number,
-        types::token::TokenType::Char => TokenType::String,
-        types::token::TokenType::String => TokenType::String,
-        types::token::TokenType::Precedence => TokenType::Precedence,
-        types::token::TokenType::Reserved => TokenType::Symbol,
-      },
-    );
-  });
+      );
+    });
+  }
   for (pos, e) in &errors {
     add_diag(pos, e);
   }
   if errors.is_empty() {
     let (tree, errors) = baum_lang::parse::parse(tokens);
-    x.ds(&tree);
+    x.borrow_mut().ds(&tree);
     for (pos, e) in &errors {
       add_diag(pos, e);
     }
@@ -338,7 +349,7 @@ pub fn tokenize_example(code: &str) -> (Vec<TokenData>, Vec<Diagnostic>) {
       token_type: TokenType::Comment,
     }
   });
-  let mut tokens_iter = x.into_inner().into_iter().peekable();
+  let mut tokens_iter = x.into_inner().into_inner().into_iter().peekable();
   let mut comments_iter = comments_iter.peekable();
   let mut res = Vec::new();
   loop {

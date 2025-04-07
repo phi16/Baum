@@ -9,12 +9,12 @@ pub enum TokenType {
   Reserved,   // :, =, [, }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct TokenLoc(usize);
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TokenIx(usize);
 
-impl TokenLoc {
-  pub fn new(loc: usize) -> Self {
-    TokenLoc(loc)
+impl TokenIx {
+  pub fn new(ix: usize) -> Self {
+    TokenIx(ix)
   }
   pub fn into_inner(self) -> usize {
     self.0
@@ -30,37 +30,27 @@ pub struct TokenPos {
 
 #[derive(Debug, Clone)]
 pub struct TokenRange {
-  pub begin_pos: (u32, u32),
-  pub begin: TokenLoc,
-  pub end: TokenLoc,
+  pub begin: TokenIx,
+  pub end: TokenIx,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ErrorPos {
-  Pos(u32, u32),
+  Ix(TokenIx),
+  Pos(u32, u32, u32),
   EoL(u32),
   EoF,
 }
 
-impl From<TokenPos> for ErrorPos {
-  fn from(pos: TokenPos) -> Self {
-    ErrorPos::Pos(pos.line, pos.column)
+impl From<TokenIx> for ErrorPos {
+  fn from(loc: TokenIx) -> Self {
+    ErrorPos::Ix(loc)
   }
 }
 
 impl From<TokenRange> for ErrorPos {
-  fn from(pos: TokenRange) -> Self {
-    ErrorPos::Pos(pos.begin_pos.0, pos.begin_pos.1)
-  }
-}
-
-impl ErrorPos {
-  pub fn to_string(&self) -> String {
-    match self {
-      ErrorPos::Pos(ln, col) => format!("L{} C{}", ln + 1, col + 1),
-      ErrorPos::EoL(ln) => format!("End of L{}", ln + 1),
-      ErrorPos::EoF => "End of file".to_string(),
-    }
+  fn from(range: TokenRange) -> Self {
+    ErrorPos::Ix(range.begin)
   }
 }
 
@@ -76,5 +66,6 @@ pub struct Token<'a> {
   pub str: &'a str,
   pub ty: TokenType,
   pub pos: TokenPos,
+  pub ix: TokenIx,
   pub indent: Indent,
 }

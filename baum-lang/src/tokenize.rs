@@ -1,4 +1,4 @@
-use crate::types::token::{ErrorPos, Indent, Token, TokenPos, TokenType};
+use crate::types::token::{ErrorPos, Indent, Token, TokenIx, TokenPos, TokenType};
 use core::iter::Peekable;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -37,6 +37,7 @@ struct Tokenizer<'a, I: Iterator<Item = CharLoc<'a>>> {
   errors: Vec<(ErrorPos, String)>,
   in_syntax: bool,
   after_dot: bool,
+  token_index: usize,
 }
 
 impl<'a, I: Iterator<Item = CharLoc<'a>>> Tokenizer<'a, I> {
@@ -46,6 +47,7 @@ impl<'a, I: Iterator<Item = CharLoc<'a>>> Tokenizer<'a, I> {
       errors: Vec::new(),
       in_syntax: false,
       after_dot: false,
+      token_index: 0,
     }
   }
 
@@ -63,6 +65,8 @@ impl<'a, I: Iterator<Item = CharLoc<'a>>> Tokenizer<'a, I> {
       }
       _ => {}
     }
+    let token_index = self.token_index;
+    self.token_index += 1;
     Token {
       str,
       ty,
@@ -71,6 +75,7 @@ impl<'a, I: Iterator<Item = CharLoc<'a>>> Tokenizer<'a, I> {
         column: loc.col_chars + loc.indent,
         length: len as u32,
       },
+      ix: TokenIx::new(token_index),
       indent: if loc.col_chars == 0 {
         Indent::Head(loc.indent)
       } else {
@@ -100,8 +105,8 @@ impl<'a, I: Iterator<Item = CharLoc<'a>>> Tokenizer<'a, I> {
     self.errors.push((pos, msg.to_string()));
   }
 
-  fn add_error_loc(&mut self, l: &Loc<'a>, msg: &str) {
-    self.add_error(ErrorPos::Pos(l.ln, l.col_chars), msg);
+  fn add_error_loc(&mut self, l: &Loc<'a>, len: u32, msg: &str) {
+    self.add_error(ErrorPos::Pos(l.ln, l.col_chars, len), msg);
   }
 
   fn skip_space(&mut self) {
@@ -110,7 +115,7 @@ impl<'a, I: Iterator<Item = CharLoc<'a>>> Tokenizer<'a, I> {
         let c = *c;
         if c != ' ' {
           let l = l.clone();
-          self.add_error_loc(&l, &format!("invalid whitespace character: {:?}", c));
+          self.add_error_loc(&l, 1, &format!("invalid whitespace character: {:?}", c));
         }
         self.iter.next();
       } else {
@@ -172,6 +177,7 @@ impl<'a, I: Iterator<Item = CharLoc<'a>>> Tokenizer<'a, I> {
 
     let (l0, c0) = self.iter.peek().unwrap().clone();
     self.iter.next();
+    let mut len = 1;
     enum State {
       Zero,    // 0
       Radix,   // 0b, 0o, 0x (non-accepting state)
@@ -243,10 +249,11 @@ impl<'a, I: Iterator<Item = CharLoc<'a>>> Tokenizer<'a, I> {
         }
       }
       self.iter.next();
+      len += 1;
     }
     match s {
       State::Radix | State::Exp | State::ExpSign => {
-        self.add_error_loc(&l0, "incomplete number literal");
+        self.add_error_loc(&l0, len, "incomplete number literal");
       }
       _ => {}
     }
@@ -293,7 +300,7 @@ impl<'a, I: Iterator<Item = (Loc<'a>, char)>> Iterator for Tokenizer<'a, I> {
           if c1.is_whitespace() {
             let c1 = *c1;
             if c1 != ' ' {
-              self.add_error_loc(&l0, &format!("invalid whitespace character: {:?}", c1));
+              self.add_error_loc(&l0, 1, &format!("invalid whitespace character: {:?}", c1));
             }
             break;
           }
@@ -326,7 +333,7 @@ impl<'a, I: Iterator<Item = (Loc<'a>, char)>> Iterator for Tokenizer<'a, I> {
       if c1.is_whitespace() {
         let c1 = *c1;
         if c1 != ' ' {
-          self.add_error_loc(&l0, &format!("invalid whitespace character: {:?}", c1));
+          self.add_error_loc(&l0, 1, &format!("invalid whitespace character: {:?}", c1));
         }
         break;
       }

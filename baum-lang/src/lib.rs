@@ -8,23 +8,48 @@ pub mod tokenize;
 pub mod types;
 
 use baum_front::types::tree as front;
-use types::token::{ErrorPos, TokenRange};
+use types::token::{ErrorPos, TokenPos, TokenRange};
 
-pub fn run(code: &str) -> Result<front::Program<TokenRange>, Vec<(ErrorPos, String)>> {
+struct Ps(Vec<TokenPos>);
+
+impl Ps {
+  fn error_to_string(&self, epos: ErrorPos) -> String {
+    match epos {
+      ErrorPos::Ix(ix) => {
+        let pos = self.0.get(ix.into_inner()).unwrap();
+        format!("L{} C{}", pos.line + 1, pos.column + 1)
+      }
+      ErrorPos::Pos(l, c, _) => format!("L{} C{}", l + 1, c + 1),
+      ErrorPos::EoL(l) => format!("End of L{}", l + 1),
+      ErrorPos::EoF => "End of file".to_string(),
+    }
+  }
+  fn convert(&self, errors: Vec<(ErrorPos, String)>) -> String {
+    let mut s = String::new();
+    for (pos, e) in errors {
+      let pos = self.error_to_string(pos);
+      s.push_str(&format!("{}: {}\n", pos, e));
+    }
+    s
+  }
+}
+
+pub fn run(code: &str) -> Result<front::Program<TokenRange>, String> {
   let (tokens, _, errors) = tokenize::tokenize(code);
+  let ps = Ps(tokens.iter().map(|t| t.pos).collect::<Vec<_>>());
   if !errors.is_empty() {
-    return Err(errors);
+    return Err(ps.convert(errors));
   }
   eprintln!("--------");
   let (tree, errors) = parse::parse(tokens);
   if !errors.is_empty() {
-    return Err(errors);
+    return Err(ps.convert(errors));
   }
   eprintln!("{}", pretty::pretty(&tree));
   eprintln!("--------");
   let (front, errors) = convert::convert(&tree);
   if !errors.is_empty() {
-    return Err(errors);
+    return Err(ps.convert(errors));
   }
   eprintln!("{}", baum_front::pretty::pretty(&front));
   eprintln!("--------");
@@ -32,13 +57,15 @@ pub fn run(code: &str) -> Result<front::Program<TokenRange>, Vec<(ErrorPos, Stri
   eprintln!("{}", baum_core::pretty::pretty(&core));
   if !errors.is_empty() {
     return Err(
-      errors
-        .iter()
-        .map(|e| {
-          let pos = ErrorPos::EoF;
-          (pos, e.clone())
-        })
-        .collect(),
+      ps.convert(
+        errors
+          .iter()
+          .map(|e| {
+            let pos = ErrorPos::EoF;
+            (pos, e.clone())
+          })
+          .collect(),
+      ),
     );
   }
   eprintln!("--------");
@@ -51,12 +78,14 @@ pub fn run(code: &str) -> Result<front::Program<TokenRange>, Vec<(ErrorPos, Stri
     Err(es) => {
       eprintln!("--------");
       return Err(
-        es.iter()
-          .map(|e| {
-            let pos = ErrorPos::EoF;
-            (pos, e.clone())
-          })
-          .collect(),
+        ps.convert(
+          es.iter()
+            .map(|e| {
+              let pos = ErrorPos::EoF;
+              (pos, e.clone())
+            })
+            .collect(),
+        ),
       );
     }
   }
@@ -66,13 +95,11 @@ pub fn run(code: &str) -> Result<front::Program<TokenRange>, Vec<(ErrorPos, Stri
 #[cfg(test)]
 #[test]
 fn test_dev() {
-  let code = include_str!("../examples/hurkens.baum");
+  let code = include_str!("../examples/test3.baum");
   match run(code) {
     Ok(_) => {}
-    Err(es) => {
-      for (pos, e) in es {
-        eprintln!("{}: {}", pos.to_string(), e);
-      }
+    Err(e) => {
+      eprintln!("{}", e);
     }
   }
   eprintln!();

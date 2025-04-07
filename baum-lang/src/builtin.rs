@@ -379,11 +379,7 @@ pub fn builtin_syntax_handlers<'a>() -> HashMap<SyntaxId, SyntaxHandler<'a>> {
     Rc::new(move |elems: &Vec<SynElem<'a>>| {
       let begin = elems.get(0).unwrap().1.begin.clone();
       let end = elems.last().unwrap().1.end.clone();
-      let tag = TokenRange {
-        begin_pos: (0, 0),
-        begin,
-        end,
-      };
+      let tag = TokenRange { begin, end };
 
       let mut p = MiniParser::new(elems, tag.clone());
       let e = f(&mut p)?;

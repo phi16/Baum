@@ -1,11 +1,11 @@
-use crate::types::token::{ErrorPos, Indent, Token, TokenLoc, TokenRange, TokenType};
+use crate::types::token::{ErrorPos, Indent, Token, TokenIx, TokenRange, TokenType};
 
 #[derive(Clone)]
 pub struct TrackerState {
   current_pos: usize,
   indent: Indent,
   last_eol: ErrorPos,
-  last_pos: (u32, u32),
+  last_pos: TokenIx,
 }
 
 pub struct Tracker<'a> {
@@ -21,7 +21,7 @@ impl<'a> Tracker<'a> {
         current_pos: 0,
         indent: Indent::Base,
         last_eol: ErrorPos::EoL(0),
-        last_pos: (0, 0),
+        last_pos: TokenIx::new(0),
       },
     }
   }
@@ -59,10 +59,8 @@ impl<'a> Tracker<'a> {
     match self.peek_raw() {
       Some(t) => {
         let line = t.pos.line;
-        let column = t.pos.column;
-        let length = t.pos.length;
-        self.state.last_eol = ErrorPos::Pos(line, column);
-        self.state.last_pos = (line, column + length);
+        self.state.last_eol = ErrorPos::EoL(line);
+        self.state.last_pos = TokenIx::new(self.state.current_pos);
         self.state.current_pos += 1;
       }
       _ => {
@@ -82,35 +80,22 @@ impl<'a> Tracker<'a> {
 
   pub fn epos(&self) -> ErrorPos {
     let last_pos = self.state.last_eol;
-    self
-      .peek()
-      .map_or(last_pos, |t| ErrorPos::Pos(t.pos.line, t.pos.column))
+    self.peek().map_or(last_pos, |t| ErrorPos::Ix(t.ix))
   }
 
-  pub fn get_location(&self) -> TokenLoc {
-    TokenLoc::new(self.state.current_pos)
+  pub fn get_location(&self) -> TokenIx {
+    TokenIx::new(self.state.current_pos)
   }
 
-  pub fn make_range(&self, begin: TokenLoc, end: TokenLoc) -> TokenRange {
-    let begin_pos = match self.token_list.get(begin.clone().into_inner()) {
-      Some(t) => (t.pos.line, t.pos.column),
-      None => match self.token_list.last() {
-        Some(t) => (t.pos.line, t.pos.column + t.pos.length),
-        None => (0, 0),
-      },
-    };
-    TokenRange {
-      begin_pos,
-      begin,
-      end,
-    }
+  pub fn make_range(&self, begin: TokenIx, end: TokenIx) -> TokenRange {
+    TokenRange { begin, end }
   }
 
-  pub fn range_single(&self, loc: TokenLoc) -> TokenRange {
-    self.make_range(loc.clone(), TokenLoc::new(loc.into_inner() + 1))
+  pub fn range_single(&self, loc: TokenIx) -> TokenRange {
+    self.make_range(loc.clone(), TokenIx::new(loc.into_inner() + 1))
   }
 
-  pub fn range_from(&self, begin: TokenLoc) -> TokenRange {
+  pub fn range_from(&self, begin: TokenIx) -> TokenRange {
     self.make_range(begin, self.get_location())
   }
 
