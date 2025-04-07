@@ -71,7 +71,7 @@ pub enum DeclF<T> {
 }
 
 #[derive(Debug, Clone)]
-pub struct Decl<T>(pub DeclF<T>, pub T);
+pub struct Decl<T>(pub DeclF<T>, pub T, pub T);
 
 #[derive(Debug, Clone)]
 pub struct Program<T> {

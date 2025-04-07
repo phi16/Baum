@@ -277,8 +277,8 @@ pub fn tokenize_example(code: &str) -> (Vec<TokenData>, Vec<Diagnostic>) {
 
   let mut diags = Vec::new();
   let mut add_diag = |pos: &types::token::ErrorPos, msg: &str| {
-    let x = x.borrow();
     use types::token::*;
+    let x = x.borrow();
     let (begin_line, begin_column, len) = match pos {
       ErrorPos::Ix(ix) => x.pos(ix.into_inner()),
       ErrorPos::Pos(line, column, len) => (*line, *column, *len),
@@ -331,6 +331,12 @@ pub fn tokenize_example(code: &str) -> (Vec<TokenData>, Vec<Diagnostic>) {
       // TODO: use front to coloring
       for (pos, e) in &errors {
         add_diag(pos, e);
+      }
+      if errors.is_empty() {
+        let (core, errors) = baum_front::convert::convert(front);
+        for (pos, e) in &errors {
+          add_diag(&types::token::ErrorPos::Ix(pos.begin), e);
+        }
       }
     }
   }

@@ -481,7 +481,11 @@ impl<'a> Builder<'a> {
         for ((_, i, _), (name, loc)) in params.iter().zip(param_infos.into_iter()) {
           let j = self.new_id(name);
           let def_i = front::Expr(front::ExprF::Def(0, vec![], i.clone()), range_at(&loc));
-          mod_decls.push(front::Decl(front::DeclF::Def(j, def_i), range_at(&loc)));
+          mod_decls.push(front::Decl(
+            front::DeclF::Def(j, def_i),
+            range_at(&loc),
+            range_at(&loc),
+          ));
           self
             .here()
             .insert(name.clone(), (Entity::Def(j), loc.clone()));
@@ -561,7 +565,11 @@ impl<'a> Builder<'a> {
         let mod_id = self.new_id(&md.name);
         let (params, body, env) = self.define_mod(&mod_id, &md.params, mb);
         let loc = tag.begin.clone();
-        decls.push(front::Decl(front::DeclF::Mod(mod_id, params, body), tag));
+        decls.push(front::Decl(
+          front::DeclF::Mod(mod_id, params, body),
+          tag,
+          mb.1.clone(),
+        ));
         self.here().insert(
           md.name.clone(),
           (Entity::Mod(mod_id, env.clone()), loc.clone()),
@@ -575,7 +583,11 @@ impl<'a> Builder<'a> {
         let mb = ModBody(ModBodyF::Ref(mr.clone()), mr.1.clone());
         let mod_id = self.fresh_id();
         let (params, body, env) = self.define_mod(&mod_id, &Vec::new(), &mb);
-        decls.push(front::Decl(front::DeclF::Mod(mod_id, params, body), tag));
+        decls.push(front::Decl(
+          front::DeclF::Mod(mod_id, params, body),
+          tag,
+          mr.1.clone(),
+        ));
 
         // inserts all entities from the dummy module to current module
         env.lookup.into_iter().for_each(|(name, (entity, loc))| {
@@ -596,6 +608,7 @@ impl<'a> Builder<'a> {
                 )
               }
             },
+            tag.clone(),
             tag,
           ));
           self.here().insert(name, (entity, loc));
@@ -646,7 +659,11 @@ impl<'a> Builder<'a> {
         self.envs.pop();
         let i = self.new_id(&def.name);
         let loc = tag.begin.clone();
-        decls.push(front::Decl(front::DeclF::Def(i, e), tag));
+        decls.push(front::Decl(
+          front::DeclF::Def(i, e),
+          tag,
+          def.body.1.clone(),
+        ));
         self
           .here()
           .insert(def.name.clone(), (Entity::Def(i), loc.clone()));

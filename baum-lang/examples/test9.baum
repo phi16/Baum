@@ -12,3 +12,8 @@ g3 = 1 + x => y => (x, x)
 
 syntax b ←| a = λ(a) b
 g4 = (x, x) ←| x
+
+module B = {
+}
+
+module X = B 1 1 

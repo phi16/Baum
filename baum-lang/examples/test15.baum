@@ -9,6 +9,7 @@ x = 0b1001
 x = y.a.0.1.2.3.b
 p = _
 u = 'a' p
+v = "mochi" u
 u = 1 + 0x123
 v = 0xf.ffp10
 w = 110

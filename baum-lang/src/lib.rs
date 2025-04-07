@@ -32,6 +32,16 @@ impl Ps {
     }
     s
   }
+  fn convert_range(&self, errors: Vec<(TokenRange, String)>) -> String {
+    let mut s = String::new();
+    for (range, e) in errors {
+      let ix = range.begin;
+      let pos = self.0.get(ix.into_inner()).unwrap();
+      let pos = format!("L{} C{}", pos.line + 1, pos.column + 1);
+      s.push_str(&format!("{}: {}\n", pos, e));
+    }
+    s
+  }
 }
 
 pub fn run(code: &str) -> Result<front::Program<TokenRange>, String> {
@@ -56,17 +66,7 @@ pub fn run(code: &str) -> Result<front::Program<TokenRange>, String> {
   let (core, errors) = baum_front::convert::convert(front.clone());
   eprintln!("{}", baum_core::pretty::pretty(&core));
   if !errors.is_empty() {
-    return Err(
-      ps.convert(
-        errors
-          .iter()
-          .map(|e| {
-            let pos = ErrorPos::EoF;
-            (pos, e.clone())
-          })
-          .collect(),
-      ),
-    );
+    return Err(ps.convert_range(errors));
   }
   eprintln!("--------");
   let errors = baum_core::check::check(core.clone());
@@ -95,7 +95,7 @@ pub fn run(code: &str) -> Result<front::Program<TokenRange>, String> {
 #[cfg(test)]
 #[test]
 fn test_dev() {
-  let code = include_str!("../examples/test3.baum");
+  let code = include_str!("../examples/test9.baum");
   match run(code) {
     Ok(_) => {}
     Err(e) => {

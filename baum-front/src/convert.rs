@@ -76,7 +76,7 @@ struct Decls {
   defs: Vec<(core::DefId, Box<CoreExpr>)>,
 }
 
-struct Builder {
+struct Builder<T: Clone> {
   symbols: HashMap<Id, String>,
   envs: Vec<Env>,
   names_id: HashMap<Id, core::NameId>,
@@ -89,10 +89,10 @@ struct Builder {
   next_def_id: u32,
   next_bind_id: u32,
   next_name_id: u32,
-  errors: Vec<String>,
+  errors: Vec<(T, String)>,
 }
 
-impl Builder {
+impl<T: Clone> Builder<T> {
   fn new(symbols: HashMap<Id, String>) -> Self {
     Self {
       symbols,
@@ -109,6 +109,10 @@ impl Builder {
       next_name_id: 0,
       errors: Vec::new(),
     }
+  }
+
+  fn add_error(&mut self, t: &T, s: String) {
+    self.errors.push((t.clone(), s));
   }
 
   fn add_bind(&mut self, i: &Id) -> core::BindId {
@@ -211,7 +215,7 @@ impl Builder {
     }
   }
 
-  fn e<T>(&mut self, e: &Expr<T>) -> CoreExpr {
+  fn e(&mut self, e: &Expr<T>) -> CoreExpr {
     use ExprF::*;
     core::Expr(match &e.0 {
       Hole => core::ExprF::Hole,
@@ -219,12 +223,12 @@ impl Builder {
         Some(Entity::Bind(i)) => core::ExprF::Bind(*i),
         Some(Entity::Def(i)) => core::ExprF::Def(*i),
         Some(Entity::Mod(_)) => {
-          self.errors.push(format!("Expected bind/def, found module"));
+          self.add_error(&e.1, format!("expected bind/def, found module"));
           core::ExprF::Hole
         }
         None => {
           // TODO: definition?
-          self.errors.push(format!("Unbound identifier: {:?}", i));
+          self.add_error(&e.1, format!("unbound identifier: {:?}", i));
           core::ExprF::Hole
         }
       },
@@ -238,11 +242,11 @@ impl Builder {
             Some(Entity::Bind(i)) => core::ExprF::Bind(*i),
             Some(Entity::Def(i)) => core::ExprF::Def(*i),
             Some(Entity::Mod(_)) => {
-              self.errors.push(format!("Expected bind/def, found module"));
+              self.add_error(&e.1, format!("expected bind/def, found module"));
               core::ExprF::Hole
             }
             None => {
-              self.errors.push(format!("Variable not found: {:?}", i));
+              self.add_error(&e.1, format!("definition not found: {:?}", i));
               core::ExprF::Hole
             }
           }
@@ -270,9 +274,7 @@ impl Builder {
               )
             }
             _ => {
-              self
-                .errors
-                .push(format!("Module not found: {:?}", mod_name[0]));
+              self.add_error(&e.1, format!("module not found: {:?}", mod_name[0]));
               core::ExprF::Hole
             }
           }
@@ -286,9 +288,7 @@ impl Builder {
         core::ExprF::Let(decls.defs, e)
       }
       Lit(l) => {
-        self
-          .errors
-          .push(format!("Literal not yet supported: {:?}", l));
+        self.add_error(&e.1, format!("literal not yet supported: {:?}", l));
         core::ExprF::Hole
       }
 
@@ -436,7 +436,7 @@ impl Builder {
     })
   }
 
-  fn d<T>(&mut self, d: &Decl<T>, decls: &mut Decls) {
+  fn d(&mut self, d: &Decl<T>, decls: &mut Decls) {
     match &d.0 {
       DeclF::Mod(name, params, body) => {
         self.envs.push(Env::new());
@@ -471,7 +471,7 @@ impl Builder {
             core::ExprF::Let(decls.defs, wrap(obj))
           }
           ModBodyF::Import(_) => {
-            self.errors.push("Import not yet supported".to_string());
+            self.add_error(&d.2, "`import` not yet supported".to_string());
             core::ExprF::Hole
           }
           ModBodyF::App(_, mod_name, args) => match self.lookup(&mod_name[0]) {
@@ -499,9 +499,7 @@ impl Builder {
               e
             }
             _ => {
-              self
-                .errors
-                .push(format!("Module not found: {:?}", mod_name[0]));
+              self.add_error(&d.2, format!("module not found: {:?}", mod_name[0]));
               core::ExprF::Hole
             }
           },
@@ -536,7 +534,7 @@ impl Builder {
     };
   }
 
-  fn ds<T>(&mut self, ds: &Vec<Decl<T>>) -> Decls {
+  fn ds(&mut self, ds: &Vec<Decl<T>>) -> Decls {
     let mut decls = Decls { defs: Vec::new() };
     for d in ds {
       self.d(d, &mut decls);
@@ -545,7 +543,7 @@ impl Builder {
   }
 }
 
-pub fn convert<T>(p: Program<T>) -> (core::Program<PTag, STag>, Vec<String>) {
+pub fn convert<T: Clone>(p: Program<T>) -> (core::Program<PTag, STag>, Vec<(T, String)>) {
   let mut b = Builder::new(p.symbols);
   // No need to do this but for convenience
   for index in 0..8 {
