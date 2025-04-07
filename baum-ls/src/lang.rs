@@ -253,6 +253,7 @@ pub fn tokenize_example(code: &str) -> (Vec<TokenData>, Vec<Diagnostic>) {
     let end_line = begin_line;
     let end_column = begin_column + 1;
     diags.push(Diagnostic {
+      // TODO: fix utf16
       begin_line,
       begin_column,
       end_line,

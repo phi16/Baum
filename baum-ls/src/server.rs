@@ -4,7 +4,7 @@ use colored::Colorize;
 use lsp_server::{Connection, Message, Notification, Request, Response};
 use lsp_types::*;
 use std::sync::{Arc, Mutex};
-use std::{collections::HashMap, error::Error, fs::File, io::Read};
+use std::{collections::HashMap, error::Error};
 
 struct TokenTypeSignature(pub u32);
 
