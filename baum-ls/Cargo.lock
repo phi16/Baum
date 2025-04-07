@@ -30,6 +30,7 @@ dependencies = [
 name = "baum-ls"
 version = "0.1.0"
 dependencies = [
+ "baum-core",
  "baum-front",
  "baum-lang",
  "colored",

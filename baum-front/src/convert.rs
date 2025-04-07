@@ -25,9 +25,9 @@ impl From<Vis> for core::Vis {
   }
 }
 
-type CoreExpr = core::Expr<PTag, STag>;
+type CoreExpr<T> = core::Expr<T, PTag, STag>;
 
-fn wrap(e: core::ExprF<PTag, STag, Box<CoreExpr>>) -> Box<CoreExpr> {
+fn wrap<T>(e: core::ExprF<T, PTag, STag, Box<CoreExpr<T>>>) -> Box<CoreExpr<T>> {
   Box::new(core::Expr(e))
 }
 
@@ -72,8 +72,8 @@ enum Name {
   Def(u32),
 }
 
-struct Decls {
-  defs: Vec<(core::DefId, Box<CoreExpr>)>,
+struct Decls<T> {
+  defs: Vec<(core::DefId, T, Box<CoreExpr<T>>)>,
 }
 
 struct Builder<T: Clone> {
@@ -215,7 +215,7 @@ impl<T: Clone> Builder<T> {
     }
   }
 
-  fn e(&mut self, e: &Expr<T>) -> CoreExpr {
+  fn e(&mut self, e: &Expr<T>) -> CoreExpr<T> {
     use ExprF::*;
     core::Expr(match &e.0 {
       Hole => core::ExprF::Hole,
@@ -436,7 +436,7 @@ impl<T: Clone> Builder<T> {
     })
   }
 
-  fn d(&mut self, d: &Decl<T>, decls: &mut Decls) {
+  fn d(&mut self, d: &Decl<T>, decls: &mut Decls<T>) {
     match &d.0 {
       DeclF::Mod(name, params, body) => {
         self.envs.push(Env::new());
@@ -512,7 +512,7 @@ impl<T: Clone> Builder<T> {
           e = core::ExprF::Lam(tag, core::Vis::from(vis.clone()), i, ty, wrap(e));
         }
         let def = self.add_def(name, DefType::Mod);
-        decls.defs.push((def, wrap(e)));
+        decls.defs.push((def, d.1.clone(), wrap(e)));
         self
           .envs
           .last_mut()
@@ -523,7 +523,7 @@ impl<T: Clone> Builder<T> {
       DeclF::Def(i, e) => {
         let e = self.e(&e);
         let def = self.add_def(&i, DefType::Def);
-        decls.defs.push((def, Box::new(e)));
+        decls.defs.push((def, d.1.clone(), Box::new(e)));
         self
           .envs
           .last_mut()
@@ -534,7 +534,7 @@ impl<T: Clone> Builder<T> {
     };
   }
 
-  fn ds(&mut self, ds: &Vec<Decl<T>>) -> Decls {
+  fn ds(&mut self, ds: &Vec<Decl<T>>) -> Decls<T> {
     let mut decls = Decls { defs: Vec::new() };
     for d in ds {
       self.d(d, &mut decls);
@@ -543,7 +543,7 @@ impl<T: Clone> Builder<T> {
   }
 }
 
-pub fn convert<T: Clone>(p: Program<T>) -> (core::Program<PTag, STag>, Vec<(T, String)>) {
+pub fn convert<T: Clone>(p: Program<T>) -> (core::Program<T, PTag, STag>, Vec<(T, String)>) {
   let mut b = Builder::new(p.symbols);
   // No need to do this but for convenience
   for index in 0..8 {

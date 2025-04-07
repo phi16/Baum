@@ -365,7 +365,10 @@ pub fn tokenize<'a>(code: &'a str) -> (Vec<Token<'a>>, Vec<(u32, u32)>, Vec<(Err
         (Some(0), "")
       } else {
         match rest.find(" --") {
-          Some(i) => (Some(i), &rest[..i]),
+          Some(i) => {
+            let s = &rest[..i];
+            (Some(s.chars().count()), s)
+          }
           None => (None, rest),
         }
       };

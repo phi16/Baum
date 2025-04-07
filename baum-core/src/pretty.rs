@@ -115,8 +115,8 @@ impl<'a> Pretty<'a> {
     self
   }
 
-  fn defs<P, S>(&mut self, ds: &Vec<(DefId, Box<Expr<P, S>>)>) -> &mut Self {
-    for (i, e) in ds {
+  fn defs<T, P, S>(&mut self, ds: &Vec<(DefId, T, Box<Expr<T, P, S>>)>) -> &mut Self {
+    for (i, _, e) in ds {
       self.di(i).s(" = ").e(e).ln();
     }
     self
@@ -129,7 +129,7 @@ impl<'a> Pretty<'a> {
     self
   }
 
-  fn e<P, S>(&mut self, e: &Expr<P, S>) -> &mut Self {
+  fn e<T, P, S>(&mut self, e: &Expr<T, P, S>) -> &mut Self {
     match &e.0 {
       ExprF::Hole => self.s("_"),
       ExprF::Bind(i) => self.i(i),
@@ -308,7 +308,7 @@ impl<'a> Pretty<'a> {
   }
 }
 
-pub fn pretty<P, S>(program: &Program<P, S>) -> String {
+pub fn pretty<T, P, S>(program: &Program<T, P, S>) -> String {
   let mut p = Pretty::new(
     &program.def_symbols,
     &program.bind_symbols,
@@ -318,7 +318,18 @@ pub fn pretty<P, S>(program: &Program<P, S>) -> String {
   p.str.join("\n")
 }
 
-pub fn pretty_expr<P, S>(
+pub fn pretty_e<T, P, S>(
+  def_symbols: &HashMap<DefId, String>,
+  bind_symbols: &HashMap<BindId, String>,
+  name_symbols: &HashMap<NameId, String>,
+  e: &Expr<T, P, S>,
+) -> String {
+  let mut p = Pretty::new(def_symbols, bind_symbols, name_symbols);
+  p.e(e).ln();
+  p.str.join("\n")
+}
+
+pub fn pretty_ce<P, S>(
   def_symbols: &HashMap<DefId, String>,
   bind_symbols: &HashMap<BindId, String>,
   name_symbols: &HashMap<NameId, String>,

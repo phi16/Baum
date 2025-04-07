@@ -75,18 +75,9 @@ pub fn run(code: &str) -> Result<front::Program<TokenRange>, String> {
       eprintln!("[Passed]");
       eprintln!("--------");
     }
-    Err(es) => {
+    Err(errors) => {
       eprintln!("--------");
-      return Err(
-        ps.convert(
-          es.iter()
-            .map(|e| {
-              let pos = ErrorPos::EoF;
-              (pos, e.clone())
-            })
-            .collect(),
-        ),
-      );
+      return Err(ps.convert_range(errors));
     }
   }
   Ok(front)
@@ -95,7 +86,7 @@ pub fn run(code: &str) -> Result<front::Program<TokenRange>, String> {
 #[cfg(test)]
 #[test]
 fn test_dev() {
-  let code = include_str!("../examples/test9.baum");
+  let code = include_str!("../examples/hurkens.baum");
   match run(code) {
     Ok(_) => {}
     Err(e) => {

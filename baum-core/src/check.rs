@@ -1,5 +1,5 @@
 use crate::levels::*;
-use crate::pretty::{pretty_expr, pretty_level, pretty_val};
+use crate::pretty::{pretty_ce, pretty_e, pretty_level, pretty_val};
 use crate::subst::SubstEnv;
 use crate::types::common::*;
 use crate::types::level::*;
@@ -112,7 +112,7 @@ fn contains_hole_e<P, S>(i: &HoleId, e: &RE<P, S>) -> bool {
   }
 }
 
-pub struct Checker<P, S> {
+pub struct Checker<T, P, S> {
   def_symbols: HashMap<DefId, String>,
   bind_symbols: HashMap<BindId, String>,
   name_symbols: HashMap<NameId, String>,
@@ -123,14 +123,10 @@ pub struct Checker<P, S> {
   next_hole_id: u32,
   next_level_id: u32,
   log_head: String,
-  errors: Vec<String>,
+  errors: Vec<(T, String)>,
 }
 
-impl<P, S> Checker<P, S>
-where
-  P: Tag,
-  S: Tag,
-{
+impl<T: Clone, P: Tag, S: Tag> Checker<T, P, S> {
   fn new(
     def_symbols: HashMap<DefId, String>,
     bind_symbols: HashMap<BindId, String>,
@@ -163,8 +159,8 @@ where
     self.log_head.pop();
   }
 
-  fn add_error(&mut self, msg: &str) {
-    self.errors.push(msg.to_string());
+  fn add_error(&mut self, t: &T, msg: &str) {
+    self.errors.push((t.clone(), msg.to_string()));
   }
 
   fn varenv(&mut self) -> &mut VarEnv<P, S> {
@@ -306,8 +302,12 @@ where
     m
   }
 
-  fn ppe(&self, e: &RE<P, S>) -> String {
-    pretty_expr(&self.def_symbols, &self.bind_symbols, &self.name_symbols, e)
+  fn ppe(&self, e: &Expr<T, P, S>) -> String {
+    pretty_e(&self.def_symbols, &self.bind_symbols, &self.name_symbols, e)
+  }
+
+  fn ppce(&self, e: &RE<P, S>) -> String {
+    pretty_ce(&self.def_symbols, &self.bind_symbols, &self.name_symbols, e)
   }
 
   fn ppv(&self, v: &Val<P, S>) -> String {
@@ -552,8 +552,8 @@ where
 
   fn quote(&mut self, v: &Term<P, S>) -> RE<P, S> {
     use ValF::*;
-    fn quote_ks<P: Tag, S: Tag>(
-      this: &mut Checker<P, S>,
+    fn quote_ks<T: Clone, P: Tag, S: Tag>(
+      this: &mut Checker<T, P, S>,
       ks: &Conts<P, S>,
       e: RE<P, S>,
     ) -> RE<P, S> {
@@ -637,7 +637,7 @@ where
   }
 
   fn unify_internal(&mut self, v1: &Term<P, S>, v2: &Term<P, S>) -> Result<()> {
-    let fail = |this: &Checker<P, S>, msg: &str| -> Result<_> {
+    let fail = |this: &Checker<T, P, S>, msg: &str| -> Result<_> {
       Err(Error::Loc(format!(
         "Failed to unify ({}): {} ≟ {}",
         msg,
@@ -810,14 +810,14 @@ where
         Ok(())
       }
       _ => Err(Error::Loc(format!(
-        "Failed to unify: {} ≟ {}",
+        "failed to unify: {} ≟ {}",
         self.ppv(v1),
         self.ppv(v2)
       ))),
     }
   }
 
-  fn check(&mut self, e: Expr<P, S>, check_ty: &Type<P, S>) -> Result<RE<P, S>> {
+  fn check(&mut self, e: Expr<T, P, S>, check_ty: &Type<P, S>) -> Result<RE<P, S>> {
     let res = self.check_internal(e, check_ty);
     /* if let Ok(e) = &res {
       self.log(format!("CHECK {}: {}", self.ppe(e), self.ppv(check_ty)));
@@ -825,13 +825,13 @@ where
     res
   }
 
-  fn check_internal(&mut self, e: Expr<P, S>, check_ty: &Type<P, S>) -> Result<RE<P, S>> {
+  fn check_internal(&mut self, e: Expr<T, P, S>, check_ty: &Type<P, S>) -> Result<RE<P, S>> {
     let ec = e.clone(); // TODO: redundant?
-    let fail = |this: &Checker<P, S>, msg: &str| -> Result<_> {
+    let fail = |this: &Checker<T, P, S>, msg: &str| -> Result<_> {
       Err(Error::Loc(format!(
-        "Failed to check type ({}): {:?}: {}",
+        "failed to check type ({}): {:?}: {}",
         msg,
-        ec,
+        this.ppe(&ec),
         this.ppv(&check_ty)
       )))
     };
@@ -929,7 +929,7 @@ where
     }
   }
 
-  fn check_ty(&mut self, e: Expr<P, S>) -> Result<(RE<P, S>, Level)> {
+  fn check_ty(&mut self, e: Expr<T, P, S>) -> Result<(RE<P, S>, Level)> {
     let l = Level::Id(self.fresh_level());
     let e = self.check(e, &Rc::new(Val(ValF::Uni(l.clone()))))?;
     Ok((e, l))
@@ -960,7 +960,7 @@ where
     }
   }
 
-  fn synth(&mut self, e: Expr<P, S>) -> Result<(RE<P, S>, Type<P, S>)> {
+  fn synth(&mut self, e: Expr<T, P, S>) -> Result<(RE<P, S>, Type<P, S>)> {
     let res = self.synth_internal(e);
     /* if let Ok((c_e, ty)) = &res {
       self.log(format!("SYNTH {}: {}", self.ppe(c_e), self.ppv(ty)));
@@ -968,12 +968,13 @@ where
     res
   }
 
-  fn synth_internal(&mut self, e: Expr<P, S>) -> Result<(RE<P, S>, Type<P, S>)> {
+  fn synth_internal(&mut self, e: Expr<T, P, S>) -> Result<(RE<P, S>, Type<P, S>)> {
     let ec = e.clone(); // TODO: redundant?
-    let fail = |_this: &Checker<P, S>, msg: &str| -> Result<_> {
+    let fail = |this: &Checker<T, P, S>, msg: &str| -> Result<_> {
       Err(Error::Loc(format!(
         "Failed to synthesize type ({}): {:?}",
-        msg, ec,
+        msg,
+        this.ppe(&ec),
       )))
     };
     use ExprF::*;
@@ -1202,7 +1203,7 @@ where
     Ok(hole_map)
   }
 
-  fn def(&mut self, e: Box<Expr<P, S>>) -> Result<(Solution, RE<P, S>, Type<P, S>)> {
+  fn def(&mut self, e: Box<Expr<T, P, S>>) -> Result<(Solution, RE<P, S>, Type<P, S>)> {
     self.solves.push(Solve::new());
     let depth1 = (self.varenvs.len(), self.defenvs.len(), self.solves.len());
     let res = self.synth(*e);
@@ -1258,7 +1259,7 @@ where
         return Err(Error::Loc(format!(
           "Hole {:?} remains unresolved in {}",
           i,
-          self.ppe(&ce)
+          self.ppce(&ce)
         )));
       }
     }
@@ -1275,9 +1276,12 @@ where
     Ok((level_solution, ce, ty))
   }
 
-  fn defs(&mut self, defs: Vec<(DefId, Box<Expr<P, S>>)>) -> Vec<(DefId, Solution, RE<P, S>)> {
+  fn defs(
+    &mut self,
+    defs: Vec<(DefId, T, Box<Expr<T, P, S>>)>,
+  ) -> Vec<(DefId, Solution, RE<P, S>)> {
     let mut def_terms = Vec::new();
-    for (id, expr) in defs {
+    for (id, t, expr) in defs {
       eprintln!("- Def[ {} ]", self.def_symbols[&id]);
       let res = self.def(expr);
       match &res {
@@ -1302,7 +1306,7 @@ where
               "    {} = [{:?}] {}",
               self.def_symbols[&id],
               sol,
-              self.ppe(&c_expr)
+              self.ppce(&c_expr)
             )
             .cyan()
           );
@@ -1357,7 +1361,7 @@ where
                 "    {} = [{:?}] {}",
                 self.def_symbols[&id],
                 sol.group_count,
-                self.ppe(&ce)
+                self.ppce(&ce)
               )
               .black()
             );
@@ -1376,7 +1380,7 @@ where
         Err(Error::Loc(e)) => {
           self
             .errors
-            .push(format!("def {}: {}", self.def_symbols[&id], e));
+            .push((t, format!("definition of {}: {}", self.def_symbols[&id], e)));
         }
       }
     }
@@ -1384,8 +1388,9 @@ where
   }
 }
 
-pub fn check<P, S>(p: Program<P, S>) -> std::result::Result<(), Vec<String>>
+pub fn check<T, P, S>(p: Program<T, P, S>) -> std::result::Result<(), Vec<(T, String)>>
 where
+  T: Clone,
   P: Tag,
   S: Tag,
 {

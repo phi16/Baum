@@ -25,17 +25,17 @@ impl<'a, T: Clone> Subst<'a, T> {
   }
 }
 
-pub struct SubstEnv<'b, P, S> {
+pub struct SubstEnv<'b, T, P, S> {
   holes: HashMap<HoleId, (RE<P, S>, RV<P, S>)>,
   defs: HashMap<DefId, (Solution, RE<P, S>, RV<P, S>)>,
   levels: HashMap<LevelId, Level>,
-  checker: &'b mut Checker<P, S>,
+  checker: &'b mut Checker<T, P, S>,
 }
 
-impl<'b, P: Tag, S: Tag> SubstEnv<'b, P, S> {
+impl<'b, T: Clone, P: Tag, S: Tag> SubstEnv<'b, T, P, S> {
   pub fn from_holes(
     holes: HashMap<HoleId, (RE<P, S>, RV<P, S>)>,
-    checker: &'b mut Checker<P, S>,
+    checker: &'b mut Checker<T, P, S>,
   ) -> Self {
     SubstEnv {
       holes,
@@ -47,7 +47,7 @@ impl<'b, P: Tag, S: Tag> SubstEnv<'b, P, S> {
 
   pub fn from_defs(
     defs: HashMap<DefId, (Solution, RE<P, S>, RV<P, S>)>,
-    checker: &'b mut Checker<P, S>,
+    checker: &'b mut Checker<T, P, S>,
   ) -> Self {
     SubstEnv {
       holes: HashMap::new(),
@@ -57,7 +57,7 @@ impl<'b, P: Tag, S: Tag> SubstEnv<'b, P, S> {
     }
   }
 
-  pub fn from_levels(levels: HashMap<LevelId, Level>, checker: &'b mut Checker<P, S>) -> Self {
+  pub fn from_levels(levels: HashMap<LevelId, Level>, checker: &'b mut Checker<T, P, S>) -> Self {
     SubstEnv {
       holes: HashMap::new(),
       defs: HashMap::new(),

@@ -337,6 +337,17 @@ pub fn tokenize_example(code: &str) -> (Vec<TokenData>, Vec<Diagnostic>) {
         for (pos, e) in &errors {
           add_diag(&types::token::ErrorPos::Ix(pos.begin), e);
         }
+        if errors.is_empty() {
+          let res = baum_core::check::check(core);
+          match res {
+            Ok(_) => {}
+            Err(e) => {
+              for (pos, e) in &e {
+                add_diag(&types::token::ErrorPos::Ix(pos.begin), e);
+              }
+            }
+          }
+        }
       }
     }
   }
