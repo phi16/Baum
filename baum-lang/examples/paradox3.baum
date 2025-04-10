@@ -1,0 +1,34 @@
+-- A variation of Reynolds-Hurkens Paradox, Thierry Coquand
+
+syntax 1> A → B = Π(x: A) B
+syntax 1> (x: A) → B = Π(x: A) B
+
+id {A: U} (x: A): A = x
+syntax 0.1 x of A = id {A} x
+
+⊥ = (A: U) → A
+¬ (A: U) = A → ⊥
+P (A: U) = A → U
+T (X: U) = P (P X)
+T1 {X Y: U} (f: X → Y) (F: T X): T Y = λ(q) F (λ(x) q (f x))
+
+A = (X: U) → (T X → X) → X
+ι {X: U} (f: T X → X): A → X = λ(a: A) a X f
+intro (u: T A): A = λ(X: U, f: T X → X) f (T1 (ι f) u)
+match: A → T A = ι (T1 intro)
+
+_∘_ {A B C: U} (f: B → C) (g: A → B): A → C = λ(x) f (g x)
+syntax 1.2 f ∘ g = _∘_ f g
+
+δ: A → A = intro ∘ match
+
+p0: P A = λ(x) (p: P A) → p (δ x) → ¬ (match x p)
+X0: T A = λ(p) (x: A) → p x → ¬ (match x p)
+x0: A = intro X0
+
+s1: (x: A) → p0 x → p0 (δ x) = λ(x, h, p) h (p ∘ δ)
+s2: (p: P A) → X0 p → X0 (p ∘ δ) = λ(p, h, x) h (δ x)
+l0: (p: P A) → p x0 → ¬ (X0 p) = λ(p, h, h0) h0 x0 h (s2 p h0)
+l1: X0 p0 = λ(x, h) h p0 (s1 x h)
+l2: p0 x0 = λ(p) l0 (p ∘ δ)
+loop: ⊥ = l0 p0 l2 l1

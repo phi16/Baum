@@ -1,0 +1,47 @@
+-- The Problem with "Type in Type" and a resolution thereof, Tobias Hoffmann
+
+syntax 1> A → B = Π(x: A) B
+syntax 1> (x: A) → B = Π(x: A) B
+
+id {A: U} (x: A): A = x
+syntax 0.1 x of A = id {A} x
+
+⊥ = (A: U) → A
+¬ (A: U) = A → ⊥
+P (A: U) = A → U
+u = (X: U) → (P (P X) → X) → P (P X)
+
+τ (t: P (P u)): u = λ(X, f, p) t λ(x) p (f (x X f))
+σ (s: u): P (P u) = s u λ(t) τ t
+
+_∈_ {A: U} (x: A) (y: P A): U = y x
+syntax 1.2 x ∈ y = _∈_ x y
+
+inductive: P (P u) = λ(y: P u) (x: u) → y ∈ σ x → x ∈ y
+well-founded: P u = λ(x: u) (y: P u) → inductive y → x ∈ y
+Ω: u = τ inductive
+
+well-founded-Ω: well-founded Ω = λ(p: P u, H1: inductive p) let
+    lemma: p ∈ σ Ω = λ(x: u) H1 (τ (σ x))
+  in H1 Ω lemma of Ω ∈ p
+
+_<_ (a b: u): U = (y: P u) → y ∈ σ b → a ∈ y
+syntax 1.2 a < b = _<_ a b
+Δ: P u = λ(y) ¬ (τ (σ y) < y)
+
+inductive-Δ: inductive Δ = λ(x: u, H2: Δ ∈ σ x, H3: τ (σ x) < x) let
+    lemma₁: ¬ (τ (σ (τ (σ x))) < τ (σ x)) = H3 Δ H2
+    lemma₂: τ (σ (τ (σ x))) < τ (σ x) = λ(p: P u) H3 λ(y) p (τ (σ y))
+  in lemma₁ lemma₂
+
+¬well-founded-Ω: ¬ (well-founded Ω) = λ(wfΩ) wfΩ Δ inductive-Δ λ(p) wfΩ λ(y) p (τ (σ y))
+loop: ⊥ = ¬well-founded-Ω well-founded-Ω
+
+D: U = τ (σ Ω) < Ω
+lem₂: ¬ D = well-founded-Ω Δ inductive-Δ
+lem₃: D = λ(p) well-founded-Ω λ(y) p (τ (σ y))
+loop: ⊥ = lem₂ lem₃
+
+q1: ¬ (Ω ∈ Δ) = λ(p) p lem₃
+q2: Ω ∈ Δ = well-founded-Ω Δ inductive-Δ
+loop: ⊥ = q1 q2

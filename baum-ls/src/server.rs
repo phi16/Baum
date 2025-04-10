@@ -267,23 +267,25 @@ impl<'a> Server<'a> {
             ("\\sigma".to_string(), "Σ".to_string()),
             ("\\to".to_string(), "→".to_string()),
           ];
-          let res = CompletionResponse::Array(
-            cands
-              .iter()
-              .map(|(label, new_text)| CompletionItem {
-                label: label.clone(),
-                label_details: Some(CompletionItemLabelDetails {
-                  detail: None,
-                  description: Some(new_text.to_string()),
-                }),
-                text_edit: Some(CompletionTextEdit::Edit(TextEdit {
-                  range: range.clone(),
-                  new_text: new_text.clone(),
-                })),
-                ..Default::default()
-              })
-              .collect(),
-          );
+          let cands = cands
+            .iter()
+            .map(|(label, new_text)| CompletionItem {
+              label: label.clone(),
+              label_details: Some(CompletionItemLabelDetails {
+                detail: None,
+                description: Some(new_text.to_string()),
+              }),
+              text_edit: Some(CompletionTextEdit::Edit(TextEdit {
+                range: range.clone(),
+                new_text: new_text.clone(),
+              })),
+              ..Default::default()
+            })
+            .collect();
+          let res = CompletionResponse::List(CompletionList {
+            is_incomplete: true,
+            items: cands,
+          });
           return Ok(Some(res));
         }
         _ => {}

@@ -1,8 +1,7 @@
+-- A Simplification of Girard's Paradox, Antonius J.C. Hurkens
+
 syntax 1> A → B = Π(x: A) B
 syntax 1> (x: A) → B = Π(x: A) B
-
-id {A: U} (x: A) = x
-syntax 0 x of A = id {A} x
 
 ⊥ = (A: U) → A
 ¬ (A: U) = A → ⊥

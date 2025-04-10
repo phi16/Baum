@@ -1189,9 +1189,13 @@ impl<T: Clone, P: Tag, S: Tag> Checker<T, P, S> {
       eprintln!("  - {:?} = {}", i, self.ppe(tm));
     } */
 
-    for (j, _) in holes {
+    for (j, ty) in holes {
       if !hole_assign.contains_key(&j) {
-        return Err(Error::Loc(format!("Unresolved hole: {:?}", j)));
+        return Err(Error::Loc(format!(
+          "Unresolved hole: {:?}: {}",
+          j,
+          self.ppv(&ty)
+        )));
       }
     }
     // TODO: resolve hole-in-hole constraints at this point
@@ -1270,6 +1274,7 @@ impl<T: Clone, P: Tag, S: Tag> Checker<T, P, S> {
     let mut target = HashSet::new();
     traverse_levels_e(&ce, &mut target);
     traverse_levels_v(&ty, &mut target);
+    // target = HashSet::new(); // disable cycle check
     let level_solution = resolve_constraints(&levels, &constraints, &target)
       .map_err(|e| Error::Loc(format!("Failed to solve level constraints: {}", e)))?;
 
