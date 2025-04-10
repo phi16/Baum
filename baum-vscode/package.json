@@ -22,6 +22,14 @@
       {
         "command": "baum-vscode.restartServer",
         "title": "baum-ls: Restart server"
+      },
+      {
+        "command": "baum-vscode.startServer",
+        "title": "baum-ls: Start server"
+      },
+      {
+        "command": "baum-vscode.stopServer",
+        "title": "baum-ls: Stop server"
       }
     ]
   },

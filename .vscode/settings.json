@@ -1,0 +1,25 @@
+{
+  "multiCommand.commands": [
+    {
+      "command": "multiCommand.baumReinstall",
+      "interval": 3500,
+      "sequence": [
+        {
+          "command": "extension.multiCommand.execute",
+          "args": { "command": "multiCommand.baumStopInstall" }
+        },
+        "baum-vscode.startServer"
+      ]
+    },
+    {
+      "command": "multiCommand.baumStopInstall",
+      "sequence": [
+        "baum-vscode.stopServer",
+        {
+          "command": "workbench.action.tasks.runTask",
+          "args": "Install baum-ls"
+        },
+      ]
+    }
+  ]
+}
