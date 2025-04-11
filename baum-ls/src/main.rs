@@ -1,7 +1,8 @@
 use lsp_server::Connection;
 use lsp_types::*;
 use std::error::Error;
-mod document;
+mod doc;
+mod input;
 mod lang;
 mod server;
 use crate::server::{main_loop, token_modifiers_list, token_type_list};

@@ -1,4 +1,4 @@
-use crate::document::Doc;
+use crate::doc::Doc;
 use crate::lang::{tokenize_example, TokenType};
 use colored::Colorize;
 use lsp_server::{Connection, Message, Notification, Request, Response};
@@ -100,6 +100,8 @@ fn semantic_tokens(
 struct Server<'a> {
   docs: HashMap<lsp_types::Uri, Arc<Mutex<Doc>>>,
   connection: &'a Connection,
+  input_dict: crate::input::InputDict,
+  last_backslash: Option<lsp_types::Position>,
   next_result_id: u32,
 }
 
@@ -110,6 +112,8 @@ impl<'a> Server<'a> {
     Self {
       docs: HashMap::new(),
       connection,
+      input_dict: crate::input::InputDict::new(),
+      last_backslash: None,
       next_result_id: 0,
     }
   }
@@ -246,52 +250,88 @@ impl<'a> Server<'a> {
   }
 
   fn completion(&mut self, params: CompletionParams) -> Result<Option<CompletionResponse>> {
-    if let Some(c) = params.context {
-      match &c.trigger_character {
-        Some(s) if s == "\\" => {
-          let cursor_pos = params.text_document_position.position;
-          let lambda_pos = Position {
+    let cursor_pos = params.text_document_position.position;
+    let last_backslash = std::mem::take(&mut self.last_backslash);
+    let backslash_pos = {
+      let c = match &params.context {
+        Some(c) => c,
+        None => return Ok(None),
+      };
+      match &c.trigger_kind {
+        &CompletionTriggerKind::TRIGGER_CHARACTER => match &c.trigger_character {
+          Some(s) if s == "\\" => Position {
             line: cursor_pos.line,
             character: cursor_pos.character - 1,
-          };
-          let range = Range {
-            start: lambda_pos,
-            end: cursor_pos,
-          };
-          let cands = vec![
-            ("\\Gl".to_string(), "λ".to_string()),
-            ("\\GP".to_string(), "Π".to_string()),
-            ("\\GS".to_string(), "Σ".to_string()),
-            ("\\lambda".to_string(), "λ".to_string()),
-            ("\\pi".to_string(), "Π".to_string()),
-            ("\\sigma".to_string(), "Σ".to_string()),
-            ("\\to".to_string(), "→".to_string()),
-          ];
-          let cands = cands
-            .iter()
-            .map(|(label, new_text)| CompletionItem {
-              label: label.clone(),
-              label_details: Some(CompletionItemLabelDetails {
-                detail: None,
-                description: Some(new_text.to_string()),
-              }),
-              text_edit: Some(CompletionTextEdit::Edit(TextEdit {
-                range: range.clone(),
-                new_text: new_text.clone(),
-              })),
-              ..Default::default()
-            })
-            .collect();
-          let res = CompletionResponse::List(CompletionList {
-            is_incomplete: true,
-            items: cands,
-          });
-          return Ok(Some(res));
-        }
-        _ => {}
+          },
+          _ => return Ok(None),
+        },
+        &CompletionTriggerKind::TRIGGER_FOR_INCOMPLETE_COMPLETIONS => match last_backslash {
+          None => return Ok(None),
+          Some(last_backslash) => last_backslash,
+        },
+        _ => return Ok(None),
       }
+    };
+    let range = Range {
+      start: backslash_pos,
+      end: cursor_pos,
+    };
+    let doc = self.get_doc(&params.text_document_position.text_document.uri)?;
+    let input = {
+      let doc = doc.lock().unwrap();
+      let s = doc.loc_utf16(
+        backslash_pos.line as usize,
+        backslash_pos.character as usize + 1, // without backslash
+      );
+      let e = doc.loc_utf16(cursor_pos.line as usize, cursor_pos.character as usize);
+      doc.substr(s, e)
+    };
+    eprintln!("completion input = {:?}", input);
+
+    use crate::input::InputEntry;
+    let mut is_incomplete = false;
+    let cands = self
+      .input_dict
+      .get_candidates(&input)
+      .iter()
+      .map(|entry| match entry {
+        InputEntry::Many(label, count) => {
+          is_incomplete = true;
+          CompletionItem {
+            label: label.clone(),
+            label_details: Some(CompletionItemLabelDetails {
+              detail: Some("...".to_string()),
+              description: Some(format!("[{}]", count)),
+            }),
+            text_edit: Some(CompletionTextEdit::Edit(TextEdit {
+              range: range.clone(),
+              new_text: label.clone(),
+            })),
+            ..Default::default()
+          }
+        }
+        InputEntry::Symbol(label, new_text) => CompletionItem {
+          label: label.clone(),
+          label_details: Some(CompletionItemLabelDetails {
+            detail: None,
+            description: Some(new_text.to_string()),
+          }),
+          text_edit: Some(CompletionTextEdit::Edit(TextEdit {
+            range: range.clone(),
+            new_text: new_text.clone(),
+          })),
+          ..Default::default()
+        },
+      })
+      .collect();
+    let res = CompletionResponse::List(CompletionList {
+      is_incomplete,
+      items: cands,
+    });
+    if is_incomplete {
+      self.last_backslash = Some(range.start);
     }
-    Ok(None)
+    Ok(Some(res))
   }
 
   fn publish_diagnostics(&mut self, params: PublishDiagnosticsParams) -> Result<()> {

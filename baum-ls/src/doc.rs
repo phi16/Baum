@@ -26,4 +26,8 @@ impl Doc {
   pub fn to_string(&self) -> String {
     self.content.to_string()
   }
+
+  pub fn substr(&self, start_ix: usize, end_ix: usize) -> String {
+    self.content.slice(start_ix..end_ix).to_string()
+  }
 }
