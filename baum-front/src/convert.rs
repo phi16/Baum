@@ -234,6 +234,7 @@ impl<T: Clone> Builder<T> {
       },
       Ann(e, ty) => core::ExprF::Ann(Box::new(self.e(&e)), Box::new(self.e(&ty))),
       Uni => core::ExprF::Uni,
+      Prim(s) => core::ExprF::Prim(s.clone()),
       Wrap(e) => return self.e(&e),
 
       Def(_, mod_name, i) => {

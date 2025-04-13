@@ -8,6 +8,7 @@ pub enum ExprF<T, PTag, STag, E> {
   Def(DefId),
   Ann(E, E),
   Uni,
+  Prim(String),
   Let(Vec<(DefId, T, E)>, E),
 
   Pi(PTag, Vis, BindId, E, E),

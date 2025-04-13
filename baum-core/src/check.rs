@@ -1009,6 +1009,10 @@ impl<T: Clone, P: Tag, S: Tag> Checker<T, P, S> {
           Rc::new(Val(ValF::Uni(tyl))),
         ))
       }
+      Prim(s) => {
+        eprintln!("check -> prim {:?}", s);
+        fail(self, "prim not implemented")
+      }
 
       Let(defs, body) => {
         self.defenvs.push(DefEnv::new());

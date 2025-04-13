@@ -1,1 +1,2 @@
-x = 1
+u32 = prim "rt/u32"
+u32_add = prim "rt/u32/add"

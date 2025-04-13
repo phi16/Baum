@@ -345,10 +345,10 @@ pub fn tokenize_example(code: &str) -> (Vec<TokenData>, Vec<Diagnostic>) {
               for (pos, e) in &e {
                 add_diag(&types::token::ErrorPos::Ix(pos.begin), e);
               }
-              let mut x = x.borrow_mut();
+              /* let mut x = x.borrow_mut();
               for (pos, _) in &e {
                 x.mark_as(&TokenIx::new(pos.begin.into_inner()), 0, TokenType::Unknown);
-              }
+              } */
             }
           }
         }

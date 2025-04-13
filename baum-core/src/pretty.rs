@@ -136,6 +136,7 @@ impl<'a> Pretty<'a> {
       ExprF::Def(i) => self.di(i),
       ExprF::Ann(v, t) => self.e(v).s(" of ").e(t),
       ExprF::Uni => self.s("𝒰"),
+      ExprF::Prim(s) => self.s("prim ").s(s),
       ExprF::Let(defs, e) => self.s("let").open().defs(defs).close().s("in ").e(e),
 
       ExprF::Pi(_, Vis::Explicit, i, t, e) => self.s("Π(").i(i).s(": ").e(t).s(") ").e(e),

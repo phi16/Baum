@@ -86,7 +86,7 @@ pub fn run(code: &str) -> Result<front::Program<TokenRange>, String> {
 #[cfg(test)]
 #[test]
 fn test_dev() {
-  let code = include_str!("../examples/hurkens.baum");
+  let code = include_str!("../examples/test.baum");
   match run(code) {
     Ok(_) => {}
     Err(e) => {

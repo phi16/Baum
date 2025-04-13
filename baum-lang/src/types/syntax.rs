@@ -213,6 +213,7 @@ fn dependency_from(e: &SyntaxExpr) -> HashMap<ElemId, Vec<ElemId>> {
         rec(&e2, env, map);
       }
       Uni => {}
+      Prim(_) => {}
       Wrap(e) => {
         rec(&e, env, map);
       }

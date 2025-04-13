@@ -370,6 +370,7 @@ impl<'a> Builder<'a> {
             Bind(LookupId::InSyntax(i)) => env.e_map.get(i).unwrap().0.clone(), // expr
             Ann(e1, e2) => Ann(Rc::new(replace(&e1, env)), Rc::new(replace(&e2, env))),
             Uni => Uni,
+            Prim(s) => Prim(s.clone()),
             Wrap(e) => Wrap(Rc::new(replace(&e, env))),
             Def(l, mod_name, LookupId::General(i)) => resolve_ext(l, mod_name, i, env),
             Def(_, _, LookupId::InSyntax(_)) => unreachable!(),
@@ -759,6 +760,7 @@ impl<'a> Builder<'a> {
             },
             Ann(e1, e2) => Ann(Rc::new(replace(&e1, env)), Rc::new(replace(&e2, env))),
             Uni => Uni,
+            Prim(s) => Prim(s.clone()),
             Wrap(e) => Wrap(Rc::new(replace(&e, env))),
 
             Def(l, mod_name, i) => Def(

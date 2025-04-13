@@ -20,6 +20,7 @@ pub enum ExprF<T, I, E> {
   Bind(I),
   Ann(E, E),
   Uni,
+  Prim(String),
   Wrap(E), // keeping T for syntax expansion
 
   Def(ModLevel, Vec<I>, I),

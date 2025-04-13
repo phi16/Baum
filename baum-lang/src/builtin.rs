@@ -90,6 +90,8 @@ pub fn builtin_syntax_table<'a>() -> SyntaxTable {
   // Base
   syntax.def("", regex_elems!["_"], SyntaxId::Hole);
   syntax.def("", regex_elems!["U"], SyntaxId::Uni);
+  // Prim
+  syntax.def("0", regex_elems!["prim", s], SyntaxId::Prim);
   // Function
   syntax.def(
     "0",
@@ -428,6 +430,14 @@ pub fn builtin_syntax_handlers<'a>() -> HashMap<SyntaxId, SyntaxHandler<'a>> {
     make_handler(|p| {
       p.take_token("U").unwrap();
       Ok(front::ExprF::Uni)
+    }),
+  );
+  handlers.insert(
+    SyntaxId::Prim,
+    make_handler(|p| {
+      p.take_token("prim").unwrap();
+      let s = p.take_lit(LitType::Str).unwrap();
+      Ok(front::ExprF::Prim(s.to_string()))
     }),
   );
 

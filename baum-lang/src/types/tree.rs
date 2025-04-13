@@ -24,6 +24,7 @@ pub enum SyntaxId {
   Str,
   Hole,
   Uni,
+  Prim,
   LamE,
   PiE,
   AppE,
