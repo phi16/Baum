@@ -10,6 +10,7 @@ pub enum CExprF<PTag, STag, E> {
   Def(DefId, Vec<Level>),
   Ann(E, E),
   Uni(Level),
+  Prim(String),
   Let(Vec<(DefId, Solution, E)>, E),
 
   Pi(PTag, Vis, BindId, E, E),
@@ -40,6 +41,7 @@ pub enum ValF<PTag, STag, V, E, D> {
   Neu(BindId, Vec<ContF<PTag, STag, V>>),
   Lazy(DefId, Vec<Level>, Vec<ContF<PTag, STag, V>>),
   Uni(Level),
+  Prim(String),
 
   Pi(PTag, Vis, BindId, V, E, D),
   Lam(PTag, Vis, BindId, V, E, D),

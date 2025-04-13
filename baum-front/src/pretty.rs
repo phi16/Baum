@@ -124,7 +124,7 @@ impl<'a> Pretty<'a> {
       ExprF::Bind(i) => self.i(i),
       ExprF::Ann(v, t) => self.e(v).s(" of ").e(t),
       ExprF::Uni => self.s("𝒰"),
-      ExprF::Prim(s) => self.s("prim ").s(s),
+      ExprF::Prim(s) => self.s("prim \"").s(s).s("\""),
       ExprF::Wrap(e) => self.e(e),
       ExprF::Def(l, m, i) => {
         self.s(&format!("[{}]", l));

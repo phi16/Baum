@@ -1,5 +1,6 @@
 use crate::levels::*;
 use crate::pretty::{pretty_ce, pretty_e, pretty_level, pretty_val};
+use crate::prim::prim_ty;
 use crate::subst::SubstEnv;
 use crate::types::common::*;
 use crate::types::level::*;
@@ -94,6 +95,7 @@ fn contains_hole_e<P, S>(i: &HoleId, e: &RE<P, S>) -> bool {
     CExprF::Def(_, _) => false,
     CExprF::Ann(e, _) => contains_hole_e(i, e),
     CExprF::Uni(_) => false,
+    CExprF::Prim(_) => false,
     CExprF::Let(defs, body) => {
       defs.iter().any(|(_, _, e)| contains_hole_e(i, e)) || contains_hole_e(i, body)
     }
@@ -492,6 +494,7 @@ impl<T: Clone, P: Tag, S: Tag> Checker<T, P, S> {
       },
       Ann(t, _) => return self.eval(g, t),
       Uni(l) => ValF::Uni(l.clone()),
+      Prim(s) => ValF::Prim(s.clone()),
       Let(defs, body) => {
         let mut g = g.clone();
         for (i, sol, e) in defs {
@@ -582,6 +585,7 @@ impl<T: Clone, P: Tag, S: Tag> Checker<T, P, S> {
         quote_ks(self, ks, e)
       }
       Uni(i) => Rc::new(CExpr(CExprF::Uni(i.clone()))),
+      Prim(s) => Rc::new(CExpr(CExprF::Prim(s.clone()))),
       Pi(tag, vis, i, ty, g, bty) => {
         let ty = self.quote(ty);
         let mut g = g.clone();
@@ -1010,8 +1014,9 @@ impl<T: Clone, P: Tag, S: Tag> Checker<T, P, S> {
         ))
       }
       Prim(s) => {
-        eprintln!("check -> prim {:?}", s);
-        fail(self, "prim not implemented")
+        let ty = prim_ty::<P, S>(&s).map_err(|s| Error::Loc(s))?;
+        let ty = self.eval0(&ty);
+        Ok((Rc::new(CExpr(CExprF::Prim(s))), ty))
       }
 
       Let(defs, body) => {

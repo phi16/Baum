@@ -180,6 +180,7 @@ impl<'a> Pretty<'a> {
       CExprF::Def(i, ls) => self.di(i).ls(ls),
       CExprF::Ann(v, t) => self.s("(").c(v).s(" of ").c(t).s(")"),
       CExprF::Uni(i) => self.s("𝒰").l(i),
+      CExprF::Prim(s) => self.s("prim \"").s(s).s("\""),
       CExprF::Let(defs, e) => self.s("let").open().defs_c(defs).close().s("in ").c(e),
 
       CExprF::Pi(_, Vis::Explicit, i, t, e) => self.s("Π(").i(i).s(": ").c(t).s(") ").c(e),
@@ -282,6 +283,7 @@ impl<'a> Pretty<'a> {
       ValF::Neu(i, ks) => self.i(i).ks(ks),
       ValF::Lazy(i, ls, ks) => self.di(i).ls(ls).ks(ks),
       ValF::Uni(i) => self.s("𝒰").l(i),
+      ValF::Prim(s) => self.s("prim \"").s(s).s("\""),
 
       ValF::Pi(_, Vis::Explicit, i, t, g, e) => self.s("Π(").i(i).s(": ").v(t).s(") ").g(g).c(e),
       ValF::Lam(_, Vis::Explicit, i, t, g, e) => self.s("λ(").i(i).s(": ").v(t).s(") ").g(g).c(e),

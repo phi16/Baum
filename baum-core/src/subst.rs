@@ -187,6 +187,7 @@ impl<'b, T: Clone, P: Tag, S: Tag> SubstEnv<'b, T, P, S> {
           unchanged
         }
       }
+      CExprF::Prim(_) => unchanged,
       CExprF::Let(defs, body) => {
         let mut changed = false;
         let mut rdefs = Vec::new();
@@ -392,6 +393,7 @@ impl<'b, T: Clone, P: Tag, S: Tag> SubstEnv<'b, T, P, S> {
           unchanged
         }
       }
+      ValF::Prim(_) => unchanged,
       ValF::Pi(tag, vis, i, ty, g, bty) => {
         let ty = self.subst_v(ty);
         let g = self.subst_g(g);
