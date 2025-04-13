@@ -31,7 +31,13 @@ impl<'a> Pretty<'a> {
   }
 
   fn i(&mut self, bind: &BindId) -> &mut Self {
-    self.line.push(self.bind_symbols.get(bind).unwrap().clone());
+    self.line.push(
+      self
+        .bind_symbols
+        .get(bind)
+        .unwrap_or(&"".to_string())
+        .clone(),
+    );
     self.line.push(format!("%{}", bind.0));
     self
   }

@@ -7,10 +7,27 @@ pub struct PTag {
   pub is_mod_param: bool,
 }
 
+impl Default for PTag {
+  fn default() -> Self {
+    PTag {
+      is_mod_param: false,
+    }
+  }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct STag {
   pub is_tuple: bool,
   pub is_mod: bool,
+}
+
+impl Default for STag {
+  fn default() -> Self {
+    STag {
+      is_tuple: false,
+      is_mod: false,
+    }
+  }
 }
 
 impl baum_core::types::common::Tag for PTag {}

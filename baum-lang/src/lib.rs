@@ -7,7 +7,6 @@ mod pretty;
 pub mod tokenize;
 pub mod types;
 
-use baum_front::types::tree as front;
 use types::token::{ErrorPos, TokenPos, TokenRange};
 
 struct Ps(Vec<TokenPos>);
@@ -44,7 +43,7 @@ impl Ps {
   }
 }
 
-pub fn run(code: &str) -> Result<front::Program<TokenRange>, String> {
+pub fn run(code: &str) -> Result<(), String> {
   let (tokens, _, errors) = tokenize::tokenize(code);
   let ps = Ps(tokens.iter().map(|t| t.pos).collect::<Vec<_>>());
   if !errors.is_empty() {
@@ -69,18 +68,23 @@ pub fn run(code: &str) -> Result<front::Program<TokenRange>, String> {
     return Err(ps.convert_range(errors));
   }
   eprintln!("--------");
-  let errors = baum_core::check::check(core.clone());
+  let errors = baum_core::check::check_main(core.clone());
   match errors {
-    Ok(_) => {
+    Ok(m) => {
       eprintln!("[Passed]");
       eprintln!("--------");
+      if let Some(m) = m {
+        eprintln!("TODO: eval main");
+      } else {
+        eprintln!("End of file: \"main\" not found");
+      }
     }
     Err(errors) => {
       eprintln!("--------");
       return Err(ps.convert_range(errors));
     }
   }
-  Ok(front)
+  Ok(())
 }
 
 #[cfg(test)]

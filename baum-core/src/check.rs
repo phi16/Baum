@@ -1,6 +1,6 @@
 use crate::levels::*;
 use crate::pretty::{pretty_ce, pretty_e, pretty_level, pretty_val};
-use crate::prim::prim_ty;
+use crate::prim::PrimMap;
 use crate::subst::SubstEnv;
 use crate::types::common::*;
 use crate::types::level::*;
@@ -124,6 +124,7 @@ pub struct Checker<T, P, S> {
   next_bind_id: u32,
   next_hole_id: u32,
   next_level_id: u32,
+  prim_map: PrimMap,
   log_head: String,
   errors: Vec<(T, String)>,
 }
@@ -145,6 +146,7 @@ impl<T: Clone, P: Tag, S: Tag> Checker<T, P, S> {
       next_bind_id,
       next_hole_id: 0,
       next_level_id: 0,
+      prim_map: PrimMap::new(),
       log_head: String::new(),
       errors: Vec::new(),
     }
@@ -372,6 +374,7 @@ impl<T: Clone, P: Tag, S: Tag> Checker<T, P, S> {
         return Ok(v);
       }
       ValF::Uni(l) => ValF::Uni(l.clone()),
+      ValF::Prim(s) => ValF::Prim(s.clone()),
       ValF::Pi(tag, vis, i, ty, g, bty) => {
         let ty = self.deep_norm(ty)?;
         let mut g = g.clone();
@@ -437,6 +440,9 @@ impl<T: Clone, P: Tag, S: Tag> Checker<T, P, S> {
         ks.push(ContF::App(tag, vis, x));
         Rc::new(Val(ValF::Lazy(*d, ls.clone(), ks)))
       }
+      ValF::Prim(s) => {
+        unimplemented!()
+      }
       ValF::Lam(ftag, fvis, i, _, g, body) => {
         assert_eq!(tag, *ftag);
         assert_eq!(vis, *fvis);
@@ -459,6 +465,9 @@ impl<T: Clone, P: Tag, S: Tag> Checker<T, P, S> {
         let mut ks = ks.clone();
         ks.push(ContF::Prop(tag, name));
         Rc::new(Val(ValF::Lazy(i.clone(), ls.clone(), ks)))
+      }
+      ValF::Prim(s) => {
+        unimplemented!()
       }
       ValF::Obj(otag, (n0, e0), props) => {
         assert_eq!(tag, *otag);
@@ -724,6 +733,12 @@ impl<T: Clone, P: Tag, S: Tag> Checker<T, P, S> {
       }
       (ValF::Uni(l1), ValF::Uni(l2)) => {
         self.unify_level(l1, l2);
+        Ok(())
+      }
+      (ValF::Prim(s1), ValF::Prim(s2)) => {
+        if s1 != s2 {
+          return fail(self, &format!("prim / mismatch: {:?} ≟ {:?}", s1, s2));
+        }
         Ok(())
       }
       (ValF::Pi(t1, v1, i1, ty1, g1, bty1), ValF::Pi(t2, v2, i2, ty2, g2, bty2)) => {
@@ -1014,7 +1029,13 @@ impl<T: Clone, P: Tag, S: Tag> Checker<T, P, S> {
         ))
       }
       Prim(s) => {
-        let ty = prim_ty::<P, S>(&s).map_err(|s| Error::Loc(s))?;
+        self.prim_map.set_bind_id(self.next_bind_id);
+        let ty = self.prim_map.ty::<T, P, S>(&s).map_err(|s| Error::Loc(s));
+        self.next_bind_id = self.prim_map.take_bind_id();
+        let (ty, _) = self.check_ty(ty?).map_err(|e| match e {
+          Error::Loc(e) => Error::Loc(format!("internal({}): {}", s, e)),
+          _ => Error::Loc(format!("internal({}): fail", s)),
+        })?;
         let ty = self.eval0(&ty);
         Ok((Rc::new(CExpr(CExprF::Prim(s))), ty))
       }
@@ -1400,6 +1421,33 @@ impl<T: Clone, P: Tag, S: Tag> Checker<T, P, S> {
     }
     def_terms
   }
+
+  fn find_main(&self) -> Option<DefId> {
+    let defenv = self.defenvs.last().unwrap();
+    for (id, _) in &defenv.define {
+      let id = *id;
+      let name = self.def_symbols.get(&id).unwrap();
+      if name == "main" {
+        return Some(id);
+      }
+    }
+    None
+  }
+
+  fn check_main(&mut self) -> Option<RE<P, S>> {
+    let main_id = self.find_main()?;
+    let main_def = Expr(ExprF::Def(main_id));
+    let ty = Rc::new(Val(ValF::Prim("rt/!".to_string())));
+    match self.check(main_def, &ty) {
+      Ok(e) => Some(e),
+      Err(Error::Fail) => None,
+      Err(Error::Loc(e)) => {
+        let t = unimplemented!();
+        self.errors.push((t, format!("definition of main: {}", e)));
+        None
+      }
+    }
+  }
 }
 
 pub fn check<T, P, S>(p: Program<T, P, S>) -> std::result::Result<(), Vec<(T, String)>>
@@ -1412,8 +1460,32 @@ where
   c.defenvs.push(DefEnv::new());
   c.defs(p.defs);
   c.defenvs.pop();
+
   if c.errors.is_empty() {
     Ok(())
+  } else {
+    Err(c.errors)
+  }
+}
+
+pub fn check_main<T, P, S>(
+  p: Program<T, P, S>,
+) -> std::result::Result<Option<RE<P, S>>, Vec<(T, String)>>
+where
+  T: Clone,
+  P: Tag,
+  S: Tag,
+{
+  let mut c = Checker::new(p.def_symbols, p.bind_symbols, p.name_symbols);
+  c.solves.push(Solve::new());
+  c.defenvs.push(DefEnv::new());
+  let ds = c.defs(p.defs);
+  let body = c.check_main();
+  c.defenvs.pop();
+  c.solves.pop();
+
+  if c.errors.is_empty() {
+    Ok(body.map(|e| Rc::new(CExpr(CExprF::Let(ds, e)))))
   } else {
     Err(c.errors)
   }
