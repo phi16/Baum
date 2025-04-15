@@ -68,7 +68,8 @@ pub fn run(code: &str) -> Result<(), String> {
     return Err(ps.convert_range(errors));
   }
   eprintln!("--------");
-  let errors = baum_core::check::check_main(core.clone());
+  let entrypoint = "main";
+  let errors = baum_core::check::check_main(core.clone(), entrypoint);
   match errors {
     Ok(m) => {
       eprintln!("[Passed]");
@@ -76,7 +77,7 @@ pub fn run(code: &str) -> Result<(), String> {
       if let Some(m) = m {
         baum_rt::run::run(m);
       } else {
-        eprintln!("End of file: \"main\" not found");
+        eprintln!("End of file: entrypoint {:?} not found", entrypoint);
       }
     }
     Err(errors) => {

@@ -1469,20 +1469,20 @@ impl<T: Clone, P: Tag, S: Tag> Checker<T, P, S> {
     def_terms
   }
 
-  fn find_main(&self) -> Option<DefId> {
+  fn find_main(&self, entrypoint: &str) -> Option<DefId> {
     let defenv = self.defenvs.last().unwrap();
     for (id, _) in &defenv.define {
       let id = *id;
       let name = self.def_symbols.get(&id).unwrap();
-      if name == "main" {
+      if name == entrypoint {
         return Some(id);
       }
     }
     None
   }
 
-  fn check_main(&mut self) -> Option<RE<P, S>> {
-    let main_id = self.find_main()?;
+  fn check_main(&mut self, entrypoint: &str) -> Option<RE<P, S>> {
+    let main_id = self.find_main(entrypoint)?;
     let main_def = Expr(ExprF::Def(main_id));
     let ty = Rc::new(Val(ValF::Prim("rt/!".to_string(), Vec::new())));
     match self.check(main_def, &ty) {
@@ -1517,6 +1517,7 @@ where
 
 pub fn check_main<T, P, S>(
   p: Program<T, P, S>,
+  entrypoint: &str,
 ) -> std::result::Result<Option<RE<P, S>>, Vec<(T, String)>>
 where
   T: Clone,
@@ -1527,7 +1528,7 @@ where
   c.solves.push(Solve::new());
   c.defenvs.push(DefEnv::new());
   let ds = c.defs(p.defs);
-  let body = c.check_main();
+  let body = c.check_main(entrypoint);
   c.defenvs.pop();
   c.solves.pop();
 
