@@ -24,6 +24,7 @@ version = "0.1.0"
 dependencies = [
  "baum-core",
  "baum-front",
+ "baum-rt",
 ]
 
 [[package]]
@@ -39,6 +40,13 @@ dependencies = [
  "ropey",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "baum-rt"
+version = "0.1.0"
+dependencies = [
+ "baum-core",
 ]
 
 [[package]]

@@ -74,7 +74,7 @@ pub fn run(code: &str) -> Result<(), String> {
       eprintln!("[Passed]");
       eprintln!("--------");
       if let Some(m) = m {
-        baum_core::rt::run(m);
+        baum_rt::run::run(m);
       } else {
         eprintln!("End of file: \"main\" not found");
       }

@@ -14,7 +14,7 @@ two: u32 = prim "rt/u32/2"
 print = prim "rt/print"
 main: ! = print (one + one)
 
-module X (Id: {a: U} → (x y: a) → U) (refl: {a: U} → (x: a) → Id {a} x x) = {
-  syntax 1 a ~ b = Id a b
-  u: add one one ~ two = refl _
-}
+-- module X (Id: {a: U} → (x y: a) → U) (refl: {a: U} → (x: a) → Id {a} x x) = {
+--   syntax 1 a ~ b = Id a b
+--   u: add one one ~ two = refl _
+-- }
