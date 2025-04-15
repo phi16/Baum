@@ -9,8 +9,6 @@ pub fn prim(name: &str) -> Val {
     Val::Raw(Raw::U32(0))
   } else if name == "rt/u32/1" {
     Val::Raw(Raw::U32(1))
-  } else if name == "rt/u32/2" {
-    Val::Raw(Raw::U32(2))
   } else if name == "rt/u32/add" {
     Val::Prim("rt/u32/add".to_string(), 2, vec![])
   } else if name == "rt/!" {

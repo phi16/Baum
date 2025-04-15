@@ -24,7 +24,7 @@ pub struct STag {
 impl Default for STag {
   fn default() -> Self {
     STag {
-      is_tuple: false,
+      is_tuple: true,
       is_mod: false,
     }
   }

@@ -824,6 +824,12 @@ impl<T: Clone, P: Tag, S: Tag> Checker<T, P, S> {
         self.unify(&bty1, &bty2)?;
         Ok(())
       }
+      (ValF::Sigma0(t1), ValF::Sigma0(t2)) => {
+        if t1 != t2 {
+          return fail(self, "Σ0 / role mismatch");
+        }
+        Ok(())
+      }
       (
         ValF::Sigma(t1, (n01, i01, ty01), g1, props1),
         ValF::Sigma(t2, (n02, i02, ty02), g2, props2),
@@ -853,6 +859,12 @@ impl<T: Clone, P: Tag, S: Tag> Checker<T, P, S> {
         }
         if props1.len() != props2.len() {
           return fail(self, "Σ / length mismatch");
+        }
+        Ok(())
+      }
+      (ValF::Obj0(t1), ValF::Obj0(t2)) => {
+        if t1 != t2 {
+          return fail(self, "obj0 / role mismatch");
         }
         Ok(())
       }

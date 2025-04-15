@@ -60,8 +60,6 @@ impl PrimMap {
       return Ok(self.prim("rt/u32"));
     } else if name == "rt/u32/1" {
       return Ok(self.prim("rt/u32"));
-    } else if name == "rt/u32/2" {
-      return Ok(self.prim("rt/u32"));
     } else if name == "rt/u32/add" {
       let u = self.prim("rt/u32");
       let u2u = self.fun(u.clone(), u.clone());
