@@ -39,7 +39,21 @@ impl PrimMap {
     return Expr(ExprF::Prim(name.to_string()));
   }
 
-  pub fn ty<T, P: Tag, S: Tag>(&mut self, name: &str) -> Result<Expr<T, P, S>> {
+  pub fn fun<T, P: Tag, S: Tag>(
+    &mut self,
+    from: Expr<T, P, S>,
+    to: Expr<T, P, S>,
+  ) -> Expr<T, P, S> {
+    return Expr(ExprF::Pi(
+      Default::default(),
+      Vis::Explicit,
+      self.fresh_bind(),
+      Box::new(from),
+      Box::new(to),
+    ));
+  }
+
+  pub fn ty<T: Clone, P: Tag, S: Tag>(&mut self, name: &str) -> Result<Expr<T, P, S>> {
     if name == "rt/u32" {
       return Ok(Expr(ExprF::Uni));
     } else if name == "rt/u32/0" {
@@ -49,29 +63,20 @@ impl PrimMap {
     } else if name == "rt/u32/2" {
       return Ok(self.prim("rt/u32"));
     } else if name == "rt/u32/add" {
-      return Ok(Expr(ExprF::Pi(
-        Default::default(),
-        Vis::Explicit,
-        self.fresh_bind(),
-        Box::new(self.prim("rt/u32")),
-        Box::new(Expr(ExprF::Pi(
-          Default::default(),
-          Vis::Explicit,
-          self.fresh_bind(),
-          Box::new(self.prim("rt/u32")),
-          Box::new(self.prim("rt/u32")),
-        ))),
-      )));
+      let u = self.prim("rt/u32");
+      let u2u = self.fun(u.clone(), u.clone());
+      return Ok(self.fun(u, u2u));
     } else if name == "rt/!" {
       return Ok(Expr(ExprF::Uni));
     } else if name == "rt/print" {
-      return Ok(Expr(ExprF::Pi(
-        Default::default(),
-        Vis::Explicit,
-        self.fresh_bind(),
-        Box::new(self.prim("rt/u32")),
-        Box::new(self.prim("rt/!")),
-      )));
+      let u = self.prim("rt/u32");
+      let zero = Expr(ExprF::Sigma(Default::default(), vec![]));
+      let bang = self.prim("rt/!");
+      let cb = self.fun(zero, bang.clone());
+      let cb2bang = self.fun(cb, bang);
+      return Ok(self.fun(u, cb2bang));
+    } else if name == "rt/exit" {
+      return Ok(self.prim("rt/!"));
     } else {
       return Err(format!("unknown prim: {}", name));
     }

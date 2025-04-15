@@ -2,6 +2,7 @@ syntax 1> A → B = Π(x: A) B
 syntax 1> (x: A) → B = Π(x: A) B
 syntax 1> (x y: A) → B = Π(x y: A) B
 syntax 1> {x: A} → B = Π{x: A} B
+syntax 0> | x | y = λ(x) y
 
 u32 = prim "rt/u32"
 add: u32 → u32 → u32 = prim "rt/u32/add"
@@ -12,7 +13,12 @@ two: u32 = prim "rt/u32/2"
 
 ! = prim "rt/!"
 print = prim "rt/print"
-main: ! = print (one + one)
+exit = prim "rt/exit"
+four = two + two
+main: ! =
+  print (one + one) |_|
+  print four |_|
+  exit
 
 -- module X (Id: {a: U} → (x y: a) → U) (refl: {a: U} → (x: a) → Id {a} x x) = {
 --   syntax 1 a ~ b = Id a b

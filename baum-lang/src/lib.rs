@@ -75,7 +75,8 @@ pub fn run(code: &str) -> Result<(), String> {
       eprintln!("[Passed]");
       eprintln!("--------");
       if let Some(m) = m {
-        baum_rt::run::run(m);
+        let t = baum_rt::convert::convert(&m);
+        baum_rt::run::run(&t);
       } else {
         eprintln!("End of file: entrypoint {:?} not found", entrypoint);
       }
