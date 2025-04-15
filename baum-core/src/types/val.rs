@@ -40,8 +40,8 @@ pub enum ValF<PTag, STag, V, E, D> {
   Hole(HoleId),
   Neu(BindId, Vec<ContF<PTag, STag, V>>),
   Lazy(DefId, Vec<Level>, Vec<ContF<PTag, STag, V>>),
+  Prim(String, Vec<ContF<PTag, STag, V>>),
   Uni(Level),
-  Prim(String),
 
   Pi(PTag, Vis, BindId, V, E, D),
   Lam(PTag, Vis, BindId, V, E, D),

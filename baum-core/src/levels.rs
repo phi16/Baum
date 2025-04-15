@@ -121,7 +121,14 @@ pub fn traverse_levels_v<P, S>(v: &RV<P, S>, scope: &mut HashSet<LevelId>) {
           scope.insert(*i);
         });
       }
-      Prim(_) => {}
+      Prim(_, cs) => {
+        for c in cs {
+          match c {
+            ContF::App(_, _, e) => rec(e, scope),
+            ContF::Prop(_, _) => {}
+          }
+        }
+      }
 
       Pi(_, _, _, ty, g, bty) => {
         rec(ty, scope);

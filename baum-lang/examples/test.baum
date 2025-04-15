@@ -5,15 +5,16 @@ syntax 1> {x: A} → B = Π{x: A} B
 
 u32 = prim "rt/u32"
 add: u32 → u32 → u32 = prim "rt/u32/add"
+syntax a + b = add a b
 zero: u32 = prim "rt/u32/0"
 one: u32 = prim "rt/u32/1"
 two: u32 = prim "rt/u32/2"
 
 ! = prim "rt/!"
-test = prim "rt/test"
-main: ! = test
+print = prim "rt/print"
+main: ! = print (one + one)
 
--- module X (Id: {a: U} → (x y: a) → U) (refl: {a: U} → (x: a) → Id {a} x x) = {
---   syntax 1 a ~ b = Id a b  
---   u: add one one ~ two = refl _
--- }
+module X (Id: {a: U} → (x y: a) → U) (refl: {a: U} → (x: a) → Id {a} x x) = {
+  syntax 1 a ~ b = Id a b
+  u: add one one ~ two = refl _
+}

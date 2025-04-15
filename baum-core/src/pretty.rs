@@ -288,8 +288,8 @@ impl<'a> Pretty<'a> {
       ValF::Hole(i) => self.hi(i),
       ValF::Neu(i, ks) => self.i(i).ks(ks),
       ValF::Lazy(i, ls, ks) => self.di(i).ls(ls).ks(ks),
+      ValF::Prim(s, ks) => self.s("prim \"").s(s).s("\"").ks(ks),
       ValF::Uni(i) => self.s("𝒰").l(i),
-      ValF::Prim(s) => self.s("prim \"").s(s).s("\""),
 
       ValF::Pi(_, Vis::Explicit, i, t, g, e) => self.s("Π(").i(i).s(": ").v(t).s(") ").g(g).c(e),
       ValF::Lam(_, Vis::Explicit, i, t, g, e) => self.s("λ(").i(i).s(": ").v(t).s(") ").g(g).c(e),

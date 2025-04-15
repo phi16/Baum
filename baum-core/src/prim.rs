@@ -64,8 +64,14 @@ impl PrimMap {
       )));
     } else if name == "rt/!" {
       return Ok(Expr(ExprF::Uni));
-    } else if name == "rt/test" {
-      return Ok(self.prim("rt/!"));
+    } else if name == "rt/print" {
+      return Ok(Expr(ExprF::Pi(
+        Default::default(),
+        Vis::Explicit,
+        self.fresh_bind(),
+        Box::new(self.prim("rt/u32")),
+        Box::new(self.prim("rt/!")),
+      )));
     } else {
       return Err(format!("unknown prim: {}", name));
     }

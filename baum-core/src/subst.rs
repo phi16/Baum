@@ -385,6 +385,29 @@ impl<'b, T: Clone, P: Tag, S: Tag> SubstEnv<'b, T, P, S> {
           }
         }
       },
+      ValF::Prim(s, ks) => {
+        let mut changed = false;
+        let mut rks = Vec::new();
+        for k in ks {
+          match k {
+            ContF::App(tag, vis, x) => {
+              let x = self.subst_v(x);
+              if x.is_changed() {
+                changed = true;
+              }
+              rks.push(ContF::App(tag.clone(), vis.clone(), x.into()));
+            }
+            ContF::Prop(tag, name) => {
+              rks.push(ContF::Prop(tag.clone(), *name));
+            }
+          }
+        }
+        if changed {
+          Subst::Changed(Rc::new(Val(ValF::Prim(s.clone(), rks))))
+        } else {
+          unchanged
+        }
+      }
       ValF::Uni(l) => {
         let l = self.subst_l(l);
         if l.is_changed() {
@@ -393,7 +416,7 @@ impl<'b, T: Clone, P: Tag, S: Tag> SubstEnv<'b, T, P, S> {
           unchanged
         }
       }
-      ValF::Prim(_) => unchanged,
+
       ValF::Pi(tag, vis, i, ty, g, bty) => {
         let ty = self.subst_v(ty);
         let g = self.subst_g(g);

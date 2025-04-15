@@ -374,7 +374,21 @@ impl<T: Clone, P: Tag, S: Tag> Checker<T, P, S> {
         return Ok(v);
       }
       ValF::Uni(l) => ValF::Uni(l.clone()),
-      ValF::Prim(s) => ValF::Prim(s.clone()),
+      ValF::Prim(s, ks) => {
+        let mut v = Rc::new(Val(ValF::Prim(s.clone(), Vec::new())));
+        for k in ks {
+          match k {
+            ContF::App(tag, vis, x) => {
+              let x = self.deep_norm(x)?;
+              v = self.app(tag.clone(), vis.clone(), v, x);
+            }
+            ContF::Prop(tag, name) => {
+              v = self.prop(tag.clone(), v, *name);
+            }
+          }
+        }
+        return Ok(v);
+      }
       ValF::Pi(tag, vis, i, ty, g, bty) => {
         let ty = self.deep_norm(ty)?;
         let mut g = g.clone();
@@ -440,8 +454,10 @@ impl<T: Clone, P: Tag, S: Tag> Checker<T, P, S> {
         ks.push(ContF::App(tag, vis, x));
         Rc::new(Val(ValF::Lazy(*d, ls.clone(), ks)))
       }
-      ValF::Prim(s) => {
-        unimplemented!()
+      ValF::Prim(s, ks) => {
+        let mut ks = ks.clone();
+        ks.push(ContF::App(tag, vis, x));
+        Rc::new(Val(ValF::Prim(s.clone(), ks)))
       }
       ValF::Lam(ftag, fvis, i, _, g, body) => {
         assert_eq!(tag, *ftag);
@@ -466,8 +482,10 @@ impl<T: Clone, P: Tag, S: Tag> Checker<T, P, S> {
         ks.push(ContF::Prop(tag, name));
         Rc::new(Val(ValF::Lazy(i.clone(), ls.clone(), ks)))
       }
-      ValF::Prim(s) => {
-        unimplemented!()
+      ValF::Prim(s, ks) => {
+        let mut ks = ks.clone();
+        ks.push(ContF::Prop(tag, name));
+        Rc::new(Val(ValF::Prim(s.clone(), ks)))
       }
       ValF::Obj(otag, (n0, e0), props) => {
         assert_eq!(tag, *otag);
@@ -503,7 +521,7 @@ impl<T: Clone, P: Tag, S: Tag> Checker<T, P, S> {
       },
       Ann(t, _) => return self.eval(g, t),
       Uni(l) => ValF::Uni(l.clone()),
-      Prim(s) => ValF::Prim(s.clone()),
+      Prim(s) => ValF::Prim(s.clone(), Vec::new()),
       Let(defs, body) => {
         let mut g = g.clone();
         for (i, sol, e) in defs {
@@ -594,7 +612,10 @@ impl<T: Clone, P: Tag, S: Tag> Checker<T, P, S> {
         quote_ks(self, ks, e)
       }
       Uni(i) => Rc::new(CExpr(CExprF::Uni(i.clone()))),
-      Prim(s) => Rc::new(CExpr(CExprF::Prim(s.clone()))),
+      Prim(s, ks) => {
+        let e = Rc::new(CExpr(CExprF::Prim(s.clone())));
+        quote_ks(self, ks, e)
+      }
       Pi(tag, vis, i, ty, g, bty) => {
         let ty = self.quote(ty);
         let mut g = g.clone();
@@ -690,11 +711,11 @@ impl<T: Clone, P: Tag, S: Tag> Checker<T, P, S> {
         Ok(())
       }
       (ValF::Neu(i1, ks1), ValF::Neu(i2, ks2)) => {
-        if ks1.len() != ks2.len() {
-          return fail(self, &format!("continuation length mismatch (TODO)"));
-        }
         if i1 != i2 {
           return fail(self, &format!("identifier mismatch: {:?} ≟ {:?}", i1, i2));
+        }
+        if ks1.len() != ks2.len() {
+          return fail(self, &format!("continuation length mismatch (TODO)"));
         }
         for (k1, k2) in ks1.iter().zip(ks2.iter()) {
           match (k1, k2) {
@@ -735,9 +756,35 @@ impl<T: Clone, P: Tag, S: Tag> Checker<T, P, S> {
         self.unify_level(l1, l2);
         Ok(())
       }
-      (ValF::Prim(s1), ValF::Prim(s2)) => {
+      (ValF::Prim(s1, ks1), ValF::Prim(s2, ks2)) => {
         if s1 != s2 {
           return fail(self, &format!("prim / mismatch: {:?} ≟ {:?}", s1, s2));
+        }
+        if ks1.len() != ks2.len() {
+          return fail(self, &format!("continuation length mismatch (TODO)"));
+        }
+        for (k1, k2) in ks1.iter().zip(ks2.iter()) {
+          match (k1, k2) {
+            (ContF::App(p1, v1, t1), ContF::App(p2, v2, t2)) => {
+              if p1 != p2 {
+                return fail(self, "app / role mismatch");
+              }
+              if v1 != v2 {
+                return fail(self, "app / visibility mismatch");
+              }
+              self.unify(t1, t2)?;
+            }
+            (ContF::Prop(s1, n1), ContF::Prop(s2, n2)) => {
+              if s1 != s2 {
+                return fail(self, "prop / role mismatch");
+              }
+              if n1 != n2 {
+                return fail(self, &format!("prop / name mismatch: {:?} ≟ {:?}", n1, n2));
+              }
+              // ok
+            }
+            _ => return fail(self, "continuation mismatch"),
+          }
         }
         Ok(())
       }
@@ -1437,7 +1484,7 @@ impl<T: Clone, P: Tag, S: Tag> Checker<T, P, S> {
   fn check_main(&mut self) -> Option<RE<P, S>> {
     let main_id = self.find_main()?;
     let main_def = Expr(ExprF::Def(main_id));
-    let ty = Rc::new(Val(ValF::Prim("rt/!".to_string())));
+    let ty = Rc::new(Val(ValF::Prim("rt/!".to_string(), Vec::new())));
     match self.check(main_def, &ty) {
       Ok(e) => Some(e),
       Err(Error::Fail) => None,
