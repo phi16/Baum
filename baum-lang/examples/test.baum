@@ -22,6 +22,7 @@ n1: nat = λ(a: U) λ(f: a → a) λ(x: a) f x
 n2: nat = λ(a: U) λ(f: a → a) λ(x: a) f (f x)
 n3: nat = λ(a: U) λ(f: a → a) λ(x: a) f (f (f x))
 
+succ: nat → nat = λ(n: nat) λ(a: U) λ(f: a → a) λ(x: a) f (n a f x)
 add: nat → nat → nat = λ(m: nat) λ(n: nat) λ(a: U) λ(f: a → a) λ(x: a) m a f (n a f x)
 mul: nat → nat → nat = λ(m: nat) λ(n: nat) λ(a: U) λ(f: a → a) λ(x: a) m a (n a f) x
 pow: nat → nat → nat = λ(m: nat) λ(n: nat) λ(a: U) λ(f: a → a) λ(x: a) n _ (m _) f x
@@ -31,10 +32,12 @@ syntax a × b = mul a b
 syntax a ^ b = pow a b
 
 main: ! =
-  printNat (n3 × n2) |_|
-  let n5 = n2 + n3 in
-  printNat (n5 ^ n5) |_|
-  exit
+  let
+    n9 = n3 × n3
+    tri (n: nat) (k: Σ() → !): ! = let
+        u = n Σ(nat, Σ() → !) (λ(p) (succ p.0, λ(_) printNat p.0 p.1)) (n0, k)
+      in u.1 ()
+  in tri n9 |_| exit
 
 -- module X (Id: {a: U} → (x y: a) → U) (refl: {a: U} → (x: a) → Id {a} x x) = {
 --   syntax 1 a ~ b = Id a b
