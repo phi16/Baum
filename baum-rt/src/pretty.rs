@@ -63,7 +63,7 @@ impl Pretty {
       TreeF::Unit => self.s("()"),
       TreeF::Prim(s) => self.s("prim[").s(s).s("]"),
       TreeF::Let(ds, e) => self.s("let").open().ds(ds).close().s("in ").t(e),
-      TreeF::Lam(b, e) => self.s("λ(").i(b).s(") ").t(e),
+      TreeF::Lam(b, _, e) => self.s("λ(").i(b).s(") ").t(e),
       TreeF::App(e1, e2) => match e2.0 {
         TreeF::Var(_) | TreeF::Unit | TreeF::Prim(_) | TreeF::Obj(_) => self.t(e1).s(" ").t(e2),
         _ => self.t(e1).s(" (").t(e2).s(")"),

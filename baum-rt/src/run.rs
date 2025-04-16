@@ -44,7 +44,13 @@ fn step(t: &Rc<Tree>, env: Env) -> Thunk {
       Thunk::Thunk(e.clone(), env, Vec::new())
     }
 
-    TreeF::Lam(i, e) => Thunk::Val(Val::Cl(*i, env.clone(), e.clone())),
+    TreeF::Lam(i, scope, e) => {
+      let env = scope
+        .iter()
+        .map(|i| (*i, env.get(i).unwrap().clone()))
+        .collect::<HashMap<_, _>>();
+      Thunk::Val(Val::Cl(*i, Rc::new(env), e.clone()))
+    }
     TreeF::App(f, x) => {
       let f = step(f, env.clone());
       let x = eval(step(x, env.clone()));

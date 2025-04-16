@@ -19,6 +19,8 @@ impl std::fmt::Debug for Name {
   }
 }
 
+pub type Scope = Vec<Id>;
+
 #[derive(Debug, Clone)]
 pub enum TreeF<T> {
   Var(Id),
@@ -26,7 +28,7 @@ pub enum TreeF<T> {
   Prim(String),
   Let(Vec<(Id, T)>, T),
 
-  Lam(Id, T),
+  Lam(Id, Scope, T),
   App(T, T),
   Obj(Vec<(Name, T)>),
   Prop(T, Name),
