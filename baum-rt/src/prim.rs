@@ -29,13 +29,6 @@ fn take_u32(v: Val) -> u32 {
   }
 }
 
-fn take_lam(v: Val) -> (Id, Env, Rc<Tree>) {
-  match v {
-    Val::Cl(i, e, body) => (i, e, body),
-    _ => unreachable!(),
-  }
-}
-
 pub fn prim_ev(name: &str, args: Vec<Val>) -> Thunk {
   // eprintln!("Ev: {:?}{:?}", name, args);
   let mut args = args.into_iter();
@@ -48,12 +41,11 @@ pub fn prim_ev(name: &str, args: Vec<Val>) -> Thunk {
   } else if name == "rt/print" {
     assert_eq!(args.len(), 2);
     let n = take_u32(args.next().unwrap());
-    let (i, mut env, body) = take_lam(args.next().unwrap());
-    Rc::make_mut(&mut env).insert(i, Val::Unit);
+    let k = args.next().unwrap();
     Thunk::Val(Val::Raw(Raw::Action(Action {
       run: Rc::new(move || {
         println!("Print: {}", n);
-        Thunk::Thunk(body.clone(), env.clone(), Vec::new())
+        crate::run::app(k.clone(), Val::Unit)
       }),
     })))
   } else {

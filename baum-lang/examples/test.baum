@@ -9,6 +9,11 @@ add: u32 → u32 → u32 = prim "rt/u32/add"
 zero: u32 = prim "rt/u32/0"
 one: u32 = prim "rt/u32/1"
 
+module X (Id: {a: U} → (x y: a) → U) (refl: {a: U} → (x: a) → Id {a} x x) = {
+  syntax 1 a ~ b = Id a b
+  u: add one one ~ add one one = refl _
+}
+
 ! = prim "rt/!"
 print = prim "rt/print"
 exit = prim "rt/exit"
@@ -50,7 +55,3 @@ main: ! =
       in u.1
   in tri n9 |_| exit
 
--- module X (Id: {a: U} → (x y: a) → U) (refl: {a: U} → (x: a) → Id {a} x x) = {
---   syntax 1 a ~ b = Id a b
---   u: add one one ~ two = refl _
--- }

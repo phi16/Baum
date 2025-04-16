@@ -4,7 +4,7 @@ use crate::types::tree::{Cont, Env, Name, Raw, Thunk, Tree, TreeF, Val};
 use std::collections::HashMap;
 use std::rc::Rc;
 
-fn app(f: Val, x: Val) -> Thunk {
+pub fn app(f: Val, x: Val) -> Thunk {
   match f {
     Val::Cl(i, mut e, body) => {
       Rc::make_mut(&mut e).insert(i, x);
