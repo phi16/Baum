@@ -38,7 +38,7 @@ impl Convert {
       Bind(b) => TreeF::Var(self.bind(*b)),
       Def(d, _) => TreeF::Var(self.def(*d)),
       Ann(e, _) => return self.e(e),
-      Uni(_) => TreeF::Type,
+      Uni(_) => TreeF::Unit,
       Prim(s) => TreeF::Prim(s.clone()),
       Let(defs, e) => {
         let defs = defs
@@ -47,13 +47,13 @@ impl Convert {
           .collect();
         TreeF::Let(defs, self.e(e))
       }
-      Pi(_, _, _, _, _) => TreeF::Type,
+      Pi(_, _, _, _, _) => TreeF::Unit,
       Lam(_, _, b, _, e) => TreeF::Lam(self.bind(*b), self.e(e)),
       App(_, _, e1, e2) => TreeF::App(self.e(e1), self.e(e2)),
 
-      Sigma0(_) => TreeF::Type,
-      Obj0(_) => TreeF::Obj0,
-      Sigma(_, _, _) => TreeF::Type,
+      Sigma0(_) => TreeF::Unit,
+      Obj0(_) => TreeF::Unit,
+      Sigma(_, _, _) => TreeF::Unit,
       Obj(_, (n0, e0), props) => {
         let mut ps = vec![(Name(n0.0), self.e(e0))];
         for (n, e) in props {

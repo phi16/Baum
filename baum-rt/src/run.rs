@@ -6,9 +6,8 @@ use std::rc::Rc;
 
 fn app(f: Val, x: Val) -> Thunk {
   match f {
-    Val::Lam(i, e, body) => {
-      let mut e = e;
-      e.insert(i, x);
+    Val::Cl(i, mut e, body) => {
+      Rc::make_mut(&mut e).insert(i, x);
       Thunk::Thunk(body, e, Vec::new())
     }
     Val::Prim(name, n, args) => {
@@ -31,38 +30,36 @@ fn prop(o: Val, n: &Name) -> Thunk {
   }
 }
 
-fn step(t: &Rc<Tree>, env: &Env) -> Thunk {
+fn step(t: &Rc<Tree>, env: Env) -> Thunk {
   match &t.0 {
     TreeF::Var(i) => Thunk::Val(env.get(i).unwrap().clone()),
-    TreeF::Type => Thunk::Val(Val::Type),
+    TreeF::Unit => Thunk::Val(Val::Type),
     TreeF::Prim(s) => Thunk::Val(prim(s)),
     TreeF::Let(ds, e) => {
-      let mut env = env.clone();
+      let mut env = env;
       for (i, d) in ds {
-        let v = eval(step(d, &env));
-        env.insert(*i, v);
+        let v = eval(step(d, env.clone()));
+        Rc::make_mut(&mut env).insert(*i, v);
       }
-      Thunk::Thunk(e.clone(), env.clone(), Vec::new())
+      Thunk::Thunk(e.clone(), env, Vec::new())
     }
 
-    TreeF::Lam(i, e) => Thunk::Val(Val::Lam(*i, env.clone(), e.clone())),
+    TreeF::Lam(i, e) => Thunk::Val(Val::Cl(*i, env.clone(), e.clone())),
     TreeF::App(f, x) => {
-      let f = step(f, env);
-      let x = eval(step(x, env));
+      let f = step(f, env.clone());
+      let x = eval(step(x, env.clone()));
       match f {
         Thunk::Val(f) => app(f, x),
         Thunk::Thunk(t, e, mut ks) => {
           ks.push(Cont::App(x));
           Thunk::Thunk(t, e, ks)
         }
-        _ => unreachable!(),
       }
     }
-    TreeF::Obj0 => Thunk::Val(Val::Obj0),
     TreeF::Obj(props) => {
       let mut ps = HashMap::new();
       for (n, e) in props {
-        let v = eval(step(e, env));
+        let v = eval(step(e, env.clone()));
         ps.insert(*n, v);
       }
       Thunk::Val(Val::Obj(ps))
@@ -75,7 +72,6 @@ fn step(t: &Rc<Tree>, env: &Env) -> Thunk {
           ks.push(Cont::Prop(*n));
           Thunk::Thunk(t, e, ks)
         }
-        _ => unreachable!(),
       }
     }
   }
@@ -92,7 +88,7 @@ fn eval(value: Thunk) -> Val {
         Some(Cont::Prop(n)) => value = prop(v, &n),
       },
       Thunk::Thunk(t, env, ks) => {
-        value = step(&t, &env);
+        value = step(&t, env);
         conts.extend(ks.into_iter().rev());
       }
     }
@@ -103,7 +99,7 @@ pub fn run(t: &Rc<Tree>) {
   eprintln!("[Run]");
   eprintln!("{}", pretty(t));
   eprintln!("--------");
-  let mut thunk = Thunk::Thunk(t.clone(), HashMap::new(), Vec::new());
+  let mut thunk = Thunk::Thunk(t.clone(), Rc::new(HashMap::new()), Vec::new());
   loop {
     let v = eval(thunk);
     match v {
@@ -114,10 +110,7 @@ pub fn run(t: &Rc<Tree>) {
         eprintln!("Done");
         return;
       }
-      _ => {
-        eprintln!("Result: {:?}", v);
-        return;
-      }
+      _ => unreachable!(),
     }
   }
 }

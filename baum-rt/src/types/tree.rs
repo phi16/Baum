@@ -22,13 +22,12 @@ impl std::fmt::Debug for Name {
 #[derive(Debug, Clone)]
 pub enum TreeF<T> {
   Var(Id),
-  Type,
+  Unit,
   Prim(String),
   Let(Vec<(Id, T)>, T),
 
   Lam(Id, T),
   App(T, T),
-  Obj0,
   Obj(Vec<(Name, T)>),
   Prop(T, Name),
 }
@@ -65,12 +64,12 @@ pub enum Val {
   Type,
   Raw(Raw),
   Prim(String, usize, Vec<Val>),
-  Lam(Id, Env, Rc<Tree>),
-  Obj0,
+  Cl(Id, Env, Rc<Tree>),
+  Unit,
   Obj(HashMap<Name, Val>),
 }
 
-pub type Env = HashMap<Id, Val>;
+pub type Env = Rc<HashMap<Id, Val>>;
 
 #[derive(Debug, Clone)]
 pub enum Thunk {

@@ -60,15 +60,14 @@ impl Pretty {
   fn t(&mut self, t: &Rc<Tree>) -> &mut Self {
     match &t.0 {
       TreeF::Var(i) => self.i(i),
-      TreeF::Type => self.s("*"),
+      TreeF::Unit => self.s("{}"),
       TreeF::Prim(s) => self.s("prim[").s(s).s("]"),
       TreeF::Let(ds, e) => self.s("let").open().ds(ds).close().s("in ").t(e),
       TreeF::Lam(b, e) => self.s("λ(").i(b).s(") ").t(e),
       TreeF::App(e1, e2) => match e2.0 {
-        TreeF::Var(_) | TreeF::Type | TreeF::Prim(_) | TreeF::Obj(_) => self.t(e1).s(" ").t(e2),
+        TreeF::Var(_) | TreeF::Unit | TreeF::Prim(_) | TreeF::Obj(_) => self.t(e1).s(" ").t(e2),
         _ => self.t(e1).s(" (").t(e2).s(")"),
       },
-      TreeF::Obj0 => self.s("{}"),
       TreeF::Obj(ps) => {
         self.s("{");
         let mut first = true;
