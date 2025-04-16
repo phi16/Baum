@@ -60,7 +60,7 @@ impl Pretty {
   fn t(&mut self, t: &Rc<Tree>) -> &mut Self {
     match &t.0 {
       TreeF::Var(i) => self.i(i),
-      TreeF::Unit => self.s("{}"),
+      TreeF::Unit => self.s("()"),
       TreeF::Prim(s) => self.s("prim[").s(s).s("]"),
       TreeF::Let(ds, e) => self.s("let").open().ds(ds).close().s("in ").t(e),
       TreeF::Lam(b, e) => self.s("λ(").i(b).s(") ").t(e),
