@@ -44,8 +44,8 @@ impl From<Vis> for core::Vis {
 
 type CoreExpr<T> = core::Expr<T, PTag, STag>;
 
-fn wrap<T>(e: core::ExprF<T, PTag, STag, Box<CoreExpr<T>>>) -> Box<CoreExpr<T>> {
-  Box::new(core::Expr(e))
+fn wrap<T>(e: core::ExprF<T, PTag, STag, Box<CoreExpr<T>>>, t: T) -> Box<CoreExpr<T>> {
+  Box::new(core::Expr(e, t))
 }
 
 #[derive(Debug, Clone)]
@@ -234,7 +234,8 @@ impl<T: Clone> Builder<T> {
 
   fn e(&mut self, e: &Expr<T>) -> CoreExpr<T> {
     use ExprF::*;
-    core::Expr(match &e.0 {
+    let lc = e.1.clone();
+    let ret = match &e.0 {
       Hole => core::ExprF::Hole,
       Bind(i) => match self.lookup(i) {
         Some(Entity::Bind(i)) => core::ExprF::Bind(*i),
@@ -252,7 +253,11 @@ impl<T: Clone> Builder<T> {
       Ann(e, ty) => core::ExprF::Ann(Box::new(self.e(&e)), Box::new(self.e(&ty))),
       Uni => core::ExprF::Uni,
       Prim(s) => core::ExprF::Prim(s.clone()),
-      Wrap(e) => return self.e(&e),
+      Wrap(e) => {
+        let mut re = self.e(&e);
+        re.1 = lc; // ?
+        return re;
+      }
 
       Def(_, mod_name, i) => {
         if mod_name.is_empty() {
@@ -278,7 +283,7 @@ impl<T: Clone> Builder<T> {
                     is_tuple: false,
                     is_mod: true,
                   },
-                  wrap(e),
+                  wrap(e, lc.clone()),
                   self.name_from_def(m),
                 );
               }
@@ -287,7 +292,7 @@ impl<T: Clone> Builder<T> {
                   is_tuple: false,
                   is_mod: true,
                 },
-                wrap(e),
+                wrap(e, lc.clone()),
                 self.name_from_def(i),
               )
             }
@@ -451,12 +456,14 @@ impl<T: Clone> Builder<T> {
         let e = Box::new(self.e(&e));
         core::ExprF::Prop(tag, e, name)
       }
-    })
+    };
+    core::Expr(ret, lc)
   }
 
   fn d(&mut self, d: &Decl<T>, decls: &mut Decls<T>) {
     match &d.0 {
       DeclF::Mod(name, params, body) => {
+        let lc = body.1.clone();
         self.envs.push(Env::new());
         let mut ps = Vec::new();
         for (vis, i, ty) in params {
@@ -477,7 +484,7 @@ impl<T: Clone> Builder<T> {
                 Entity::Def(i) => core::ExprF::Def(i),
                 Entity::Mod(i) => core::ExprF::Def(i),
               };
-              defs.push((name, wrap(e)));
+              defs.push((name, wrap(e, lc.clone())));
             }
             let obj = core::ExprF::Obj(
               STag {
@@ -486,7 +493,7 @@ impl<T: Clone> Builder<T> {
               },
               defs,
             );
-            core::ExprF::Let(decls.defs, wrap(obj))
+            core::ExprF::Let(decls.defs, wrap(obj, lc.clone()))
           }
           ModBodyF::Import(_) => {
             self.add_error(&d.2, "`import` not yet supported".to_string());
@@ -501,7 +508,7 @@ impl<T: Clone> Builder<T> {
                     is_tuple: false,
                     is_mod: true,
                   },
-                  wrap(e),
+                  wrap(e, lc.clone()),
                   self.name_from_def(m),
                 );
               }
@@ -510,7 +517,7 @@ impl<T: Clone> Builder<T> {
                 e = core::ExprF::App(
                   PTag { is_mod_param: true },
                   core::Vis::from(vis.clone()),
-                  wrap(e),
+                  wrap(e, lc.clone()),
                   Box::new(arg),
                 );
               }
@@ -527,10 +534,16 @@ impl<T: Clone> Builder<T> {
         for p in ps.into_iter().rev() {
           let (vis, i, ty) = p;
           let tag = PTag { is_mod_param: true };
-          e = core::ExprF::Lam(tag, core::Vis::from(vis.clone()), i, ty, wrap(e));
+          e = core::ExprF::Lam(
+            tag,
+            core::Vis::from(vis.clone()),
+            i,
+            ty,
+            wrap(e, lc.clone()),
+          );
         }
         let def = self.add_def(name, DefType::Mod);
-        decls.defs.push((def, d.1.clone(), wrap(e)));
+        decls.defs.push((def, d.1.clone(), wrap(e, lc.clone())));
         self
           .envs
           .last_mut()

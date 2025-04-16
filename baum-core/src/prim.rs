@@ -3,13 +3,17 @@ use crate::types::tree::{Expr, ExprF, Vis};
 
 type Result<T> = std::result::Result<T, String>;
 
-pub struct PrimMap {
+pub struct PrimMap<L> {
   next_bind_id: Option<u32>,
+  l: Option<L>,
 }
 
-impl PrimMap {
+impl<L: Clone> PrimMap<L> {
   pub fn new() -> Self {
-    PrimMap { next_bind_id: None }
+    PrimMap {
+      next_bind_id: None,
+      l: None,
+    }
   }
 
   pub fn set_bind_id(&mut self, id: u32) {
@@ -35,27 +39,31 @@ impl PrimMap {
     id
   }
 
-  pub fn prim<T, P, S>(&self, name: &str) -> Expr<T, P, S> {
-    return Expr(ExprF::Prim(name.to_string()));
+  fn loc(&self) -> L {
+    self.l.clone().unwrap()
   }
 
-  pub fn fun<T, P: Tag, S: Tag>(
-    &mut self,
-    from: Expr<T, P, S>,
-    to: Expr<T, P, S>,
-  ) -> Expr<T, P, S> {
-    return Expr(ExprF::Pi(
-      Default::default(),
-      Vis::Explicit,
-      self.fresh_bind(),
-      Box::new(from),
-      Box::new(to),
-    ));
+  pub fn prim<P, S>(&self, name: &str) -> Expr<L, P, S> {
+    return Expr(ExprF::Prim(name.to_string()), self.loc());
   }
 
-  pub fn ty<T: Clone, P: Tag, S: Tag>(&mut self, name: &str) -> Result<Expr<T, P, S>> {
+  pub fn fun<P: Tag, S: Tag>(&mut self, from: Expr<L, P, S>, to: Expr<L, P, S>) -> Expr<L, P, S> {
+    return Expr(
+      ExprF::Pi(
+        Default::default(),
+        Vis::Explicit,
+        self.fresh_bind(),
+        Box::new(from),
+        Box::new(to),
+      ),
+      self.loc(),
+    );
+  }
+
+  pub fn ty<P: Tag, S: Tag>(&mut self, name: &str, l: L) -> Result<Expr<L, P, S>> {
+    self.l = Some(l);
     if name == "rt/u32" {
-      return Ok(Expr(ExprF::Uni));
+      return Ok(Expr(ExprF::Uni, self.loc()));
     } else if name == "rt/u32/0" {
       return Ok(self.prim("rt/u32"));
     } else if name == "rt/u32/1" {
@@ -65,10 +73,10 @@ impl PrimMap {
       let u2u = self.fun(u.clone(), u.clone());
       return Ok(self.fun(u, u2u));
     } else if name == "rt/!" {
-      return Ok(Expr(ExprF::Uni));
+      return Ok(Expr(ExprF::Uni, self.loc()));
     } else if name == "rt/print" {
       let u = self.prim("rt/u32");
-      let zero = Expr(ExprF::Sigma(Default::default(), vec![]));
+      let zero = Expr(ExprF::Sigma(Default::default(), vec![]), self.loc());
       let bang = self.prim("rt/!");
       let cb = self.fun(zero, bang.clone());
       let cb2bang = self.fun(cb, bang);

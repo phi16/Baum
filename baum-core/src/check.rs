@@ -12,12 +12,13 @@ use std::collections::HashSet;
 use std::rc::Rc;
 
 #[derive(Debug, Clone)]
-enum Error {
-  Loc(String),
+enum Error<L> {
+  Loc(String, L),
   Fail,
 }
 
-type Result<T> = std::result::Result<T, Error>;
+type Result<T> = std::result::Result<T, Error<()>>;
+type ResultLoc<T, L> = std::result::Result<T, Error<L>>;
 
 struct VarEnv<P, S> {
   lookup: HashMap<BindId, Type<P, S>>,
@@ -114,7 +115,7 @@ fn contains_hole_e<P, S>(i: &HoleId, e: &RE<P, S>) -> bool {
   }
 }
 
-pub struct Checker<T, P, S> {
+pub struct Checker<L, P, S> {
   def_symbols: HashMap<DefId, String>,
   bind_symbols: HashMap<BindId, String>,
   name_symbols: HashMap<NameId, String>,
@@ -124,12 +125,13 @@ pub struct Checker<T, P, S> {
   next_bind_id: u32,
   next_hole_id: u32,
   next_level_id: u32,
-  prim_map: PrimMap,
+  prim_map: PrimMap<L>,
   log_head: String,
-  errors: Vec<(T, String)>,
+  def_loc: HashMap<DefId, L>,
+  errors: Vec<(L, String)>,
 }
 
-impl<T: Clone, P: Tag, S: Tag> Checker<T, P, S> {
+impl<L: Clone, P: Tag, S: Tag> Checker<L, P, S> {
   fn new(
     def_symbols: HashMap<DefId, String>,
     bind_symbols: HashMap<BindId, String>,
@@ -148,6 +150,7 @@ impl<T: Clone, P: Tag, S: Tag> Checker<T, P, S> {
       next_level_id: 0,
       prim_map: PrimMap::new(),
       log_head: String::new(),
+      def_loc: HashMap::new(),
       errors: Vec::new(),
     }
   }
@@ -163,7 +166,7 @@ impl<T: Clone, P: Tag, S: Tag> Checker<T, P, S> {
     self.log_head.pop();
   }
 
-  fn add_error(&mut self, t: &T, msg: &str) {
+  fn add_error(&mut self, t: &L, msg: &str) {
     self.errors.push((t.clone(), msg.to_string()));
   }
 
@@ -306,7 +309,7 @@ impl<T: Clone, P: Tag, S: Tag> Checker<T, P, S> {
     m
   }
 
-  fn ppe(&self, e: &Expr<T, P, S>) -> String {
+  fn ppe(&self, e: &Expr<L, P, S>) -> String {
     pretty_e(&self.def_symbols, &self.bind_symbols, &self.name_symbols, e)
   }
 
@@ -329,7 +332,7 @@ impl<T: Clone, P: Tag, S: Tag> Checker<T, P, S> {
           let v = self.eval0(&e.clone());
           self.norm(&v)
         }
-        None => Err(Error::Loc("Found hole in normalization".to_string())),
+        None => Err(Error::Loc("Found hole in normalization".to_string(), ())),
       },
       ValF::Lazy(i, ls, ks) => match self.lookup_def(*i).cloned() {
         Some((sol, e, _)) => {
@@ -671,13 +674,16 @@ impl<T: Clone, P: Tag, S: Tag> Checker<T, P, S> {
   }
 
   fn unify_internal(&mut self, v1: &Term<P, S>, v2: &Term<P, S>) -> Result<()> {
-    let fail = |this: &Checker<T, P, S>, msg: &str| -> Result<_> {
-      Err(Error::Loc(format!(
-        "Failed to unify ({}): {} ≟ {}",
-        msg,
-        this.ppv(v1),
-        this.ppv(v2)
-      )))
+    let fail = |this: &Checker<L, P, S>, msg: &str| -> Result<_> {
+      Err(Error::Loc(
+        format!(
+          "Failed to unify ({}): {} ≟ {}",
+          msg,
+          this.ppv(v1),
+          this.ppv(v2)
+        ),
+        (),
+      ))
     };
     // self.log(format!("unify: {} ≟ {}", self.ppv(v1), self.ppv(v2)));
     match (&v1.0, &v2.0) {
@@ -887,15 +893,14 @@ impl<T: Clone, P: Tag, S: Tag> Checker<T, P, S> {
         }
         Ok(())
       }
-      _ => Err(Error::Loc(format!(
-        "failed to unify: {} ≟ {}",
-        self.ppv(v1),
-        self.ppv(v2)
-      ))),
+      _ => Err(Error::Loc(
+        format!("failed to unify: {} ≟ {}", self.ppv(v1), self.ppv(v2)),
+        (),
+      )),
     }
   }
 
-  fn check(&mut self, e: Expr<T, P, S>, check_ty: &Type<P, S>) -> Result<RE<P, S>> {
+  fn check(&mut self, e: Expr<L, P, S>, check_ty: &Type<P, S>) -> ResultLoc<RE<P, S>, L> {
     let res = self.check_internal(e, check_ty);
     /* if let Ok(e) = &res {
       self.log(format!("CHECK {}: {}", self.ppe(e), self.ppv(check_ty)));
@@ -903,15 +908,25 @@ impl<T: Clone, P: Tag, S: Tag> Checker<T, P, S> {
     res
   }
 
-  fn check_internal(&mut self, e: Expr<T, P, S>, check_ty: &Type<P, S>) -> Result<RE<P, S>> {
+  fn check_internal(&mut self, e: Expr<L, P, S>, check_ty: &Type<P, S>) -> ResultLoc<RE<P, S>, L> {
     let ec = e.clone(); // TODO: redundant?
-    let fail = |this: &Checker<T, P, S>, msg: &str| -> Result<_> {
-      Err(Error::Loc(format!(
-        "failed to check type ({}): {:?}: {}",
-        msg,
-        this.ppe(&ec),
-        this.ppv(&check_ty)
-      )))
+    let lc = ec.1.clone();
+    let fail = |this: &Checker<L, P, S>, msg: &str| -> ResultLoc<_, L> {
+      Err(Error::Loc(
+        format!(
+          "failed to check type ({}): {:?}: {}",
+          msg,
+          this.ppe(&ec),
+          this.ppv(&check_ty)
+        ),
+        ec.1,
+      ))
+    };
+    let err_map = |e: Error<()>| -> Error<L> {
+      match e {
+        Error::Loc(msg, _) => Error::Loc(msg, lc.clone()),
+        Error::Fail => Error::Fail,
+      }
     };
     use ExprF::*;
     match e.0 {
@@ -927,7 +942,7 @@ impl<T: Clone, P: Tag, S: Tag> Checker<T, P, S> {
         self.defenvs.pop();
         Ok(Rc::new(CExpr(CExprF::Let(ds, body))))
       }
-      Lam(tag, vis, i, ty, body) => match &self.norm(check_ty)?.0 {
+      Lam(tag, vis, i, ty, body) => match &self.norm(check_ty).map_err(err_map)?.0 {
         ValF::Pi(ttag, tvis, ti, tty, tg, bty) => {
           if tag != *ttag {
             return fail(self, "λ / role mismatch");
@@ -937,7 +952,7 @@ impl<T: Clone, P: Tag, S: Tag> Checker<T, P, S> {
           }
           let (c_ty, _) = self.check_ty(*ty)?;
           let ty = self.eval0(&c_ty);
-          self.unify(&ty, tty)?;
+          self.unify(&ty, tty).map_err(err_map)?;
           self.varenvs.push(VarEnv::new());
           self.varenv().add(i, tty.clone());
           let mut tg = tg.clone();
@@ -949,7 +964,7 @@ impl<T: Clone, P: Tag, S: Tag> Checker<T, P, S> {
         }
         _ => fail(self, "λ / not Π"),
       },
-      Obj(tag, props) => match &self.norm(check_ty)?.0 {
+      Obj(tag, props) => match &self.norm(check_ty).map_err(err_map)?.0 {
         ValF::Sigma0(ttag) => {
           if tag != *ttag {
             return fail(self, "obj / role mismatch");
@@ -1001,13 +1016,13 @@ impl<T: Clone, P: Tag, S: Tag> Checker<T, P, S> {
       },
       _ => {
         let (c_e, ty) = self.synth(e)?;
-        self.unify(&ty, check_ty)?;
+        self.unify(&ty, check_ty).map_err(err_map)?;
         Ok(c_e)
       }
     }
   }
 
-  fn check_ty(&mut self, e: Expr<T, P, S>) -> Result<(RE<P, S>, Level)> {
+  fn check_ty(&mut self, e: Expr<L, P, S>) -> ResultLoc<(RE<P, S>, Level), L> {
     let l = Level::Id(self.fresh_level());
     let e = self.check(e, &Rc::new(Val(ValF::Uni(l.clone()))))?;
     Ok((e, l))
@@ -1038,7 +1053,7 @@ impl<T: Clone, P: Tag, S: Tag> Checker<T, P, S> {
     }
   }
 
-  fn synth(&mut self, e: Expr<T, P, S>) -> Result<(RE<P, S>, Type<P, S>)> {
+  fn synth(&mut self, e: Expr<L, P, S>) -> ResultLoc<(RE<P, S>, Type<P, S>), L> {
     let res = self.synth_internal(e);
     /* if let Ok((c_e, ty)) = &res {
       self.log(format!("SYNTH {}: {}", self.ppe(c_e), self.ppv(ty)));
@@ -1046,14 +1061,20 @@ impl<T: Clone, P: Tag, S: Tag> Checker<T, P, S> {
     res
   }
 
-  fn synth_internal(&mut self, e: Expr<T, P, S>) -> Result<(RE<P, S>, Type<P, S>)> {
+  fn synth_internal(&mut self, e: Expr<L, P, S>) -> ResultLoc<(RE<P, S>, Type<P, S>), L> {
     let ec = e.clone(); // TODO: redundant?
-    let fail = |this: &Checker<T, P, S>, msg: &str| -> Result<_> {
-      Err(Error::Loc(format!(
-        "Failed to synthesize type ({}): {:?}",
-        msg,
-        this.ppe(&ec),
-      )))
+    let lc = ec.1.clone();
+    let fail = |this: &Checker<L, P, S>, msg: &str| -> ResultLoc<_, L> {
+      Err(Error::Loc(
+        format!("Failed to synthesize type ({}): {:?}", msg, this.ppe(&ec)),
+        ec.1,
+      ))
+    };
+    let err_map = |e: Error<()>| -> Error<L> {
+      match e {
+        Error::Loc(msg, _) => Error::Loc(msg, lc.clone()),
+        Error::Fail => Error::Fail,
+      }
     };
     use ExprF::*;
     match e.0 {
@@ -1089,11 +1110,14 @@ impl<T: Clone, P: Tag, S: Tag> Checker<T, P, S> {
       }
       Prim(s) => {
         self.prim_map.set_bind_id(self.next_bind_id);
-        let ty = self.prim_map.ty::<T, P, S>(&s).map_err(|s| Error::Loc(s));
+        let ty = self
+          .prim_map
+          .ty::<P, S>(&s, lc.clone())
+          .map_err(|s| Error::Loc(s, lc.clone()));
         self.next_bind_id = self.prim_map.take_bind_id();
         let (ty, _) = self.check_ty(ty?).map_err(|e| match e {
-          Error::Loc(e) => Error::Loc(format!("internal({}): {}", s, e)),
-          _ => Error::Loc(format!("internal({}): fail", s)),
+          Error::Loc(e, l) => Error::Loc(format!("internal({}): {}", s, e), l),
+          _ => Error::Loc(format!("internal({}): fail", s), lc),
         })?;
         let ty = self.eval0(&ty);
         Ok((Rc::new(CExpr(CExprF::Prim(s))), ty))
@@ -1152,10 +1176,10 @@ impl<T: Clone, P: Tag, S: Tag> Checker<T, P, S> {
       App(tag, vis, f, x) => {
         let (c_f, fty) = self.synth(*f)?;
         let (c_f, fty) = match vis {
-          Vis::Explicit => self.resolve_implicits(c_f, fty)?,
+          Vis::Explicit => self.resolve_implicits(c_f, fty).map_err(err_map)?,
           Vis::Implicit => (c_f, fty),
         };
-        match &self.norm(&fty)?.0 {
+        match &self.norm(&fty).map_err(err_map)?.0 {
           ValF::Pi(ftag, fvis, i, ty, fg, bty) => {
             if tag != *ftag {
               return fail(self, "app / role mismatch");
@@ -1232,7 +1256,7 @@ impl<T: Clone, P: Tag, S: Tag> Checker<T, P, S> {
       }
       Prop(tag, e, name) => {
         let (c_e, ty) = self.synth(*e)?;
-        match &self.norm(&ty)?.0 {
+        match &self.norm(&ty).map_err(err_map)?.0 {
           ValF::Sigma(etag, (n0, i0, ty0), eg, props) => {
             if tag != *etag {
               return fail(self, "prop / role mismatch");
@@ -1280,11 +1304,10 @@ impl<T: Clone, P: Tag, S: Tag> Checker<T, P, S> {
 
     for (j, ty) in holes {
       if !hole_assign.contains_key(&j) {
-        return Err(Error::Loc(format!(
-          "Unresolved hole: {:?}: {}",
-          j,
-          self.ppv(&ty)
-        )));
+        return Err(Error::Loc(
+          format!("Unresolved hole: {:?}: {}", j, self.ppv(&ty)),
+          (),
+        ));
       }
     }
     // TODO: resolve hole-in-hole constraints at this point
@@ -1296,7 +1319,14 @@ impl<T: Clone, P: Tag, S: Tag> Checker<T, P, S> {
     Ok(hole_map)
   }
 
-  fn def(&mut self, e: Box<Expr<T, P, S>>) -> Result<(Solution, RE<P, S>, Type<P, S>)> {
+  fn def(&mut self, e: Box<Expr<L, P, S>>) -> ResultLoc<(Solution, RE<P, S>, Type<P, S>), L> {
+    let lc = e.1.clone();
+    let err_map = |e: Error<()>| -> Error<L> {
+      match e {
+        Error::Loc(msg, _) => Error::Loc(msg, lc.clone()),
+        Error::Fail => Error::Fail,
+      }
+    };
     self.solves.push(Solve::new());
     let depth1 = (self.varenvs.len(), self.defenvs.len(), self.solves.len());
     let res = self.synth(*e);
@@ -1338,7 +1368,9 @@ impl<T: Clone, P: Tag, S: Tag> Checker<T, P, S> {
     }
     let solve = self.solves.pop().unwrap();
     let (ce, ty) = res?;
-    let hole_map = self.resolve_holes(solve.holes, solve.hole_assign)?;
+    let hole_map = self
+      .resolve_holes(solve.holes, solve.hole_assign)
+      .map_err(err_map)?;
 
     // eprintln!("- From");
     // eprintln!("  - {}: {}", self.ppe(&ce), self.ppv(&ty));
@@ -1349,11 +1381,10 @@ impl<T: Clone, P: Tag, S: Tag> Checker<T, P, S> {
     // eprintln!("  - {}: {}", self.ppe(&ce), self.ppv(&ty));
     for i in hole_map.keys() {
       if contains_hole_e(i, &ce) {
-        return Err(Error::Loc(format!(
-          "Hole {:?} remains unresolved in {}",
-          i,
-          self.ppce(&ce)
-        )));
+        return Err(Error::Loc(
+          format!("Hole {:?} remains unresolved in {}", i, self.ppce(&ce)),
+          lc,
+        ));
       }
     }
     // TODO: scope check in hole?
@@ -1365,14 +1396,14 @@ impl<T: Clone, P: Tag, S: Tag> Checker<T, P, S> {
     traverse_levels_v(&ty, &mut target);
     // target = HashSet::new(); // disable cycle check
     let level_solution = resolve_constraints(&levels, &constraints, &target)
-      .map_err(|e| Error::Loc(format!("Failed to solve level constraints: {}", e)))?;
+      .map_err(|e| Error::Loc(format!("Failed to solve level constraints: {}", e), lc))?;
 
     Ok((level_solution, ce, ty))
   }
 
   fn defs(
     &mut self,
-    defs: Vec<(DefId, T, Box<Expr<T, P, S>>)>,
+    defs: Vec<(DefId, L, Box<Expr<L, P, S>>)>,
   ) -> Vec<(DefId, Solution, RE<P, S>)> {
     let mut def_terms = Vec::new();
     for (id, t, expr) in defs {
@@ -1390,7 +1421,7 @@ impl<T: Clone, P: Tag, S: Tag> Checker<T, P, S> {
           "_".yellow(),
           &format!("{} (failed def)", self.def_symbols[&id]).black()
         ),
-        Err(Error::Loc(e)) => eprintln!("[{}] {}: {}", "x".red(), self.def_symbols[&id], e),
+        Err(Error::Loc(e, _)) => eprintln!("[{}] {}: {}", "x".red(), self.def_symbols[&id], e),
       }
       match res {
         Ok((sol, c_expr, ty)) => {
@@ -1468,13 +1499,14 @@ impl<T: Clone, P: Tag, S: Tag> Checker<T, P, S> {
             self.solves.pop();
           }
           self.defenv().add(id, (sol.clone(), c_expr.clone(), ty));
+          self.def_loc.insert(id, t.clone());
           def_terms.push((id, sol, c_expr));
         }
         Err(Error::Fail) => {}
-        Err(Error::Loc(e)) => {
+        Err(Error::Loc(e, l)) => {
           self
             .errors
-            .push((t, format!("definition of {}: {}", self.def_symbols[&id], e)));
+            .push((l, format!("definition of {}: {}", self.def_symbols[&id], e)));
         }
       }
     }
@@ -1495,23 +1527,25 @@ impl<T: Clone, P: Tag, S: Tag> Checker<T, P, S> {
 
   fn check_main(&mut self, entrypoint: &str) -> Option<RE<P, S>> {
     let main_id = self.find_main(entrypoint)?;
-    let main_def = Expr(ExprF::Def(main_id));
+    let lc = self.def_loc.get(&main_id).unwrap().clone();
+    let main_def = Expr(ExprF::Def(main_id), lc);
     let ty = Rc::new(Val(ValF::Prim("rt/!".to_string(), Vec::new())));
     match self.check(main_def, &ty) {
       Ok(e) => Some(e),
       Err(Error::Fail) => None,
-      Err(Error::Loc(e)) => {
-        let t = unimplemented!();
-        self.errors.push((t, format!("definition of main: {}", e)));
+      Err(Error::Loc(e, l)) => {
+        self
+          .errors
+          .push((l, format!("definition of {}: {}", entrypoint, e)));
         None
       }
     }
   }
 }
 
-pub fn check<T, P, S>(p: Program<T, P, S>) -> std::result::Result<(), Vec<(T, String)>>
+pub fn check<L, P, S>(p: Program<L, P, S>) -> std::result::Result<(), Vec<(L, String)>>
 where
-  T: Clone,
+  L: Clone,
   P: Tag,
   S: Tag,
 {
@@ -1527,12 +1561,12 @@ where
   }
 }
 
-pub fn check_main<T, P, S>(
-  p: Program<T, P, S>,
+pub fn check_main<L, P, S>(
+  p: Program<L, P, S>,
   entrypoint: &str,
-) -> std::result::Result<Option<RE<P, S>>, Vec<(T, String)>>
+) -> std::result::Result<Option<RE<P, S>>, Vec<(L, String)>>
 where
-  T: Clone,
+  L: Clone,
   P: Tag,
   S: Tag,
 {
