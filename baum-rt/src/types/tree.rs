@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 use std::rc::Rc;
 
+use baum_core::types::literal::Literal;
+
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Id(pub u32);
 
@@ -26,6 +28,7 @@ pub enum TreeF<T> {
   Var(Id),
   Unit,
   Prim(String),
+  Lit(Literal),
   Let(Vec<(Id, T)>, T),
 
   Lam(Id, Scope, T),
@@ -51,6 +54,9 @@ impl std::fmt::Debug for Action {
 #[derive(Debug, Clone)]
 pub enum Raw {
   U32(u32),
+  F32(f32),
+  Char(char),
+  String(String),
   Action(Action),
   Done,
 }

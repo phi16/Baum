@@ -1,5 +1,6 @@
 use crate::types::common::*;
 use crate::types::level::*;
+use crate::types::literal::*;
 use crate::types::tree::*;
 use crate::types::val::*;
 use std::collections::HashMap;
@@ -135,6 +136,15 @@ impl<'a> Pretty<'a> {
     self
   }
 
+  fn lit(&mut self, l: &Literal) -> &mut Self {
+    match l {
+      Literal::Nat(n) => self.s(format!("{:?}", n).as_str()),
+      Literal::Rat(r) => self.s(format!("{:?}", r).as_str()),
+      Literal::Chr(c) => self.s(format!("{:?}", c).as_str()),
+      Literal::Str(s) => self.s(format!("{:?}", s).as_str()),
+    }
+  }
+
   fn e<T, P, S>(&mut self, e: &Expr<T, P, S>) -> &mut Self {
     match &e.0 {
       ExprF::Hole => self.s("_"),
@@ -143,6 +153,7 @@ impl<'a> Pretty<'a> {
       ExprF::Ann(v, t) => self.e(v).s(" of ").e(t),
       ExprF::Uni => self.s("𝒰"),
       ExprF::Prim(s) => self.s("prim ").s(s),
+      ExprF::Lit(l) => self.lit(l),
       ExprF::Let(defs, e) => self.s("let").open().defs(defs).close().s("in ").e(e),
 
       ExprF::Pi(_, Vis::Explicit, i, t, e) => self.s("Π(").i(i).s(": ").e(t).s(") ").e(e),
@@ -187,6 +198,7 @@ impl<'a> Pretty<'a> {
       CExprF::Ann(v, t) => self.s("(").c(v).s(" of ").c(t).s(")"),
       CExprF::Uni(i) => self.s("𝒰").l(i),
       CExprF::Prim(s) => self.s("prim \"").s(s).s("\""),
+      CExprF::Lit(l) => self.lit(l),
       CExprF::Let(defs, e) => self.s("let").open().defs_c(defs).close().s("in ").c(e),
 
       CExprF::Pi(_, Vis::Explicit, i, t, e) => self.s("Π(").i(i).s(": ").c(t).s(") ").c(e),
@@ -289,6 +301,7 @@ impl<'a> Pretty<'a> {
       ValF::Neu(i, ks) => self.i(i).ks(ks),
       ValF::Lazy(i, ls, ks) => self.di(i).ls(ls).ks(ks),
       ValF::Prim(s, ks) => self.s("prim \"").s(s).s("\"").ks(ks),
+      ValF::Lit(l) => self.lit(l),
       ValF::Uni(i) => self.s("𝒰").l(i),
 
       ValF::Pi(_, Vis::Explicit, i, t, g, e) => self.s("Π(").i(i).s(": ").v(t).s(") ").g(g).c(e),

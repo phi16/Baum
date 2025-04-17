@@ -4,6 +4,7 @@ use crate::prim::PrimMap;
 use crate::subst::SubstEnv;
 use crate::types::common::*;
 use crate::types::level::*;
+use crate::types::literal::Literal;
 use crate::types::tree::*;
 use crate::types::val::*;
 use colored::Colorize;
@@ -97,6 +98,7 @@ fn contains_hole_e<P, S>(i: &HoleId, e: &RE<P, S>) -> bool {
     CExprF::Ann(e, _) => contains_hole_e(i, e),
     CExprF::Uni(_) => false,
     CExprF::Prim(_) => false,
+    CExprF::Lit(_) => false,
     CExprF::Let(defs, body) => {
       defs.iter().any(|(_, _, e)| contains_hole_e(i, e)) || contains_hole_e(i, body)
     }
@@ -525,6 +527,7 @@ impl<L: Clone, P: Tag, S: Tag> Checker<L, P, S> {
       Ann(t, _) => return self.eval(g, t),
       Uni(l) => ValF::Uni(l.clone()),
       Prim(s) => ValF::Prim(s.clone(), Vec::new()),
+      Lit(l) => ValF::Lit(l.clone()),
       Let(defs, body) => {
         let mut g = g.clone();
         for (i, sol, e) in defs {
@@ -619,6 +622,7 @@ impl<L: Clone, P: Tag, S: Tag> Checker<L, P, S> {
         let e = Rc::new(CExpr(CExprF::Prim(s.clone())));
         quote_ks(self, ks, e)
       }
+      Lit(l) => Rc::new(CExpr(CExprF::Lit(l.clone()))),
       Pi(tag, vis, i, ty, g, bty) => {
         let ty = self.quote(ty);
         let mut g = g.clone();
@@ -935,6 +939,23 @@ impl<L: Clone, P: Tag, S: Tag> Checker<L, P, S> {
         self.solve().add_hole(h, check_ty.clone());
         Ok(Rc::new(CExpr(CExprF::Hole(h))))
       }
+      Lit(l) => {
+        let ty = &self.norm(check_ty).map_err(err_map)?.0;
+        let s = match ty {
+          ValF::Prim(s, v) if v.is_empty() => s,
+          _ => return fail(self, "lit / not a literal type"),
+        };
+        match (&l, s.as_str()) {
+          (Literal::Nat(_), "rt/lit/nat") => {}
+          (Literal::Nat(_), "rt/lit/rat") => {} // Hmm...
+          (Literal::Nat(_), "rt/u32") => {}     // Hmm...
+          (Literal::Rat(_), "rt/lit/rat") => {}
+          (Literal::Chr(_), "rt/lit/chr") => {}
+          (Literal::Str(_), "rt/lit/str") => {}
+          _ => return fail(self, "lit / not a literal type"),
+        }
+        Ok(Rc::new(CExpr(CExprF::Lit(l))))
+      }
       Let(defs, body) => {
         self.defenvs.push(DefEnv::new());
         let ds = self.defs(defs);
@@ -1122,6 +1143,7 @@ impl<L: Clone, P: Tag, S: Tag> Checker<L, P, S> {
         let ty = self.eval0(&ty);
         Ok((Rc::new(CExpr(CExprF::Prim(s))), ty))
       }
+      Lit(_) => fail(self, "lit / not inferred"),
 
       Let(defs, body) => {
         self.defenvs.push(DefEnv::new());

@@ -1,4 +1,5 @@
 pub use crate::types::common::*;
+use crate::types::literal::Literal;
 use std::collections::HashMap;
 
 #[derive(Debug, Clone)]
@@ -9,6 +10,7 @@ pub enum ExprF<L, PTag, STag, E> {
   Ann(E, E),
   Uni,
   Prim(String),
+  Lit(Literal),
   Let(Vec<(DefId, L, E)>, E),
 
   Pi(PTag, Vis, BindId, E, E),

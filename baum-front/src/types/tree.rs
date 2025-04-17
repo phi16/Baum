@@ -1,4 +1,3 @@
-use crate::types::literal::Literal;
 use std::collections::HashMap;
 use std::rc::Rc;
 
@@ -13,6 +12,8 @@ impl std::fmt::Debug for Id {
 
 pub type ModDepth = u8;
 pub type ModLevel = i8;
+
+pub type Literal = baum_core::types::literal::Literal;
 
 #[derive(Debug, Clone)]
 pub enum ExprF<T, I, E> {

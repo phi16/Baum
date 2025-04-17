@@ -55,6 +55,7 @@ impl Convert {
       Ann(e, _) => return self.e(e),
       Uni(_) => TreeF::Unit,
       Prim(s) => TreeF::Prim(s.clone()),
+      Lit(l) => TreeF::Lit(l.clone()),
       Let(defs, e) => {
         let outer_scope = std::mem::take(&mut self.used_ids);
         let mut ds = Vec::new();

@@ -1,5 +1,6 @@
 use crate::types::common::*;
 use crate::types::level::*;
+use crate::types::literal::Literal;
 use std::collections::HashMap;
 use std::rc::Rc;
 
@@ -11,6 +12,7 @@ pub enum CExprF<PTag, STag, E> {
   Ann(E, E),
   Uni(Level),
   Prim(String),
+  Lit(Literal),
   Let(Vec<(DefId, Solution, E)>, E),
 
   Pi(PTag, Vis, BindId, E, E),
@@ -41,6 +43,7 @@ pub enum ValF<PTag, STag, V, E, D> {
   Neu(BindId, Vec<ContF<PTag, STag, V>>),
   Lazy(DefId, Vec<Level>, Vec<ContF<PTag, STag, V>>),
   Prim(String, Vec<ContF<PTag, STag, V>>),
+  Lit(Literal),
   Uni(Level),
 
   Pi(PTag, Vis, BindId, V, E, D),

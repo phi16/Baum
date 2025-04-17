@@ -124,7 +124,7 @@ use crate::types::syntax::{
   ElemId, ElemTag, ElemToken, LookupId, SyntaxExpr, SyntaxHandler, SyntaxInterpret,
 };
 use crate::types::tree::SynElem;
-use baum_front::types::literal as lit;
+use baum_core::types::literal as lit;
 use baum_front::types::tree as front;
 use std::char::ParseCharError;
 use std::num::ParseIntError;
@@ -403,7 +403,9 @@ pub fn builtin_syntax_handlers<'a>() -> HashMap<SyntaxId, SyntaxHandler<'a>> {
     SyntaxId::Chr,
     make_handler(|p| {
       let s = p.take_lit(LitType::Chr).unwrap();
-      let c = s.parse().map_err(|e: ParseCharError| e.to_string())?;
+      let c = s
+        .parse()
+        .map_err(|e: ParseCharError| format!("parse-char: {}", e.to_string()))?;
       let c = lit::Literal::Chr(c);
       Ok(front::ExprF::Lit(c))
     }),
@@ -413,7 +415,7 @@ pub fn builtin_syntax_handlers<'a>() -> HashMap<SyntaxId, SyntaxHandler<'a>> {
     make_handler(|p| {
       let s = p.take_lit(LitType::Str).unwrap();
       // TODO: process escape
-      let s = lit::Literal::Str(s.to_string());
+      let s = lit::Literal::Str(s.to_string().replace("\\n", "\n")); // TODO...
       Ok(front::ExprF::Lit(s))
     }),
   );

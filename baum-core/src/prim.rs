@@ -1,4 +1,5 @@
 use crate::types::common::{BindId, Tag};
+use crate::types::literal::Literal;
 use crate::types::tree::{Expr, ExprF, Vis};
 
 type Result<T> = std::result::Result<T, String>;
@@ -62,7 +63,10 @@ impl<L: Clone> PrimMap<L> {
 
   pub fn ty<P: Tag, S: Tag>(&mut self, name: &str, l: L) -> Result<Expr<L, P, S>> {
     self.l = Some(l);
-    if name == "rt/u32" {
+    if name == "rt/lit/nat" || name == "rt/lit/rat" || name == "rt/lit/chr" || name == "rt/lit/str"
+    {
+      return Ok(Expr(ExprF::Uni, self.loc()));
+    } else if name == "rt/u32" {
       return Ok(Expr(ExprF::Uni, self.loc()));
     } else if name == "rt/u32/0" {
       return Ok(self.prim("rt/u32"));
@@ -81,10 +85,30 @@ impl<L: Clone> PrimMap<L> {
       let cb = self.fun(zero, bang.clone());
       let cb2bang = self.fun(cb, bang);
       return Ok(self.fun(u, cb2bang));
+    } else if name == "rt/put" {
+      let u = self.prim("rt/lit/str");
+      let zero = Expr(ExprF::Sigma(Default::default(), vec![]), self.loc());
+      let bang = self.prim("rt/!");
+      let cb = self.fun(zero, bang.clone());
+      let cb2bang = self.fun(cb, bang);
+      return Ok(self.fun(u, cb2bang));
+    } else if name == "rt/concat" {
+      let u = self.prim("rt/lit/str");
+      let u2u = self.fun(u.clone(), u.clone());
+      return Ok(self.fun(u, u2u));
     } else if name == "rt/exit" {
       return Ok(self.prim("rt/!"));
     } else {
       return Err(format!("unknown prim: {}", name));
+    }
+  }
+
+  pub fn lit_ty<P: Tag, S: Tag>(&self, l: &Literal) -> Expr<L, P, S> {
+    match l {
+      Literal::Nat(_) => self.prim("rt/lit/nat"),
+      Literal::Rat(_) => self.prim("rt/lit/rat"),
+      Literal::Chr(_) => self.prim("rt/lit/chr"),
+      Literal::Str(_) => self.prim("rt/lit/str"),
     }
   }
 }

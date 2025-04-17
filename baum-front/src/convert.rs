@@ -310,10 +310,7 @@ impl<T: Clone> Builder<T> {
         self.envs.pop();
         core::ExprF::Let(decls.defs, e)
       }
-      Lit(l) => {
-        self.add_error(&e.1, format!("literal not yet supported: {:?}", l));
-        core::ExprF::Hole
-      }
+      Lit(l) => core::ExprF::Lit(l.clone()),
 
       PiE(i, ty, e) => {
         let tag = PTag {

@@ -1,4 +1,3 @@
-use crate::types::literal::*;
 use crate::types::tree::*;
 use std::collections::HashMap;
 
@@ -102,6 +101,15 @@ impl<'a> Pretty<'a> {
     self
   }
 
+  fn lit(&mut self, l: &Literal) -> &mut Self {
+    match l {
+      Literal::Nat(n) => self.s(format!("{:?}", n).as_str()),
+      Literal::Rat(r) => self.s(format!("{:?}", r).as_str()),
+      Literal::Chr(c) => self.s(format!("{:?}", c).as_str()),
+      Literal::Str(s) => self.s(format!("{:?}", s).as_str()),
+    }
+  }
+
   fn is_simple<T>(&self, e: &Expr<T>) -> bool {
     match &e.0 {
       ExprF::Hole
@@ -135,10 +143,7 @@ impl<'a> Pretty<'a> {
         }
       }
       ExprF::Let(ds, e) => self.s("let").open().ds(ds).close().s("in ").e(e),
-      ExprF::Lit(Literal::Nat(n)) => self.s(&format!("{:?}", n)),
-      ExprF::Lit(Literal::Rat(r)) => self.s(&format!("{:?}", r)),
-      ExprF::Lit(Literal::Chr(c)) => self.s(&format!("{:?}", c)),
-      ExprF::Lit(Literal::Str(s)) => self.s(&format!("{:?}", s)),
+      ExprF::Lit(l) => self.lit(l),
 
       ExprF::PiE(i, t, e) => match i {
         Some(i) => self.s("Π(").i(i).s(": ").e(t).s(") ").e(e),

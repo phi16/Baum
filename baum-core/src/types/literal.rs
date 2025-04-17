@@ -275,3 +275,31 @@ pub enum Literal {
   Chr(char),
   Str(String),
 }
+
+// Note: These are temporary definitions...
+
+impl Into<u32> for Nat {
+  fn into(self) -> u32 {
+    assert_eq!(self.base, 10);
+    let mut n = 0;
+    for d in self.coeff.digits_rev {
+      n = n * 10 + d;
+    }
+    n
+  }
+}
+
+impl Into<f32> for Rat {
+  fn into(self) -> f32 {
+    assert_eq!(self.base, 10);
+    let mut n = 0;
+    for d in self.coeff.digits_rev {
+      n = n * 10 + d;
+    }
+    let mut d = 1;
+    for e in self.negative_exponent.digits_rev {
+      d *= 10u32.pow(e);
+    }
+    n as f32 / d as f32
+  }
+}

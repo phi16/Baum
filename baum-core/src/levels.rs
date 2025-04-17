@@ -32,6 +32,7 @@ pub fn traverse_levels_e<P, S>(e: &RE<P, S>, scope: &mut HashSet<LevelId>) {
         });
       }
       Prim(_) => {}
+      Lit(_) => {}
       Let(defs, body) => {
         for (_, sol, e) in defs {
           let mut b = bounded.clone();
@@ -129,6 +130,7 @@ pub fn traverse_levels_v<P, S>(v: &RV<P, S>, scope: &mut HashSet<LevelId>) {
           }
         }
       }
+      Lit(_) => {}
 
       Pi(_, _, _, ty, g, bty) => {
         rec(ty, scope);

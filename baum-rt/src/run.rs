@@ -1,5 +1,5 @@
 use crate::pretty::{ppk, ppt, ppv};
-use crate::prim::{prim, prim_ev};
+use crate::prim::{lit, prim, prim_ev};
 use crate::types::tree::{app, prop, Cont, Env, Op, Raw, Thunk, Tree, TreeF, Val};
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -9,6 +9,7 @@ fn step(t: &Rc<Tree>, env: Env) -> Thunk {
     TreeF::Var(i) => Thunk::val(env.get(i).unwrap().clone()),
     TreeF::Unit => Thunk::val(Val::Unit),
     TreeF::Prim(s) => Thunk::val(prim(s)),
+    TreeF::Lit(l) => Thunk::val(lit(l.clone())),
     TreeF::Let(ds, e) => {
       let mut env = env;
       for (i, d) in ds {
@@ -82,7 +83,8 @@ pub fn run(t: &Rc<Tree>) {
         thunk = (a.run)();
       }
       Val::Raw(Raw::Done) => {
-        eprintln!("Done");
+        eprintln!("--------");
+        eprintln!("[Done]");
         return;
       }
       _ => unreachable!(),

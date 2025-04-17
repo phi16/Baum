@@ -92,7 +92,7 @@ pub fn run(code: &str) -> Result<(), String> {
 #[cfg(test)]
 #[test]
 fn test_dev() {
-  let code = include_str!("../examples/test.baum");
+  let code = include_str!("../examples/hello.baum");
   match run(code) {
     Ok(_) => {}
     Err(e) => {

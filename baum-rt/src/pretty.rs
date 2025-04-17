@@ -1,3 +1,5 @@
+use baum_core::types::literal::Literal;
+
 use crate::types::tree::*;
 use std::rc::Rc;
 
@@ -57,11 +59,21 @@ impl Pretty {
     self
   }
 
+  fn lit(&mut self, l: &Literal) -> &mut Self {
+    match l {
+      Literal::Nat(n) => self.s(format!("{:?}", n).as_str()),
+      Literal::Rat(r) => self.s(format!("{:?}", r).as_str()),
+      Literal::Chr(c) => self.s(format!("{:?}", c).as_str()),
+      Literal::Str(s) => self.s(format!("{:?}", s).as_str()),
+    }
+  }
+
   fn t(&mut self, t: &Rc<Tree>) -> &mut Self {
     match &t.0 {
       TreeF::Var(i) => self.i(i),
       TreeF::Unit => self.s("()"),
       TreeF::Prim(s) => self.s("prim[").s(s).s("]"),
+      TreeF::Lit(l) => self.lit(l),
       TreeF::Let(ds, e) => self.s("let").open().ds(ds).close().s("in ").t(e),
       TreeF::Lam(b, _, e) => self.s("λ(").i(b).s(") ").t(e),
       TreeF::App(e1, e2) => match e2.0 {
@@ -133,6 +145,9 @@ impl Pretty {
       Val::Unit => self.s("()"),
       Val::Raw(r) => match r {
         Raw::U32(n) => self.s("U32[").s(&n.to_string()).s("]"),
+        Raw::F32(f) => self.s("F32[").s(&f.to_string()).s("]"),
+        Raw::Char(c) => self.s("Char[").s(&c.to_string()).s("]"),
+        Raw::String(s) => self.s("String[").s(&s.to_string()).s("]"),
         Raw::Action(_) => self.s("Action[]"),
         Raw::Done => self.s("Done"),
       },

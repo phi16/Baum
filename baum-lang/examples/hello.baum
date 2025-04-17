@@ -1,0 +1,15 @@
+syntax 1> x » y = x λ(k) y
+
+add = prim "rt/u32/add"
+syntax 2< x + y = add x y
+
+print = prim "rt/print"
+concat = prim "rt/concat"
+put = prim "rt/put"
+exit = prim "rt/exit"
+
+main =
+  let putln s = put (concat s "\n") in 
+  print (13 + 14 + 15) »
+  putln "Hello, World!" »
+  exit
