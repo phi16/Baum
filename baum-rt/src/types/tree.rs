@@ -37,12 +37,6 @@ pub enum TreeF<T> {
 #[derive(Debug, Clone)]
 pub struct Tree(pub TreeF<Rc<Tree>>);
 
-#[derive(Debug, Clone)]
-pub enum Cont {
-  App(Val),
-  Prop(Name),
-}
-
 #[derive(Clone)]
 pub struct Action {
   pub run: Rc<dyn Fn() -> Thunk>,
@@ -76,6 +70,12 @@ pub type Env = Rc<HashMap<Id, Val>>;
 pub enum Op {
   Eval(Rc<Tree>, Env),
   Prim(String, Vec<Val>),
+}
+
+#[derive(Debug, Clone)]
+pub enum Cont {
+  App(Val),
+  Prop(Name),
 }
 
 #[derive(Debug, Clone)]
