@@ -83,10 +83,101 @@ impl Pretty {
       TreeF::Prop(e, n) => self.t(e).s(".").name(n),
     }
   }
+
+  fn e(&mut self, e: &Env) -> &mut Self {
+    let mut first = true;
+    for (i, v) in e.iter() {
+      if !first {
+        self.s(", ");
+      }
+      self.i(i).s(" = ").v(v);
+      first = false;
+    }
+    self
+  }
+
+  fn k(&mut self, k: &Thunk) -> &mut Self {
+    match k {
+      Thunk::Val(v) => self.s("Val[").v(v).s("]"),
+      Thunk::Op(op, ks) => {
+        match op {
+          Op::Eval(e, env) => self.s("Eval[").t(e).s(" in ").e(env).s("]"),
+          Op::Prim(name, args) => {
+            self.s("Prim[").s(name).s("(");
+            let mut first = true;
+            for arg in args {
+              if !first {
+                self.s(", ");
+              }
+              self.v(arg);
+              first = false;
+            }
+            self.s(")]")
+          }
+        };
+        self.open();
+        for k in ks {
+          match k {
+            Cont::App(v) => self.s("↑ App[").v(v).s("]").ln(),
+            Cont::Prop(n) => self.s("↑ Prop[").name(n).s("]").ln(),
+          };
+        }
+        self.close()
+      }
+    }
+  }
+
+  fn v(&mut self, v: &Val) -> &mut Self {
+    match v {
+      Val::Unit => self.s("()"),
+      Val::Raw(r) => match r {
+        Raw::U32(n) => self.s("U32[").s(&n.to_string()).s("]"),
+        Raw::Action(_) => self.s("Action[]"),
+        Raw::Done => self.s("Done"),
+      },
+      Val::Prim(name, l, args) => {
+        self.s(&format!("{}<{:?}>", name, l)).s("(");
+        let mut first = true;
+        for arg in args {
+          if !first {
+            self.s(", ");
+          }
+          self.v(arg);
+          first = false;
+        }
+        self.s(")")
+      }
+      Val::Cl(i, env, e) => self.s("λ(").i(i).s(") ").t(e),
+      Val::Obj(ps) => {
+        self.s("{");
+        let mut first = true;
+        for (n, v) in ps {
+          if !first {
+            self.s(", ");
+          }
+          self.name(n).s(": ").v(v);
+          first = false;
+        }
+        self.s("}")
+      }
+    }
+  }
 }
 
-pub fn pretty(t: &Rc<Tree>) -> String {
+pub fn ppt(t: &Rc<Tree>) -> String {
   let mut p = Pretty::new();
   p.t(t).ln();
+  p.str.join("\n")
+}
+
+pub fn ppk(k: &Thunk) -> String {
+  let mut p = Pretty::new();
+  p.k(k).ln();
+  p.str.join("\n")
+}
+
+pub fn ppv(v: &Val) -> String {
+  let mut p = Pretty::new();
+  p.v(v).ln();
   p.str.join("\n")
 }

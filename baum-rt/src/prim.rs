@@ -1,10 +1,10 @@
-use crate::types::tree::{Action, Env, Id, Raw, Thunk, Tree, Val};
+use crate::types::tree::{app, Action, Raw, Thunk, Val};
 use std::rc::Rc;
 
 pub fn prim(name: &str) -> Val {
   // eprintln!("Prim: {}", name);
   if name == "rt/u32" {
-    Val::Type
+    Val::Unit
   } else if name == "rt/u32/0" {
     Val::Raw(Raw::U32(0))
   } else if name == "rt/u32/1" {
@@ -12,7 +12,7 @@ pub fn prim(name: &str) -> Val {
   } else if name == "rt/u32/add" {
     Val::Prim("rt/u32/add".to_string(), 2, vec![])
   } else if name == "rt/!" {
-    Val::Type
+    Val::Unit
   } else if name == "rt/print" {
     Val::Prim("rt/print".to_string(), 2, vec![])
   } else if name == "rt/exit" {
@@ -45,7 +45,7 @@ pub fn prim_ev(name: &str, args: Vec<Val>) -> Thunk {
     Thunk::Val(Val::Raw(Raw::Action(Action {
       run: Rc::new(move || {
         println!("Print: {}", n);
-        crate::run::app(k.clone(), Val::Unit)
+        app(k.clone(), Val::Unit)
       }),
     })))
   } else {

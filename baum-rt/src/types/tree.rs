@@ -63,18 +63,49 @@ pub enum Raw {
 
 #[derive(Debug, Clone)]
 pub enum Val {
-  Type,
+  Unit,
   Raw(Raw),
   Prim(String, usize, Vec<Val>),
   Cl(Id, Env, Rc<Tree>),
-  Unit,
   Obj(HashMap<Name, Val>),
 }
 
 pub type Env = Rc<HashMap<Id, Val>>;
 
 #[derive(Debug, Clone)]
+pub enum Op {
+  Eval(Rc<Tree>, Env),
+  Prim(String, Vec<Val>),
+}
+
+#[derive(Debug, Clone)]
 pub enum Thunk {
   Val(Val),
-  Thunk(Rc<Tree>, Env, Vec<Cont>),
+  Op(Op, Vec<Cont>),
+}
+
+pub fn app(f: Val, x: Val) -> Thunk {
+  match f {
+    Val::Cl(i, mut e, body) => {
+      Rc::make_mut(&mut e).insert(i, x);
+      Thunk::Op(Op::Eval(body, e), Vec::new())
+    }
+    Val::Prim(name, n, args) => {
+      let mut args = args;
+      args.push(x);
+      if n == args.len() {
+        Thunk::Op(Op::Prim(name, args), Vec::new())
+      } else {
+        Thunk::Val(Val::Prim(name, n, args))
+      }
+    }
+    _ => unreachable!(),
+  }
+}
+
+pub fn prop(o: Val, n: &Name) -> Thunk {
+  match o {
+    Val::Obj(ps) => Thunk::Val(ps.get(n).unwrap().clone()),
+    _ => unreachable!(),
+  }
 }
