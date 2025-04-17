@@ -8,8 +8,10 @@ concat = prim "rt/concat"
 put = prim "rt/put"
 exit = prim "rt/exit"
 
+syntax 2< x ⧺ y = concat x y
+
 main =
   let putln s = put (concat s "\n") in 
   print (13 + 14 + 15) »
-  putln "Hello, World!" »
+  putln ("Hello, " ⧺ "World!") »
   exit
