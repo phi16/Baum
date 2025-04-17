@@ -37,12 +37,12 @@ pub fn prim_ev(name: &str, args: Vec<Val>) -> Thunk {
     let x = take_u32(args.next().unwrap());
     let y = take_u32(args.next().unwrap());
     let z = x + y;
-    Thunk::Val(Val::Raw(Raw::U32(z)))
+    Thunk::val(Val::Raw(Raw::U32(z)))
   } else if name == "rt/print" {
     assert_eq!(args.len(), 2);
     let n = take_u32(args.next().unwrap());
     let k = args.next().unwrap();
-    Thunk::Val(Val::Raw(Raw::Action(Action {
+    Thunk::val(Val::Raw(Raw::Action(Action {
       run: Rc::new(move || {
         println!("Print: {}", n);
         app(k.clone(), Val::Unit)

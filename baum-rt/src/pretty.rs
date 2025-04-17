@@ -97,7 +97,7 @@ impl Pretty {
   }
 
   fn k(&mut self, k: &Thunk) -> &mut Self {
-    match k {
+    /* match k {
       Thunk::Val(v) => self.s("Val[").v(v).s("]"),
       Thunk::Op(op, ks) => {
         match op {
@@ -124,7 +124,8 @@ impl Pretty {
         }
         self.close()
       }
-    }
+    } */
+    self.s("[Thunk]")
   }
 
   fn v(&mut self, v: &Val) -> &mut Self {
