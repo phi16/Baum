@@ -1,6 +1,6 @@
 use baum_core::types::literal::Literal;
 
-use crate::types::tree::{app, Action, Raw, Thunk, Val};
+use crate::types::val::{app, Action, Raw, Thunk, Val};
 use std::rc::Rc;
 
 pub fn prim(name: &str) -> Val {

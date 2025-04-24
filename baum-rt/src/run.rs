@@ -1,10 +1,11 @@
 use crate::pretty::{ppk, ppt, ppv};
 use crate::prim::{lit, prim, prim_ev};
-use crate::types::tree::{app, prop, Cont, Env, Op, Raw, Thunk, Tree, TreeF, Val};
+use crate::types::code::{Code, Global};
+use crate::types::val::{app, prop, Cont, Env, Op, Raw, Thunk, Val};
 use std::collections::HashMap;
 use std::rc::Rc;
 
-fn step(t: &Rc<Tree>, env: Env) -> Thunk {
+/* fn step(t: &Rc<Tree>, env: Env) -> Thunk {
   match &t.0 {
     TreeF::Var(i) => Thunk::val(env.get(i).unwrap().clone()),
     TreeF::Unit => Thunk::val(Val::Unit),
@@ -69,14 +70,36 @@ fn eval(value: Thunk) -> Val {
       Op::Prim(name, args) => value = prim_ev(&name, args),
     }
   }
+} */
+
+struct Run {
+  funs: Vec<Code>,
 }
 
-pub fn run(t: &Rc<Tree>) {
+impl Run {
+  fn new(funs: Vec<Code>) -> Self {
+    Run { funs }
+  }
+
+  fn eval(&self, code: &Code) -> Thunk {
+    let mut res = Vec::new();
+    for op in &code.ops {
+      match op {
+        crate::types::code::Op::Unit => res.push(Val::Unit),
+        _ => unimplemented!(),
+      }
+    }
+    // code.ret;
+    unimplemented!()
+  }
+}
+
+pub fn run(t: &Global) {
   eprintln!("[Run]");
-  eprintln!("{}", ppt(t));
   eprintln!("--------");
-  let mut thunk = Thunk::eval(t.clone(), Rc::new(HashMap::new()));
-  loop {
+  let run = Run::new(t.funs.clone());
+  let mut thunk = run.eval(&t.main);
+  /* loop {
     let v = eval(thunk);
     match v {
       Val::Raw(Raw::Action(a)) => {
@@ -89,5 +112,5 @@ pub fn run(t: &Rc<Tree>) {
       }
       _ => unreachable!(),
     }
-  }
+  } */
 }

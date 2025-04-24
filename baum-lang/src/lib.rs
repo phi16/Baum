@@ -75,8 +75,8 @@ pub fn run(code: &str) -> Result<(), String> {
       eprintln!("[Passed]");
       eprintln!("--------");
       if let Some(m) = m {
-        let t = baum_rt::convert::convert(&m);
-        baum_rt::run::run(&t);
+        let g = baum_rt::convert::convert(&m);
+        baum_rt::run::run(&g);
       } else {
         eprintln!("End of file: entrypoint {:?} not found", entrypoint);
       }
@@ -92,7 +92,7 @@ pub fn run(code: &str) -> Result<(), String> {
 #[cfg(test)]
 #[test]
 fn test_dev() {
-  let code = include_str!("../examples/hello.baum");
+  let code = include_str!("../examples/test.baum");
   match run(code) {
     Ok(_) => {}
     Err(e) => {

@@ -55,3 +55,5 @@ main3: ! =
         u = n Σ(nat, io) (λ(p) (succ p.0, p.1 » printNat p.0)) (n0, λ(k) k ())
       in u.1
   in tri n9 |_| exit
+
+main = main3

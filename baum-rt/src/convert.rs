@@ -1,20 +1,22 @@
-use crate::types::tree::{Id, Name, Tree, TreeF};
+use crate::types::code::{Code, EnvIx, FunIx, Global, Op, OpIx, Ref};
+use crate::types::common::{Id, Name};
+use crate::types::tree::{Tree, TreeF};
 use baum_core::types::common::{BindId, DefId};
 use baum_core::types::val::{CExprF, RE};
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::rc::Rc;
 
-struct Convert {
+struct Convert1 {
   next_id: u32,
   bind_map: HashMap<BindId, Id>,
   def_map: HashMap<DefId, Id>,
   used_ids: HashSet<Id>,
 }
 
-impl Convert {
-  fn new() -> Convert {
-    Convert {
+impl Convert1 {
+  fn new() -> Convert1 {
+    Convert1 {
       next_id: 0,
       bind_map: HashMap::new(),
       def_map: HashMap::new(),
@@ -99,7 +101,114 @@ impl Convert {
   }
 }
 
-pub fn convert<P, S>(e: &RE<P, S>) -> Rc<Tree> {
-  let mut c = Convert::new();
-  c.e(e)
+struct Convert2 {
+  funs: Vec<Code>,
+  code: Vec<Op<OpIx>>,
+  id_map: HashMap<Id, OpIx>,
+}
+
+impl Convert2 {
+  fn new() -> Convert2 {
+    Convert2 {
+      funs: Vec::new(),
+      code: Vec::new(),
+      id_map: HashMap::new(),
+    }
+  }
+
+  fn push(&mut self, op: Op<OpIx>) -> OpIx {
+    let ix = self.code.len() as OpIx;
+    self.code.push(op);
+    ix
+  }
+
+  fn push_fun(&mut self, env_count: usize, ops: Vec<Op<OpIx>>, ret: OpIx) -> FunIx {
+    let ix = self.funs.len() as FunIx;
+    let code = Code {
+      env_count: env_count as u32,
+      ops,
+      ret,
+    };
+    self.funs.push(code);
+    ix
+  }
+
+  fn t(&mut self, t: Rc<Tree>) -> OpIx {
+    match &t.0 {
+      TreeF::Var(i) => self.id_map.get(i).unwrap().clone(),
+      TreeF::Unit => self.push(Op::Unit),
+      TreeF::Prim(s) => self.push(Op::Prim(s.clone())),
+      TreeF::Lit(l) => self.push(Op::Lit(l.clone())),
+      TreeF::Let(defs, e) => {
+        for (d, e) in defs {
+          let e = self.t(Rc::clone(e));
+          let prev = self.id_map.insert(*d, e.clone());
+          assert!(prev.is_none());
+        }
+        let e = self.t(Rc::clone(e));
+        for (d, _) in defs {
+          self.id_map.remove(d);
+        }
+        e
+      }
+
+      TreeF::Lam(arg, scope, body) => {
+        let mut last_code = std::mem::take(&mut self.code);
+        let last_id_map = std::mem::take(&mut self.id_map);
+        let a = self.push(Op::Ref(Ref::Arg));
+        self.id_map.insert(*arg, a);
+        for (ix, id) in scope.iter().enumerate() {
+          let e = self.push(Op::Ref(Ref::Env(ix as EnvIx)));
+          self.id_map.insert(*id, e);
+        }
+        let body = self.t(Rc::clone(body));
+        std::mem::swap(&mut self.code, &mut last_code);
+        let ops = last_code;
+
+        let fun = self.push_fun(scope.len(), ops, body);
+        self.id_map = last_id_map;
+        let mut env = Vec::new();
+        for id in scope {
+          env.push(self.id_map.get(id).unwrap().clone());
+        }
+        self.push(Op::Lam(fun, env))
+      }
+      TreeF::App(f, x) => {
+        let f = self.t(Rc::clone(f));
+        let x = self.t(Rc::clone(x));
+        self.push(Op::App(f, x))
+      }
+      TreeF::Obj(props) => {
+        let mut ps = Vec::new();
+        for (n, e) in props {
+          let e = self.t(Rc::clone(e));
+          ps.push((*n, e));
+        }
+        self.push(Op::Obj(ps))
+      }
+      TreeF::Prop(o, n) => {
+        let o = self.t(Rc::clone(o));
+        self.push(Op::Prop(o, *n))
+      }
+    }
+  }
+}
+
+pub fn convert<P, S>(e: &RE<P, S>) -> Global {
+  let mut c = Convert1::new();
+  let t = c.e(e);
+  eprintln!("{}", crate::pretty::ppt(&t));
+  eprintln!("--------");
+  let mut c = Convert2::new();
+  let ret = c.t(t);
+  let ops = c.code;
+  let main = Code {
+    env_count: 0,
+    ops,
+    ret,
+  };
+  let g = Global { funs: c.funs, main };
+  eprintln!("{}", crate::pretty::ppg(&g));
+  eprintln!("--------");
+  g
 }

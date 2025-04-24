@@ -1,6 +1,9 @@
 use baum_core::types::literal::Literal;
 
+use crate::types::code::{Code, Global, Op, OpIx, Ref};
+use crate::types::common::*;
 use crate::types::tree::*;
+use crate::types::val::*;
 use std::rc::Rc;
 
 struct Pretty {
@@ -94,6 +97,62 @@ impl Pretty {
       }
       TreeF::Prop(e, n) => self.t(e).s(".").name(n),
     }
+  }
+
+  fn r(&mut self, r: &OpIx) -> &mut Self {
+    self.s(&format!("%{:?}", r))
+  }
+
+  fn op(&mut self, op: &Op<OpIx>) -> &mut Self {
+    match op {
+      Op::Ref(Ref::Arg) => self.s("arg"),
+      Op::Ref(Ref::Env(i)) => self.s(&format!("env[{:?}]", i)),
+      Op::Unit => self.s("()"),
+      Op::Prim(s) => self.s("prim \"").s(s).s("\""),
+      Op::Lit(l) => self.lit(l),
+      Op::Lam(fun, env) => {
+        self.s(&format!("Cl[fun {:?}", fun));
+        for i in env {
+          self.s(", ").r(i);
+        }
+        self.s("]")
+      }
+      Op::App(f, x) => self.r(f).s("(").r(x).s(")"),
+      Op::Obj(ps) => {
+        self.s("{");
+        let mut first = true;
+        for (n, e) in ps {
+          if !first {
+            self.s(", ");
+          }
+          self.name(n).s(": ").r(e);
+          first = false;
+        }
+        self.s("}")
+      }
+      Op::Prop(o, n) => self.r(o).s(".").name(n),
+    }
+  }
+
+  fn c(&mut self, c: &Code) -> &mut Self {
+    for (i, op) in c.ops.iter().enumerate() {
+      self.s(&format!("%{:?} = ", i)).op(op).ln();
+    }
+    self.s("return ").r(&c.ret).ln()
+  }
+
+  fn g(&mut self, g: &Global) -> &mut Self {
+    for (i, c) in g.funs.iter().enumerate() {
+      self
+        .s(&format!("fun {:?} (envs: {:?}) {{", i, c.env_count))
+        .open()
+        .c(c)
+        .close()
+        .s("}")
+        .ln();
+    }
+    self.s("main {").open().c(&g.main).close().s("}").ln();
+    self
   }
 
   fn e(&mut self, e: &Env) -> &mut Self {
@@ -195,5 +254,11 @@ pub fn ppk(k: &Thunk) -> String {
 pub fn ppv(v: &Val) -> String {
   let mut p = Pretty::new();
   p.v(v).ln();
+  p.str.join("\n")
+}
+
+pub fn ppg(g: &Global) -> String {
+  let mut p = Pretty::new();
+  p.g(g).ln();
   p.str.join("\n")
 }
