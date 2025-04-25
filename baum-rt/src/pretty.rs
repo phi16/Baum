@@ -151,19 +151,7 @@ impl Pretty {
         .s("}")
         .ln();
     }
-    self.s("main {").open().c(&g.main).close().s("}").ln();
-    self
-  }
-
-  fn e(&mut self, e: &Env) -> &mut Self {
-    let mut first = true;
-    for (i, v) in e.iter() {
-      if !first {
-        self.s(", ");
-      }
-      self.i(i).s(" = ").v(v);
-      first = false;
-    }
+    self.s(&format!("main = fun {:?}", g.main));
     self
   }
 
@@ -200,9 +188,9 @@ impl Pretty {
   }
 
   fn v(&mut self, v: &Val) -> &mut Self {
-    match v {
-      Val::Unit => self.s("()"),
-      Val::Raw(r) => match r {
+    match &v.0 {
+      ValF::Unit => self.s("()"),
+      ValF::Raw(r) => match r {
         Raw::U32(n) => self.s("U32[").s(&n.to_string()).s("]"),
         Raw::F32(f) => self.s("F32[").s(&f.to_string()).s("]"),
         Raw::Char(c) => self.s("Char[").s(&c.to_string()).s("]"),
@@ -210,7 +198,7 @@ impl Pretty {
         Raw::Action(_) => self.s("Action[]"),
         Raw::Done => self.s("Done"),
       },
-      Val::Prim(name, l, args) => {
+      ValF::Prim(name, l, args) => {
         self.s(&format!("{}<{:?}>", name, l)).s("(");
         let mut first = true;
         for arg in args {
@@ -222,8 +210,19 @@ impl Pretty {
         }
         self.s(")")
       }
-      Val::Cl(i, env, e) => self.s("λ(").i(i).s(") ").t(e),
-      Val::Obj(ps) => {
+      ValF::Cl(fun, env) => {
+        self.s(&format!("fun {:?} [", fun));
+        let mut first = true;
+        for e in env {
+          if !first {
+            self.s(", ");
+          }
+          self.v(e);
+          first = false;
+        }
+        self.s("]")
+      }
+      ValF::Obj(ps) => {
         self.s("{");
         let mut first = true;
         for (n, v) in ps {

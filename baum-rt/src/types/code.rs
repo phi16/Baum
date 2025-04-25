@@ -34,5 +34,5 @@ pub struct Code {
 #[derive(Debug, Clone)]
 pub struct Global {
   pub funs: Vec<Code>,
-  pub main: Code,
+  pub main: FunIx,
 }

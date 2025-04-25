@@ -1,116 +1,129 @@
 use crate::pretty::{ppk, ppt, ppv};
-use crate::prim::{lit, prim, prim_ev};
-use crate::types::code::{Code, Global};
-use crate::types::val::{app, prop, Cont, Env, Op, Raw, Thunk, Val};
+use crate::prim::Prim;
+use crate::types::code::{Code, FunIx, Global, Op, OpIx, Ref};
+use crate::types::val::{app, prop, Cont, Raw, Thunk, ThunkOp, Val, ValF, V};
 use std::collections::HashMap;
 use std::rc::Rc;
 
-/* fn step(t: &Rc<Tree>, env: Env) -> Thunk {
-  match &t.0 {
-    TreeF::Var(i) => Thunk::val(env.get(i).unwrap().clone()),
-    TreeF::Unit => Thunk::val(Val::Unit),
-    TreeF::Prim(s) => Thunk::val(prim(s)),
-    TreeF::Lit(l) => Thunk::val(lit(l.clone())),
-    TreeF::Let(ds, e) => {
-      let mut env = env;
-      for (i, d) in ds {
-        let v = eval(step(d, env.clone()));
-        Rc::make_mut(&mut env).insert(*i, v);
-      }
-      Thunk::eval(e.clone(), env)
-    }
-
-    TreeF::Lam(i, scope, e) => {
-      let env = scope
-        .iter()
-        .map(|i| (*i, env.get(i).unwrap().clone()))
-        .collect::<HashMap<_, _>>();
-      Thunk::val(Val::Cl(*i, Rc::new(env), e.clone()))
-    }
-    TreeF::App(f, x) => {
-      let mut f = step(f, env.clone());
-      let x = step(x, env.clone());
-      f.push_cont(Cont::App0((), Box::new(x)));
-      f
-    }
-    TreeF::Obj(props) => {
-      let mut ps = HashMap::new();
-      for (n, e) in props {
-        let v = eval(step(e, env.clone()));
-        ps.insert(*n, v);
-      }
-      Thunk::val(Val::Obj(ps))
-    }
-    TreeF::Prop(o, n) => {
-      let mut o = step(o, env);
-      o.push_cont(Cont::Prop(*n));
-      o
-    }
-  }
-}
-
-fn eval(value: Thunk) -> Val {
-  let mut conts = Vec::new();
-  let mut value = value;
-  loop {
-    // eprintln!("[Thunk] {}", ppk(&value));
-    let (op, ks) = value.into_inner();
-    conts.extend(ks.into_iter().rev());
-    match op {
-      Op::Val(v) => match conts.pop() {
-        None => return v,
-        Some(Cont::App0(_, x)) => {
-          conts.push(Cont::App1(v, ()));
-          value = *x;
-        }
-        Some(Cont::App1(f, _)) => value = app(f, v),
-        Some(Cont::Prop(n)) => value = prop(v, &n),
-      },
-      Op::Eval(t, env) => value = step(&t, env),
-      Op::Prim(name, args) => value = prim_ev(&name, args),
-    }
-  }
-} */
-
 struct Run {
   funs: Vec<Code>,
+  prim: Prim,
 }
 
 impl Run {
   fn new(funs: Vec<Code>) -> Self {
-    Run { funs }
+    Run {
+      funs,
+      prim: Prim::new(),
+    }
   }
 
-  fn eval(&self, code: &Code) -> Thunk {
-    let mut res = Vec::new();
-    for op in &code.ops {
+  fn step(&self, fun: FunIx, env: Vec<V>) -> Thunk {
+    self.step_cont(fun, env, Vec::new(), 0)
+  }
+
+  fn step_cont(&self, fun: FunIx, env: Vec<V>, res: Vec<V>, start_ix: OpIx) -> Thunk {
+    let code = &self.funs[fun as usize];
+    let mut res = res;
+    for (opix, op) in code.ops.iter().enumerate().skip(start_ix as usize) {
+      // eprintln!("* {:?}-{:?}", fun, opix);
+      let r = match op {
+        Op::Ref(Ref::Env(i)) => Rc::clone(&env[*i as usize]),
+        Op::Ref(Ref::Arg) => Rc::clone(&env[env.len() - 1]),
+        Op::Unit => Rc::clone(&self.prim.unit),
+        Op::Prim(s) => Rc::new(self.prim.prim(s)), // ?
+        Op::Lit(l) => Rc::new(self.prim.lit(l.clone())), // ?
+
+        Op::Lam(f, e) => {
+          let mut es = Vec::new();
+          for i in e {
+            es.push(Rc::clone(&res[*i as usize]));
+          }
+          Rc::new(Val(ValF::Cl(*f, es)))
+        }
+        Op::App(f, x) => {
+          let f = Rc::clone(&res[*f as usize]);
+          let x = Rc::clone(&res[*x as usize]);
+          let mut t = app(f, x);
+          t.push_cont(Cont {
+            fun,
+            env,
+            res,
+            opix: opix as OpIx,
+          });
+          return t;
+        }
+        Op::Obj(props) => {
+          let mut ps = HashMap::new();
+          for (n, e) in props {
+            ps.insert(*n, Rc::clone(&res[*e as usize]));
+          }
+          Rc::new(Val(ValF::Obj(ps)))
+        }
+        Op::Prop(o, n) => {
+          let o = Rc::clone(&res[*o as usize]);
+          let mut t = prop(o, n);
+          t.push_cont(Cont {
+            fun,
+            env,
+            res,
+            opix: opix as OpIx,
+          });
+          return t;
+        }
+      };
+      res.push(r);
+    }
+    let result = Rc::clone(&res[code.ret as usize]);
+    // eprintln!("* {:?}-end", fun);
+    Thunk::val(result)
+  }
+
+  fn eval(&self, thunk: Thunk) -> V {
+    let mut conts = Vec::new();
+    let mut thunk = thunk;
+    loop {
+      // eprintln!("[Thunk] {}", ppk(&value));
+      let (op, ks) = thunk.into_inner();
+      conts.extend(ks.into_iter().rev());
+      // eprintln!("[Cont: {:?}]", conts.len());
       match op {
-        crate::types::code::Op::Unit => res.push(Val::Unit),
-        _ => unimplemented!(),
+        ThunkOp::Val(v) => match conts.pop() {
+          None => return v,
+          Some(k) => {
+            let mut res = k.res;
+            res.push(v);
+            thunk = self.step_cont(k.fun, k.env, res, k.opix as OpIx + 1);
+          }
+        },
+        ThunkOp::Eval(fun, env, arg) => {
+          let mut env = env;
+          env.push(arg);
+          thunk = self.step(fun, env)
+        }
+        ThunkOp::Prim(name, args) => thunk = self.prim.ev(&name, args),
       }
     }
-    // code.ret;
-    unimplemented!()
   }
 }
 
-pub fn run(t: &Global) {
+pub fn run(g: &Global) {
   eprintln!("[Run]");
   eprintln!("--------");
-  let run = Run::new(t.funs.clone());
-  let mut thunk = run.eval(&t.main);
-  /* loop {
-    let v = eval(thunk);
-    match v {
-      Val::Raw(Raw::Action(a)) => {
+  let run = Run::new(g.funs.clone());
+  let mut thunk = run.step(g.main, Vec::new());
+  loop {
+    let v = Rc::unwrap_or_clone(run.eval(thunk));
+    match v.0 {
+      ValF::Raw(Raw::Action(a)) => {
         thunk = (a.run)();
       }
-      Val::Raw(Raw::Done) => {
+      ValF::Raw(Raw::Done) => {
         eprintln!("--------");
         eprintln!("[Done]");
         return;
       }
       _ => unreachable!(),
     }
-  } */
+  }
 }

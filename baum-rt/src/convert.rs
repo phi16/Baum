@@ -207,7 +207,13 @@ pub fn convert<P, S>(e: &RE<P, S>) -> Global {
     ops,
     ret,
   };
-  let g = Global { funs: c.funs, main };
+  let mut funs = c.funs;
+  let main_ix = funs.len() as FunIx;
+  funs.push(main);
+  let g = Global {
+    funs,
+    main: main_ix,
+  };
   eprintln!("{}", crate::pretty::ppg(&g));
   eprintln!("--------");
   g
