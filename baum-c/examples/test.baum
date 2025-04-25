@@ -50,7 +50,7 @@ main3: ! =
     _»_ (x: io) (y: io): io = λ(k) x |_| y k 
     syntax 1 a » b = _»_ a b
     n9 = n3 × n3
-    many = n9 ^ (n3)
+    many = n9 ^ (n3 + n2)
     tri (n: nat): io = let
         u = n Σ(nat, io) (λ(p) (succ p.0, p.1 » printNat p.0)) (n0, λ(k) k ())
       in u.1
