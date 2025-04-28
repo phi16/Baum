@@ -2,6 +2,15 @@
   "version": "0.2.0",
   "configurations": [
     {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Rust Debug",
+      "program": "${workspaceFolder}/baum-c/target/debug/baum-c.exe",
+      "args": [],
+      "cwd": "${workspaceFolder}/baum-c/",
+      "sourceLanguages": ["rust"],
+    }
+    {
       "name": "Launch Extension",
       "type": "extensionHost",
       "request": "launch",

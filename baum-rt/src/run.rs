@@ -18,6 +18,26 @@ impl Run {
     }
   }
 
+  fn manual_drop(&self, vs: Vec<V>) {
+    // Val may be a quite deep structure which causes a stack overflow on drop.
+    let mut vs = vs;
+    loop {
+      let v = match vs.pop() {
+        Some(v) => v,
+        None => return,
+      };
+      match Rc::try_unwrap(v) {
+        Err(_) => {}
+        Ok(v) => match v.0 {
+          ValF::Prim(_, _, args) => vs.extend(args),
+          ValF::Cl(_, env) => vs.extend(env),
+          ValF::Obj(ps) => vs.extend(ps.into_values()),
+          _ => {}
+        },
+      }
+    }
+  }
+
   fn step(&self, fun: FunIx, env: Vec<V>) -> Thunk {
     self.step_cont(fun, env, Vec::new(), 0)
   }
@@ -75,7 +95,8 @@ impl Run {
       res.push(r);
     }
     let result = Rc::clone(&res[code.ret as usize]);
-    // eprintln!("* {:?}-end", fun);
+    self.manual_drop(env);
+    self.manual_drop(res);
     Thunk::val(result)
   }
 
@@ -86,7 +107,6 @@ impl Run {
       // eprintln!("[Thunk] {}", ppk(&value));
       let (op, ks) = thunk.into_inner();
       conts.extend(ks.into_iter().rev());
-      // eprintln!("[Cont: {:?}]", conts.len());
       match op {
         ThunkOp::Val(v) => match conts.pop() {
           None => return v,
